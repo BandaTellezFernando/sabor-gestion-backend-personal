@@ -1,0 +1,45 @@
+{
+  "name": "sabor-gestion-backend",
+  "version": "1.0.0",
+  "description": "API RESTful para el Sistema Integral de Gestión Gastronómica",
+  "main": "src/server.ts",
+  "scripts": {
+    "dev": "nodemon --exec tsx src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "seed": "ts-node src/utils/seed.ts",
+    "seed:inventario": "tsx src/utils/seedInventario.ts"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.9.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "google-auth-library": "^10.9.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.3.1",
+    "morgan": "^1.10.1",
+    "multer": "^2.1.1",
+    "nodemailer": "^9.0.3",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/morgan": "^1.9.10",
+    "@types/multer": "^2.1.0",
+    "@types/node": "^20.0.0",
+    "@types/nodemailer": "^8.0.0",
+    "@typescript-eslint/parser": "^8.59.2",
+    "eslint": "^8.0.0",
+    "nodemon": "^3.1.14",
+    "prettier": "^3.0.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.0.0"
+  }
+}
