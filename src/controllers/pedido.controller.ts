@@ -67,7 +67,7 @@ export const cancelarPedido = async (req: Request, res: Response): Promise<void>
     const { id } = req.params
     const resultado = await pedidoService.cancelarPedido(String(id))
 
-    // Avisar por WebSocket que la mesa vuelve a estar disponible (verde) o reservada
+    // Avisar por WebSocket que la mesa vuelve a estar disponible (verde)
     if (resultado.mesaLiberada) {
       try {
         getIO().emit('mesas:updated', {

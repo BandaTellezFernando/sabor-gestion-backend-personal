@@ -20,7 +20,7 @@ const MesaSchema = new Schema(
     ubicacionId: { type: Schema.Types.ObjectId, ref: 'Ubicacion', default: null },
     estado: {
       type: String,
-      enum: ['Libre', 'Ocupada', 'Reservada', 'Cuenta Solicitada'],
+      enum: ['Libre', 'Ocupada', 'Cuenta Solicitada'],
       default: 'Libre'
     },
     tipo: { type: String, enum: ['normal', 'vip'], default: 'normal' }

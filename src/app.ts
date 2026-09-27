@@ -9,7 +9,6 @@ import categoriaRoutes from './routes/categoria.routes'
 import mesaRoutes from './routes/mesa.routes'
 import ubicacionRoutes from './routes/ubicacion.routes'
 import platoRoutes from './routes/plato.routes'
-import reservaRoutes from './routes/reserva.routes'
 import pedidoRoutes from './routes/pedido.routes'
 import pagoRoutes from './routes/pago.routes'
 import dashboardRoutes from './routes/dashboard.routes'
@@ -46,7 +45,6 @@ app.use('/api/categorias', categoriaRoutes)
 app.use('/api/mesas', mesaRoutes)
 app.use('/api/ubicaciones', ubicacionRoutes)
 app.use('/api/platos', platoRoutes)
-app.use('/api/reservas', reservaRoutes)
 app.use('/api/pedidos', pedidoRoutes)
 app.use('/api/pagos', pagoRoutes)
 app.use('/api/dashboard', dashboardRoutes)

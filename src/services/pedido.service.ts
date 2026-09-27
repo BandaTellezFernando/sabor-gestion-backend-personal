@@ -7,7 +7,6 @@ import {
   IPedido
 } from '../repositories/pedido.repo'
 import { MesaRepository, mesaRepository } from '../repositories/mesa.repo'
-import { ReservaRepository, reservaRepository } from '../repositories/reserva.repo'
 import { ESTADOS_MESA, ESTADOS_PEDIDO } from '../utils/constants'
 import {
   obtenerFechaBolivia,
@@ -68,8 +67,7 @@ export interface ResultadoSolicitarCuenta {
 export class PedidoService {
   constructor(
     private pedidoRepo: PedidoRepository = pedidoRepository,
-    private mesaRepo: MesaRepository = mesaRepository,
-    private reservaRepo: ReservaRepository = reservaRepository
+    private mesaRepo: MesaRepository = mesaRepository
   ) {}
 
   /**
@@ -286,7 +284,7 @@ export class PedidoService {
   }
 
   /**
-   * Cancela un pedido y libera la mesa (o la pone en Reservada si tiene reservas futuras)
+   * Cancela un pedido y libera la mesa
    */
   async cancelarPedido(id: string): Promise<ResultadoCancelarPedido> {
     const pedido = await this.pedidoRepo.buscarPorId(id)
@@ -299,18 +297,10 @@ export class PedidoService {
     await this.pedidoRepo.guardar(pedido)
 
     let mesaLiberada: any = null
-    let nuevoEstado = 'Libre'
+    const nuevoEstado = 'Libre'
 
-    // Si el pedido tenía una mesa asignada, verificar si tiene reservas hoy
+    // Si el pedido tenía una mesa asignada, liberarla
     if (pedido.mesa) {
-      const inicioHoy = obtenerFechaBolivia()
-      inicioHoy.setHours(0, 0, 0, 0)
-      const reservasPendientes = await this.reservaRepo.contarReservasFuturasPorMesa(
-        pedido.mesa,
-        inicioHoy
-      )
-      nuevoEstado = reservasPendientes > 0 ? 'Reservada' : 'Libre'
-
       mesaLiberada = await this.mesaRepo.actualizarEstado(
         pedido.mesa.toString(),
         nuevoEstado
@@ -321,7 +311,7 @@ export class PedidoService {
       pedido: PedidoService.agregarFechaBoliviaPedido(pedido),
       mesaLiberada,
       nuevoEstadoMesa: nuevoEstado,
-      statusSocket: nuevoEstado === 'Libre' ? 'Disponible' : 'Reservada'
+      statusSocket: 'Disponible'
     }
   }
 

@@ -3,7 +3,6 @@ import mongoose, { Types } from 'mongoose'
 import { PagoRepository, pagoRepository } from '../repositories/pago.repo'
 import { PedidoRepository, pedidoRepository } from '../repositories/pedido.repo'
 import { MesaRepository, mesaRepository } from '../repositories/mesa.repo'
-import { ReservaRepository, reservaRepository } from '../repositories/reserva.repo'
 import { enviarCorreo } from './email.service'
 import {
   generarPlantillaFacturaHTML,
@@ -41,8 +40,7 @@ export class PagoService {
   constructor(
     private pagoRepo: PagoRepository = pagoRepository,
     private pedidoRepo: PedidoRepository = pedidoRepository,
-    private mesaRepo: MesaRepository = mesaRepository,
-    private reservaRepo: ReservaRepository = reservaRepository
+    private mesaRepo: MesaRepository = mesaRepository
   ) {}
 
   /**
@@ -179,19 +177,10 @@ export class PagoService {
         session
       )
 
-      // 3.3 Verificar Reservas y Actualizar Estado de Mesa
+      // 3.3 Liberar Mesa
       if (pedido.mesa) {
         const mesaId = ((pedido.mesa as any)._id || pedido.mesa).toString()
-        const inicioHoy = new Date()
-        inicioHoy.setHours(0, 0, 0, 0)
-
-        const reservasPendientes = await this.reservaRepo.contarReservasFuturasPorMesa(
-          mesaId,
-          inicioHoy,
-          session
-        )
-
-        nuevoEstadoMesa = reservasPendientes > 0 ? 'Reservada' : 'Libre'
+        nuevoEstadoMesa = 'Libre'
         mesaLiberada = await this.mesaRepo.actualizarEstado(mesaId, nuevoEstadoMesa, session)
       }
 
@@ -231,7 +220,7 @@ export class PagoService {
       nuevoPago,
       mesaLiberada,
       nuevoEstadoMesa,
-      statusSocketMesa: nuevoEstadoMesa === 'Libre' ? 'Disponible' : 'Reservada',
+      statusSocketMesa: 'Disponible',
       comprobante
     }
   }

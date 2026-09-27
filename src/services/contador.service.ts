@@ -2,7 +2,6 @@
 import { ClientSession } from 'mongoose'
 import { ContadorRepository, contadorRepository } from '../repositories/contador.repo'
 import { PedidoRepository, pedidoRepository } from '../repositories/pedido.repo'
-import { ReservaRepository, reservaRepository } from '../repositories/reserva.repo'
 import { obtenerFechaISO_Bolivia } from '../utils/fechaBolivia'
 
 export interface ResultadoCodigoPedido {
@@ -10,26 +9,16 @@ export interface ResultadoCodigoPedido {
   fechaDiaBolivia: string
 }
 
-export interface ResultadoCodigoReserva {
-  codigo: string
-  numeroReserva: string
-  pedidoId: string
-  fechaDiaBolivia: string
-}
-
 export class ContadorService {
   private contadorRepo: ContadorRepository
   private pedidoRepo: PedidoRepository
-  private reservaRepo: ReservaRepository
 
   constructor(
     contadorRepo: ContadorRepository = contadorRepository,
-    pedidoRepo: PedidoRepository = pedidoRepository,
-    reservaRepo: ReservaRepository = reservaRepository
+    pedidoRepo: PedidoRepository = pedidoRepository
   ) {
     this.contadorRepo = contadorRepo
     this.pedidoRepo = pedidoRepo
-    this.reservaRepo = reservaRepo
   }
 
   /**
@@ -75,50 +64,6 @@ export class ContadorService {
       fechaDiaBolivia
     }
   }
-
-  /**
-   * Genera el siguiente código secuencial diario para Reservas (ej. RES-0001, Reserva 1).
-   * Implementa Smart Seed atómico con $setOnInsert + $inc independiente de los pedidos.
-   */
-  async generarSiguienteCodigoReserva(
-    fechaOverride?: string
-  ): Promise<ResultadoCodigoReserva> {
-    const fechaDiaBolivia = fechaOverride || obtenerFechaISO_Bolivia()
-    const claveSecuencia = `reservas_${fechaDiaBolivia}`
-
-    // 1. Determinar el punto de partida (Smart Seed) inspeccionando reservas existentes del día
-    const reservasDelDia = await this.reservaRepo.obtenerCodigosPorFechaDia(fechaDiaBolivia)
-
-    const maxSecuencia =
-      reservasDelDia.length > 0
-        ? Math.max(
-            0,
-            ...reservasDelDia.map((r) => {
-              const num = parseInt(String(r.codigo).replace('RES-', ''), 10)
-              return Number.isFinite(num) ? num : 0
-            })
-          )
-        : 0
-
-    // 2. Siembra atómica idempotente
-    await this.contadorRepo.inicializarSecuenciaSiNoExiste(claveSecuencia, maxSecuencia)
-
-    // 3. Incremento atómico independiente
-    const doc = await this.contadorRepo.incrementarSecuencia(claveSecuencia)
-    if (!doc) {
-      throw new Error(`Error al incrementar la secuencia del contador: ${claveSecuencia}`)
-    }
-
-    const codigo = `RES-${String(doc.secuencia).padStart(4, '0')}`
-    const numeroReserva = `Reserva ${doc.secuencia}`
-
-    return {
-      codigo,
-      numeroReserva,
-      pedidoId: numeroReserva, // Retrocompatibilidad temporal para pantallas que lean pedidoId
-      fechaDiaBolivia
-    }
-  }
 }
 
 export const contadorService = new ContadorService()
@@ -131,10 +76,4 @@ export async function generarSiguienteCodigoPedido(
   fechaOverride?: string
 ): Promise<ResultadoCodigoPedido> {
   return await contadorService.generarSiguienteCodigoPedido(session, fechaOverride)
-}
-
-export async function generarSiguienteCodigoReserva(
-  fechaOverride?: string
-): Promise<ResultadoCodigoReserva> {
-  return await contadorService.generarSiguienteCodigoReserva(fechaOverride)
 }

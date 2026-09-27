@@ -4,7 +4,6 @@
 export const ESTADOS_MESA = {
   LIBRE: 'Libre',
   OCUPADA: 'Ocupada',
-  RESERVADA: 'Reservada',
   CUENTA_SOLICITADA: 'Cuenta Solicitada'
 } as const
 
