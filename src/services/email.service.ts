@@ -1,16 +1,25 @@
 //src/services/email.service.ts
 
 export async function enviarCorreo(to: string, subject: string, html: string): Promise<void> {
+  const serviceId = process.env.EMAILJS_SERVICE_ID
+  const templateId = process.env.EMAILJS_TEMPLATE_ID
+  const userId = process.env.EMAILJS_USER_ID
+  const accessToken = process.env.EMAILJS_ACCESS_TOKEN
+
+  if (!serviceId || !templateId || !userId || !accessToken) {
+    throw new Error('Credenciales de EmailJS no configuradas en las variables de entorno.')
+  }
+
   const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      service_id: 'service_2yoc0sp',
-      template_id: 'template_sr8quju',
-      user_id: 'oIGr4df0_jZjQxMPf',
-      accessToken: 'I9PJZT1PLOp3DirS-4Xn1',
+      service_id: serviceId,
+      template_id: templateId,
+      user_id: userId,
+      accessToken: accessToken,
       template_params: {
         to_email: to,
         subject: subject,

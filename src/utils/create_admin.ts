@@ -6,6 +6,14 @@ import Usuario from '../models/Usuario'
 dotenv.config()
 
 async function main() {
+  const email = process.env.ADMIN_EMAIL
+  const password = process.env.ADMIN_PASSWORD
+
+  if (!email || !password) {
+    console.error('Error: Se requieren las variables de entorno ADMIN_EMAIL y ADMIN_PASSWORD.')
+    process.exit(1)
+  }
+
   const MONGO = process.env.MONGO_URI || process.env.DB_URI
   if (!MONGO) {
     console.error('Falta MONGO_URI/DB_URI en las variables de entorno')
@@ -14,9 +22,6 @@ async function main() {
 
   await mongoose.connect(MONGO)
   console.log('Conectado a DB')
-
-  const email = 'us@gmail.com'
-  const password = 'us1234'
 
   const passwordHash = await bcrypt.hash(password, 10)
 

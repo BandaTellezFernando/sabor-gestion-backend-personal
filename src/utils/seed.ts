@@ -10,6 +10,10 @@ dotenv.config()
 
 const seed = async () => {
   try {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Seed no permitido en producción. Operación destructiva abortada.')
+    }
+
     const mongoURI = process.env.MONGO_URI
     if (!mongoURI) throw new Error('La variable de entorno MONGO_URI no está definida.')
 
