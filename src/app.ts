@@ -17,10 +17,6 @@ import pagoRoutes from './routes/pago.routes'
 import dashboardRoutes from './routes/dashboard.routes'
 import uploadRouters from './routes/upload.routes' // <-- Sin el .js
 import inventarioRoutes from './routes/inventario.routes'
-import clienteRoutes from './routes/cliente.routes'
-
-import deliveryRoutes from './routes/delivery.routes'
-import direccionRoutes from './routes/direccion.routes'
 
 const app: Application = express()
 
@@ -58,10 +54,6 @@ app.use('/api/pedidos', pedidoRoutes)
 app.use('/api/pagos', pagoRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/inventario', inventarioRoutes)
-app.use('/api/clientes', clienteRoutes)
-
-app.use('/api/delivery', deliveryRoutes)
-app.use('/api/direcciones', direccionRoutes)
 // Health check / Ruta de prueba
 app.get('/api/health', (req: Request, res: Response) => {
   res.status(200).json({

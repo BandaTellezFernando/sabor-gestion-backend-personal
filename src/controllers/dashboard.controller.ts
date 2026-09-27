@@ -150,7 +150,7 @@ export const obtenerResumenDashboard = async (req: Request, res: Response): Prom
       })),
       categoriasPopulares: categoriasFormateadas,
       ordenesRecientes: ordenesRecientes.map((o: any) => ({
-        id: o.codigo || `PED-${String(o._id).slice(-4).toUpperCase()}`,
+        id: o.codigo,
         mesa: (o.mesa as any)?.numero || 'Barra/Llevar',
         hora: o.fechaHora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), // Usamos tu campo fechaHora
         estado: traducirEstado(o.estado), // Usamos el traductor

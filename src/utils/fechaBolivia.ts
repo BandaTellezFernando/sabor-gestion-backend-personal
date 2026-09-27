@@ -21,3 +21,13 @@ export const formatearFechaBolivia = (fecha: Date | string): string => {
     hour12: false
   })
 }
+
+export const obtenerFechaISO_Bolivia = (fecha: Date | string = new Date()): string => {
+  const d = typeof fecha === 'string' ? new Date(fecha) : fecha
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/La_Paz',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(d)
+}

@@ -27,13 +27,13 @@ const DetallePedidoSchema = new Schema<IDetallePedido>(
 // 2. Interfaz y Esquema para el Pedido principal
 export interface IPedido extends Document {
   codigo: string
+  fechaDiaBolivia?: string
   fechaHoraBolivia?: string
   fechaHora: Date
   estado: string
   total: number
   mesa?: mongoose.Types.ObjectId
   usuario: mongoose.Types.ObjectId
-  usuarioModel?: string
   detalles: IDetallePedido[]
   qrUrl?: string
   // Campos para el cierre de caja y comprobante
@@ -45,15 +45,6 @@ export interface IPedido extends Document {
   clienteCI?: string
   clienteNIT?: string
   cajeroAsignado?: mongoose.Types.ObjectId
-
-  // <-- NUEVOS CAMPOS PARA DELIVERY -->
-  metodoEntrega?: string
-  repartidorId?: mongoose.Types.ObjectId
-  coordenadasEntrega?: {
-    lat: number
-    lng: number
-  }
-  pagoConfirmado?: boolean
 }
 
 const PedidoSchema = new Schema(
@@ -61,35 +52,21 @@ const PedidoSchema = new Schema(
     codigo: {
       type: String,
       required: true,
-      unique: true,
+      trim: true
+    },
+    fechaDiaBolivia: {
+      type: String,
+      required: true,
       trim: true
     },
     estado: {
       type: String,
-      // Se fusionan los estados del restaurante local con los de seguimiento de delivery
-      enum: [
-        'ABIERTO',
-        'EN_PREPARACION',
-        'ENTREGADO',
-        'CANCELADO',
-        'CERRADO', // Originales
-        'Pendiente_de_Aceptacion',
-        'En_Cocina',
-        'Repartidor_Esperando',
-        'En_Transito',
-        'Senal_Debil' // Delivery
-      ],
+      enum: ['ABIERTO', 'EN_PREPARACION', 'ENTREGADO', 'CANCELADO', 'CERRADO'],
       default: 'ABIERTO'
     },
     total: { type: Number, required: true, default: 0 },
     mesa: { type: Schema.Types.ObjectId, ref: 'Mesa', required: false },
-    usuario: { type: Schema.Types.ObjectId, refPath: 'usuarioModel', required: true },
-    usuarioModel: {
-      type: String,
-      required: true,
-      enum: ['Usuario', 'Cliente'],
-      default: 'Usuario'
-    },
+    usuario: { type: Schema.Types.ObjectId, ref: 'Usuario', required: true },
     detalles: [DetallePedidoSchema],
     qrUrl: { type: String, required: false },
 
@@ -107,37 +84,7 @@ const PedidoSchema = new Schema(
     clienteNIT: { type: String, required: false },
     cajeroAsignado: { type: Schema.Types.ObjectId, ref: 'Usuario', required: false },
     fechaHora: { type: Date, default: obtenerFechaBolivia },
-    fechaHoraBolivia: { type: String, required: false },
-
-    // <-- NUEVOS CAMPOS PARA DELIVERY -->
-    metodoEntrega: {
-      type: String,
-      enum: ['local', 'delivery'],
-      default: 'local'
-    },
-    repartidorId: {
-      type: Schema.Types.ObjectId,
-      ref: 'Usuario',
-      required: false
-    },
-    pagoConfirmado: {
-      type: Boolean,
-      default: false
-    },
-    coordenadasEntrega: {
-      lat: {
-        type: Number,
-        required: function (this: IPedido) {
-          return this.metodoEntrega === 'delivery'
-        }
-      },
-      lng: {
-        type: Number,
-        required: function (this: IPedido) {
-          return this.metodoEntrega === 'delivery'
-        }
-      }
-    }
+    fechaHoraBolivia: { type: String, required: false }
   },
   {
     timestamps: true,
@@ -145,9 +92,10 @@ const PedidoSchema = new Schema(
   }
 )
 
+PedidoSchema.index({ fechaDiaBolivia: 1, codigo: 1 }, { unique: true })
+PedidoSchema.index({ fechaDiaBolivia: 1 })
 PedidoSchema.index({ estado: 1 })
 PedidoSchema.index({ createdAt: -1 })
 PedidoSchema.index({ mesa: 1 })
-PedidoSchema.index({ repartidorId: 1 }) // Índice extra para búsquedas rápidas del repartidor
 
 export default mongoose.model<IPedido>('Pedido', PedidoSchema)

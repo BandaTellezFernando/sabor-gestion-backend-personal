@@ -3,10 +3,8 @@ import mongoose, { Schema, Document } from 'mongoose'
 
 export interface IIngrediente extends Document {
   nombre: string
-  unidadMedida: string // <-- AHORA ACEPTA CUALQUIER TEXTO
-  stockActual: number
-  stockMinimo: number
-  estado: 'Disponible' | 'Bajo' | 'Agotado'
+  unidadMedida: string
+  disponible: boolean
   fechaRegistro: Date
 }
 
@@ -16,15 +14,9 @@ const IngredienteSchema = new Schema(
     unidadMedida: {
       type: String,
       required: true,
-      trim: true // <-- LE QUITAMOS EL ENUM Y LE PUSIMOS TRIM PARA LIMPIAR ESPACIOS
+      trim: true
     },
-    stockActual: { type: Number, default: 0, min: 0 },
-    stockMinimo: { type: Number, default: 0, min: 0 },
-    estado: {
-      type: String,
-      enum: ['Disponible', 'Bajo', 'Agotado'],
-      default: 'Disponible'
-    },
+    disponible: { type: Boolean, default: true },
     fechaRegistro: { type: Date, default: Date.now }
   },
   {

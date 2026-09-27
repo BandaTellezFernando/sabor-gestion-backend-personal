@@ -107,7 +107,6 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
     ped.montoDescuento = montoDescuento
     ped.montoPropina = montoPropina
     ped.subtotalCierre = subtotal
-    ped.pagoConfirmado = true
     if (cajeroId) {
       ped.cajeroAsignado = cajeroId
     }
@@ -122,6 +121,7 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
       [
         {
           codigoPago: `PAG-${String(pedido._id).slice(-6).toUpperCase()}`,
+          codigoPedido: pedido.codigo,
           pedido: pedido._id,
           mesa: pedido.mesa,
           mesero: (pedido.usuario as any)?._id || pedido.usuario,
@@ -227,11 +227,6 @@ export const simularPagoQR = async (req: Request, res: Response): Promise<void> 
       .populate('usuario', 'nombre apellido')
       .populate('detalles.plato', 'nombre precio')
 
-    if (pedido) {
-      pedido.pagoConfirmado = true
-      await pedido.save()
-    }
-
     // Emitimos los WebSockets correspondientes
     try {
       const io = getIO()
@@ -249,12 +244,6 @@ export const simularPagoQR = async (req: Request, res: Response): Promise<void> 
         mensaje: 'Pago QR recibido correctamente',
         pedido
       })
-
-      // 3. Avisar al delivery (nuevo pedido disponible) si es entrega por delivery
-      if (pedido && pedido.metodoEntrega === 'delivery') {
-        io.emit('delivery:pago_confirmado', { pedidoId })
-        io.emit('delivery:nuevo_pedido', pedido)
-      }
     } catch (socketError) {
       console.warn('Falló la emisión del WebSocket de simulación:', socketError)
     }
@@ -290,7 +279,7 @@ export const enviarReciboCorreo = async (req: Request, res: Response): Promise<v
     }
 
     const ped: any = pedido
-    const codigo = ped.codigo || `PED-${String(ped._id).slice(-4).toUpperCase()}`
+    const codigo = ped.codigo
     const subtotal = ped.subtotalCierre || ped.total || 0
     const descuento = ped.montoDescuento || 0
     const propina = ped.montoPropina || 0

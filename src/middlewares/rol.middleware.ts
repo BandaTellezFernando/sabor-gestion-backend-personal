@@ -14,14 +14,7 @@ export const permitirRoles = (...rolesPermitidos: string[]) => {
       .toLowerCase()
       .trim()
     const allowed = rolesPermitidos.some((role) => {
-      const r = role.toLowerCase().trim()
-      if (r === userRole) return true
-      if (
-        (r === 'repartidor' || r === 'delivery') &&
-        (userRole === 'repartidor' || userRole === 'delivery')
-      )
-        return true
-      return false
+      return role.toLowerCase().trim() === userRole
     })
 
     if (!allowed) {

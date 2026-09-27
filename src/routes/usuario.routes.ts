@@ -5,12 +5,16 @@ import {
   crearUsuario,
   actualizarUsuario,
   cambiarEstadoUsuario,
-  eliminarUsuario
+  eliminarUsuario,
+  loginUsuario
 } from '../controllers/usuario.controller'
 import { verificarToken } from '../middlewares/auth.middleware'
 import { soloAdmins, permitirRoles } from '../middlewares/rol.middleware'
 
 const router = Router()
+
+// Ruta pública para inicio de sesión de empleados
+router.post('/login', loginUsuario)
 
 router.get('/', verificarToken, obtenerUsuarios)
 router.post('/', verificarToken, soloAdmins, crearUsuario)

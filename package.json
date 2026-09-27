@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "API RESTful para el Sistema Integral de Gestión Gastronómica",
   "main": "src/server.ts",
+  "packageManager": "pnpm@12.4.2",
   "scripts": {
     "dev": "nodemon --exec tsx src/server.ts",
     "build": "tsc",
@@ -18,7 +19,6 @@
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
-    "google-auth-library": "^10.9.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.3.1",
     "morgan": "^1.10.1",

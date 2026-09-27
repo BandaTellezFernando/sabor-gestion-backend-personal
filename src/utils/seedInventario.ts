@@ -25,31 +25,23 @@ const seedInventario = async () => {
       {
         nombre: 'Carne de Res',
         unidadMedida: 'kg',
-        stockActual: 10,
-        stockMinimo: 2,
-        estado: 'Disponible'
+        disponible: true
       },
       {
         nombre: 'Papa',
         unidadMedida: 'kg',
-        stockActual: 20,
-        stockMinimo: 5,
-        estado: 'Disponible'
+        disponible: true
       },
       {
         nombre: 'Huevo',
         unidadMedida: 'unidades',
-        stockActual: 15,
-        stockMinimo: 3,
-        estado: 'Disponible'
+        disponible: true
       }
     ])
 
-    console.log(
-      `✅ Ingrediente creado: "${carneDeRes.nombre}" (stock: ${carneDeRes.stockActual} kg)`
-    )
-    console.log(`✅ Ingrediente creado: "${papa.nombre}" (stock: ${papa.stockActual} kg)`)
-    console.log(`✅ Ingrediente creado: "${huevo.nombre}" (stock: ${huevo.stockActual} unidades)`)
+    console.log(`✅ Ingrediente creado: "${carneDeRes.nombre}" (disponible: ${carneDeRes.disponible})`)
+    console.log(`✅ Ingrediente creado: "${papa.nombre}" (disponible: ${papa.disponible})`)
+    console.log(`✅ Ingrediente creado: "${huevo.nombre}" (disponible: ${huevo.disponible})`)
 
     // ── 3. Buscar un plato existente ─────────────────────────────────────────
     // Prioridad: busca "Pique" (plato boliviano típico), si no existe toma el primero disponible

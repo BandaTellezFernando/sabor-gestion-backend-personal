@@ -1,12 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose'
 
-// Interfaz para el subdocumento de dirección
-export interface IDireccionDelivery {
-  etiqueta: string
-  lat: number
-  lng: number
-}
-
 export interface IUsuario extends Document {
   nombre: string
   apellido: string
@@ -17,19 +10,7 @@ export interface IUsuario extends Document {
   estado: boolean
   verificado: boolean
   ubicacion?: string
-  isAvailable?: boolean
-  direccionesDelivery: IDireccionDelivery[] // <-- Arreglo embebido
 }
-
-// Subesquema para las coordenadas del cliente
-const DireccionDeliverySchema = new Schema<IDireccionDelivery>(
-  {
-    etiqueta: { type: String, default: 'Mi Casa', trim: true },
-    lat: { type: Number, required: true },
-    lng: { type: Number, required: true }
-  },
-  { _id: true }
-) // Mantenemos el _id interno para poder identificar o borrar una dirección específica fácilmente
 
 const UsuarioSchema = new Schema(
   {
@@ -40,14 +21,12 @@ const UsuarioSchema = new Schema(
     password: { type: String, required: true },
     rol: {
       type: String,
-      enum: ['Administrador', 'Mesero', 'Cocinero', 'Cajero', 'Delivery'],
+      enum: ['Administrador', 'Mesero', 'Cocinero', 'Cajero'],
       required: true
     },
     ubicacion: { type: String, required: false },
     estado: { type: Boolean, default: true },
-    verificado: { type: Boolean, default: true },
-    isAvailable: { type: Boolean, default: false },
-    direccionesDelivery: [DireccionDeliverySchema] // <-- Inyección del subesquema
+    verificado: { type: Boolean, default: true }
   },
   {
     timestamps: true,

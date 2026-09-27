@@ -1,136 +1,86 @@
-//src/controllers/plato.controller.ts
+// src/controllers/plato.controller.ts
 import { Request, Response } from 'express'
-import Plato from '../models/Plato.js'
-import { cloudinary } from '../configs/cloudinary.js'
+import { platoService, PlatoServiceError } from '../services/plato.service'
 
 // POST /api/platos
-export const crearPlato = async (req: Request, res: Response) => {
+export const crearPlato = async (req: Request, res: Response): Promise<any> => {
   try {
-    const { nombre, descripcion, precio, imagenUrl, imagenPublicId, categoria } = req.body
-
-    if (!imagenUrl || !imagenPublicId) {
-      res
-        .status(400)
-        .json({ mensaje: 'Se requiere subir una imagen primero usando POST /api/upload' })
-      return
+    const nuevoPlato = await platoService.crearPlato(req.body)
+    return res.status(201).json(nuevoPlato)
+  } catch (error: any) {
+    if (error instanceof PlatoServiceError) {
+      return res.status(error.statusCode).json({ mensaje: error.message })
     }
-
-    const nuevoPlato = new Plato({
-      nombre,
-      descripcion,
-      precio,
-      imagenUrl,
-      imagenPublicId,
-      categoria
-    })
-
-    await nuevoPlato.save()
-    res.status(201).json(nuevoPlato)
-  } catch (error) {
-    res.status(500).json({ mensaje: 'Error al crear el plato', error })
+    return res.status(500).json({ mensaje: 'Error al crear el plato', error })
   }
 }
 
 // GET /api/platos
-// 🔥 ESTA ES LA FUNCIÓN CLAVE QUE NECESITAMOS
-export const obtenerPlatos = async (req: Request, res: Response) => {
+export const obtenerPlatos = async (req: Request, res: Response): Promise<any> => {
   try {
-    const { category } = req.query // Extraemos el id de la categoría de la URL
-    let filtro = {}
-
-    // Si el usuario mandó ?category=ID, lo añadimos al filtro de búsqueda
-    if (category) {
-      filtro = { categoria: category }
+    const category = req.query.category ? String(req.query.category) : undefined
+    const platos = await platoService.obtenerPlatos(category)
+    return res.status(200).json(platos)
+  } catch (error: any) {
+    if (error instanceof PlatoServiceError) {
+      return res.status(error.statusCode).json({ mensaje: error.message })
     }
-
-    const platos = await Plato.find(filtro).populate('categoria', 'nombre')
-
-    res.status(200).json(platos)
-  } catch (error) {
-    res.status(500).json({ mensaje: 'Error al obtener los platos', error })
+    return res.status(500).json({ mensaje: 'Error al obtener los platos', error })
   }
 }
 
 // GET /api/platos/:id
-export const obtenerPlatoPorId = async (req: Request, res: Response) => {
+export const obtenerPlatoPorId = async (req: Request, res: Response): Promise<any> => {
   try {
-    const plato = await Plato.findById(req.params.id).populate('categoria', 'nombre')
-    if (!plato) {
-      res.status(404).json({ mensaje: 'Plato no encontrado' })
-      return
+    const id = String(req.params.id)
+    const plato = await platoService.obtenerPlatoPorId(id)
+    return res.status(200).json(plato)
+  } catch (error: any) {
+    if (error instanceof PlatoServiceError) {
+      return res.status(error.statusCode).json({ mensaje: error.message })
     }
-    res.status(200).json(plato)
-  } catch (error) {
-    res.status(500).json({ mensaje: 'Error al obtener el plato', error })
+    return res.status(500).json({ mensaje: 'Error al obtener el plato', error })
   }
 }
 
 // PUT /api/platos/:id
-export const actualizarPlato = async (req: Request, res: Response) => {
+export const actualizarPlato = async (req: Request, res: Response): Promise<any> => {
   try {
-    const plato = await Plato.findById(req.params.id)
-    if (!plato) {
-      res.status(404).json({ mensaje: 'Plato no encontrado' })
-      return
+    const id = String(req.params.id)
+    const platoActualizado = await platoService.actualizarPlato(id, req.body)
+    return res.status(200).json(platoActualizado)
+  } catch (error: any) {
+    if (error instanceof PlatoServiceError) {
+      return res.status(error.statusCode).json({ mensaje: error.message })
     }
-
-    const { imagenUrl, imagenPublicId, ...resto } = req.body
-
-    // Si viene imagen nueva, eliminar la anterior de Cloudinary
-    if (imagenPublicId && imagenPublicId !== plato.imagenPublicId && plato.imagenPublicId) {
-      await cloudinary.uploader.destroy(plato.imagenPublicId)
-    }
-
-    const platoActualizado = await Plato.findByIdAndUpdate(
-      req.params.id,
-      { ...resto, imagenUrl, imagenPublicId },
-      { returnDocument: 'after', runValidators: true }
-    )
-
-    res.status(200).json(platoActualizado)
-  } catch (error) {
-    res.status(500).json({ mensaje: 'Error al actualizar el plato', error })
+    return res.status(500).json({ mensaje: 'Error al actualizar el plato', error })
   }
 }
 
 // DELETE /api/platos/:id
-export const eliminarPlato = async (req: Request, res: Response) => {
+export const eliminarPlato = async (req: Request, res: Response): Promise<any> => {
   try {
-    const plato = await Plato.findById(req.params.id)
-    if (!plato) {
-      res.status(404).json({ mensaje: 'Plato no encontrado' })
-      return
+    const id = String(req.params.id)
+    await platoService.eliminarPlato(id)
+    return res.status(200).json({ mensaje: 'Plato e imagen eliminados correctamente' })
+  } catch (error: any) {
+    if (error instanceof PlatoServiceError) {
+      return res.status(error.statusCode).json({ mensaje: error.message })
     }
-
-    // Eliminar imagen de Cloudinary antes de borrar el plato
-    if (plato.imagenPublicId) {
-      await cloudinary.uploader.destroy(plato.imagenPublicId)
-    }
-
-    await plato.deleteOne()
-    res.status(200).json({ mensaje: 'Plato e imagen eliminados correctamente' })
-  } catch (error) {
-    res.status(500).json({ mensaje: 'Error al eliminar el plato', error })
+    return res.status(500).json({ mensaje: 'Error al eliminar el plato', error })
   }
 }
 
-// PATCH /api/platos/:id/disponibilidad
-export const cambiarDisponibilidad = async (req: Request, res: Response) => {
+// PATCH /api/platos/:id/disponibilidad (Función preservada; sin endpoint activo en rutas)
+export const cambiarDisponibilidad = async (req: Request, res: Response): Promise<any> => {
   try {
-    const plato = await Plato.findById(req.params.id)
-    if (!plato) {
-      res.status(404).json({ mensaje: 'Plato no encontrado' })
-      return
+    const id = String(req.params.id)
+    const resultado = await platoService.cambiarDisponibilidad(id)
+    return res.status(200).json(resultado)
+  } catch (error: any) {
+    if (error instanceof PlatoServiceError) {
+      return res.status(error.statusCode).json({ mensaje: error.message })
     }
-
-    plato.disponible = !plato.disponible
-    await plato.save()
-
-    res.status(200).json({
-      mensaje: `Plato marcado como ${plato.disponible ? 'disponible' : 'agotado'}`,
-      disponible: plato.disponible
-    })
-  } catch (error) {
-    res.status(500).json({ mensaje: 'Error al cambiar disponibilidad', error })
+    return res.status(500).json({ mensaje: 'Error al cambiar disponibilidad', error })
   }
 }

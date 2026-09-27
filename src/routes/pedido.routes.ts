@@ -7,15 +7,11 @@ import {
   actualizarEstadoPedido,
   actualizarPedido,
   obtenerPedidosPendientesCobro,
-  solicitarCuentaPedido,
-  checkoutPedido
+  solicitarCuentaPedido
 } from '../controllers/pedido.controller'
 import { verificarToken } from '../middlewares/auth.middleware'
 
 const router = Router()
-
-// Checkout para pedidos delivery (Cliente)
-router.post('/checkout', verificarToken, checkoutPedido)
 
 // Crear un nuevo pedido (Mesero)
 router.post('/', verificarToken, crearPedido)

@@ -1,19 +1,11 @@
-//src/routes/auth.routes.ts
+// src/routes/auth.routes.ts
 import { Router } from 'express'
-import {
-  loginUsuario,
-  verificarCodigo,
-  reenviarCodigo,
-  forgotPassword,
-  resetPassword
-} from '../controllers/auth.controller'
 
 const router = Router()
 
-router.post('/login', loginUsuario)
-router.post('/verificar-codigo', verificarCodigo)
-router.post('/reenviar-codigo', reenviarCodigo)
-router.post('/forgot-password', forgotPassword)
-router.post('/reset-password', resetPassword)
+// Los endpoints de autenticación y recuperación de contraseñas de Cliente
+// (/forgot-password, /reset-password, /verificar-codigo, /reenviar-codigo)
+// han sido eliminados del sistema. La autenticación oficial y única del sistema
+// corresponde a los empleados en POST /api/usuarios/login.
 
 export default router
