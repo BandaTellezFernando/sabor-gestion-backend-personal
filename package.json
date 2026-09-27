@@ -23,7 +23,6 @@
     "mongoose": "^9.3.1",
     "morgan": "^1.10.1",
     "multer": "^2.1.1",
-    "nodemailer": "^9.0.3",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
@@ -33,7 +32,6 @@
     "@types/morgan": "^1.9.10",
     "@types/multer": "^2.1.0",
     "@types/node": "^20.0.0",
-    "@types/nodemailer": "^8.0.0",
     "@typescript-eslint/parser": "^8.59.2",
     "eslint": "^8.0.0",
     "nodemon": "^3.1.14",

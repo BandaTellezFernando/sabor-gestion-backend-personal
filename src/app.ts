@@ -4,8 +4,6 @@ import cors from 'cors'
 import morgan from 'morgan'
 import path from 'path' // <-- Por si necesitas servir imágenes
 
-// 1. Importamos las rutas
-import authRoutes from './routes/auth.routes'
 import usuarioRoutes from './routes/usuario.routes'
 import categoriaRoutes from './routes/categoria.routes'
 import mesaRoutes from './routes/mesa.routes'
@@ -43,7 +41,6 @@ app.use(express.urlencoded({ extended: true }))
 
 // Rutas
 app.use('/api/upload', uploadRouters)
-app.use('/api/auth', authRoutes)
 app.use('/api/usuarios', usuarioRoutes)
 app.use('/api/categorias', categoriaRoutes)
 app.use('/api/mesas', mesaRoutes)
