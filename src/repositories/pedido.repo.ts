@@ -1,5 +1,5 @@
 // src/repositories/pedido.repo.ts
-import mongoose, { Types } from 'mongoose'
+import mongoose, { Types, ClientSession } from 'mongoose'
 import Pedido, { IPedido } from '../models/Pedido'
 import CierreCaja from '../models/CierreCaja'
 import { ESTADOS_PEDIDO } from '../utils/constants'
@@ -81,12 +81,13 @@ export class PedidoRepository {
    */
   async actualizar(
     id: string | Types.ObjectId,
-    updates: Record<string, any>
+    updates: Record<string, any>,
+    session?: ClientSession
   ): Promise<IPedido | null> {
     return await Pedido.findByIdAndUpdate(
       id,
       { $set: updates },
-      { returnDocument: 'after' }
+      { returnDocument: 'after', session }
     )
       .populate('detalles.plato', 'nombre precio')
       .populate('mesa', 'numero')
@@ -98,12 +99,13 @@ export class PedidoRepository {
    */
   async actualizarEstado(
     id: string | Types.ObjectId,
-    nuevoEstado: string
+    nuevoEstado: string,
+    session?: ClientSession
   ): Promise<IPedido | null> {
     return await Pedido.findByIdAndUpdate(
       id,
       { estado: nuevoEstado },
-      { returnDocument: 'after' }
+      { returnDocument: 'after', session }
     )
       .populate('mesa', 'numero')
       .populate('detalles.plato', 'nombre precio')
@@ -113,8 +115,8 @@ export class PedidoRepository {
   /**
    * Guarda las modificaciones de una instancia de pedido ya existente
    */
-  async guardar(pedidoDoc: IPedido): Promise<IPedido> {
-    return await pedidoDoc.save()
+  async guardar(pedidoDoc: IPedido, session?: ClientSession): Promise<IPedido> {
+    return await pedidoDoc.save(session ? { session } : undefined)
   }
 
   /**

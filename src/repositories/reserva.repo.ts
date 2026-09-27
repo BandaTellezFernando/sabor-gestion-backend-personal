@@ -1,5 +1,5 @@
 // src/repositories/reserva.repo.ts
-import { Types } from 'mongoose'
+import { Types, ClientSession } from 'mongoose'
 import Reserva, { IReserva } from '../models/Reserva'
 
 export { IReserva } from '../models/Reserva'
@@ -81,12 +81,17 @@ export class ReservaRepository {
    */
   async contarReservasFuturasPorMesa(
     mesaId: string | Types.ObjectId,
-    desdeFecha: Date
+    desdeFecha: Date,
+    session?: ClientSession
   ): Promise<number> {
-    return await Reserva.countDocuments({
+    const query = Reserva.countDocuments({
       mesa: mesaId,
       fecha: { $gte: desdeFecha }
     })
+    if (session) {
+      query.session(session)
+    }
+    return await query
   }
 }
 

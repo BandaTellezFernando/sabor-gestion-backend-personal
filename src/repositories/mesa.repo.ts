@@ -1,5 +1,5 @@
 // src/repositories/mesa.repo.ts
-import mongoose, { Types } from 'mongoose'
+import mongoose, { Types, ClientSession } from 'mongoose'
 import Mesa, { IMesa } from '../models/Mesa'
 
 export { IMesa } from '../models/Mesa'
@@ -135,7 +135,11 @@ export class MesaRepository {
   /**
    * Actualiza los campos de una mesa existente y la devuelve con su ubicación poblada.
    */
-  async actualizar(id: string, datos: MesaActualizarDatos): Promise<MesaPobladaDoc | null> {
+  async actualizar(
+    id: string,
+    datos: MesaActualizarDatos,
+    session?: ClientSession
+  ): Promise<MesaPobladaDoc | null> {
     const update: Record<string, any> = {}
 
     if (datos.numero !== undefined) update.numero = datos.numero
@@ -154,18 +158,23 @@ export class MesaRepository {
     }
 
     return (await Mesa.findByIdAndUpdate(id, update, {
-      returnDocument: 'after'
+      returnDocument: 'after',
+      session
     }).populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
   }
 
   /**
    * Actualiza únicamente el estado de una mesa y la devuelve con su ubicación poblada.
    */
-  async actualizarEstado(id: string, backendStatus: string): Promise<MesaPobladaDoc | null> {
+  async actualizarEstado(
+    id: string,
+    backendStatus: string,
+    session?: ClientSession
+  ): Promise<MesaPobladaDoc | null> {
     return (await Mesa.findByIdAndUpdate(
       id,
       { estado: backendStatus },
-      { returnDocument: 'after' }
+      { returnDocument: 'after', session }
     ).populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
   }
 
