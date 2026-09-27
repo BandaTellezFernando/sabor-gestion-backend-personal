@@ -1,10 +1,15 @@
-//src/models/Contador.ts
-import mongoose, { Schema } from 'mongoose'
+// src/models/Contador.ts
+import mongoose, { Schema, Document } from 'mongoose'
 
-const ContadorSchema = new Schema({
+export interface IContador extends Document {
+  nombre_secuencia: string
+  secuencia: number
+}
+
+const ContadorSchema = new Schema<IContador>({
   nombre_secuencia: { type: String, required: true, unique: true },
   secuencia: { type: Number, default: 0 }
 })
 
-// Nota: No usamos interfaz aquí para no pelear con 'Document' de Mongoose
-export default mongoose.model('Contador', ContadorSchema)
+export default mongoose.model<IContador>('Contador', ContadorSchema)
+

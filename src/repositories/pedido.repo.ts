@@ -155,6 +155,22 @@ export class PedidoRepository {
       fechaCierre: { $gte: desdeFecha }
     }).sort({ fechaCierre: -1 })
   }
+
+  /**
+   * Obtiene los códigos de pedidos registrados en un día específico de Bolivia
+   * Utilizado para inicializar la secuencia del contador diario (Smart Seed)
+   */
+  async obtenerCodigosPorFechaDia(
+    fechaDiaBolivia: string,
+    session?: ClientSession
+  ): Promise<{ codigo: string }[]> {
+    return await Pedido.find(
+      { fechaDiaBolivia, codigo: /^PED-\d{4}$/ },
+      { codigo: 1 },
+      session ? { session } : {}
+    ).lean()
+  }
 }
 
 export const pedidoRepository = new PedidoRepository()
+

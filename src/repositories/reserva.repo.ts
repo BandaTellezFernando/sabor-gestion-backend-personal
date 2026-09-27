@@ -93,6 +93,18 @@ export class ReservaRepository {
     }
     return await query
   }
+
+  /**
+   * Obtiene los códigos de reservas registradas en un día específico de Bolivia
+   * Utilizado para inicializar la secuencia del contador diario (Smart Seed)
+   */
+  async obtenerCodigosPorFechaDia(fechaDiaBolivia: string): Promise<{ codigo: string }[]> {
+    return await Reserva.find(
+      { fechaDiaBolivia, codigo: /^RES-\d{4}$/ },
+      { codigo: 1 }
+    ).lean()
+  }
 }
 
 export const reservaRepository = new ReservaRepository()
+
