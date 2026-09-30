@@ -117,24 +117,6 @@ export class PlatoService {
 
     await this.platoRepo.eliminar(id)
   }
-
-  /**
-   * Alterna la disponibilidad de un plato
-   */
-  async cambiarDisponibilidad(id: string): Promise<{ mensaje: string; disponible: boolean }> {
-    const plato = await this.platoRepo.buscarPorId(id)
-    if (!plato) {
-      throw new PlatoServiceError(404, 'Plato no encontrado')
-    }
-
-    const nuevoEstado = !plato.disponible
-    await this.platoRepo.actualizarDisponibilidad(id, nuevoEstado)
-
-    return {
-      mensaje: `Plato marcado como ${nuevoEstado ? 'disponible' : 'agotado'}`,
-      disponible: nuevoEstado
-    }
-  }
 }
 
 export const platoService = new PlatoService()

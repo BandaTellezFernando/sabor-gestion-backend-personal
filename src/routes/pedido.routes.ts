@@ -10,28 +10,49 @@ import {
   solicitarCuentaPedido
 } from '../controllers/pedido.controller'
 import { verificarToken } from '../middlewares/auth.middleware'
+import { permitirRoles } from '../middlewares/rol.middleware'
 
 const router = Router()
 
-// Crear un nuevo pedido (Mesero)
-router.post('/', verificarToken, crearPedido)
+// Crear un nuevo pedido (Mesero, Administrador)
+router.post('/', verificarToken, permitirRoles('Mesero', 'Administrador'), crearPedido)
 
-// Listar todos los pedidos (Cocina / Admin)
+// Listar todos los pedidos (Todos los empleados autenticados)
 router.get('/', verificarToken, obtenerPedidos)
 
-// Obtener pedidos pendientes de cobro para Cajero
-router.get('/pendientes-cobro', verificarToken, obtenerPedidosPendientesCobro)
+// Obtener pedidos pendientes de cobro para Cajero (Cajero, Administrador)
+router.get(
+  '/pendientes-cobro',
+  verificarToken,
+  permitirRoles('Cajero', 'Administrador'),
+  obtenerPedidosPendientesCobro
+)
 
-// Solicitar cuenta de un pedido (Mesero -> Cajero)
-router.patch('/:id/solicitar-cuenta', verificarToken, solicitarCuentaPedido)
+// Solicitar cuenta de un pedido (Mesero, Administrador)
+router.patch(
+  '/:id/solicitar-cuenta',
+  verificarToken,
+  permitirRoles('Mesero', 'Administrador'),
+  solicitarCuentaPedido
+)
 
-// Actualizar contenido de un pedido existente (Añadir más platos)
-router.put('/:id', verificarToken, actualizarPedido)
+// Actualizar contenido de un pedido existente (Mesero, Administrador)
+router.put('/:id', verificarToken, permitirRoles('Mesero', 'Administrador'), actualizarPedido)
 
-// Actualizar el estado del pedido: "Por hacer" -> "Cocinando" -> "Listos" (Cocina)
-router.patch('/:id/estado', verificarToken, actualizarEstadoPedido)
+// Actualizar el estado del pedido: "Por hacer" -> "Cocinando" -> "Listos" (Cocinero, Administrador)
+router.patch(
+  '/:id/estado',
+  verificarToken,
+  permitirRoles('Cocinero', 'Administrador'),
+  actualizarEstadoPedido
+)
 
-// Cancelar un pedido y liberar la mesa
-router.patch('/:id/cancel', verificarToken, cancelarPedido)
+// Cancelar un pedido y liberar la mesa (Mesero, Administrador)
+router.patch(
+  '/:id/cancel',
+  verificarToken,
+  permitirRoles('Mesero', 'Administrador'),
+  cancelarPedido
+)
 
 export default router

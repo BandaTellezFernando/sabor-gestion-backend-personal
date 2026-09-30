@@ -70,17 +70,3 @@ export const eliminarPlato = async (req: Request, res: Response): Promise<any> =
     return res.status(500).json({ mensaje: 'Error al eliminar el plato', error })
   }
 }
-
-// PATCH /api/platos/:id/disponibilidad (Función preservada; sin endpoint activo en rutas)
-export const cambiarDisponibilidad = async (req: Request, res: Response): Promise<any> => {
-  try {
-    const id = String(req.params.id)
-    const resultado = await platoService.cambiarDisponibilidad(id)
-    return res.status(200).json(resultado)
-  } catch (error: any) {
-    if (error instanceof PlatoServiceError) {
-      return res.status(error.statusCode).json({ mensaje: error.message })
-    }
-    return res.status(500).json({ mensaje: 'Error al cambiar disponibilidad', error })
-  }
-}

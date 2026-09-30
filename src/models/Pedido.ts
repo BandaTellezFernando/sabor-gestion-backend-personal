@@ -17,8 +17,8 @@ const DetallePedidoSchema = new Schema<IDetallePedido>(
     plato: { type: Schema.Types.ObjectId, ref: 'Plato', required: true },
     nombrePlato: { type: String, default: 'Plato' },
     cantidad: { type: Number, required: true, min: 1 },
-    precioUnitario: { type: Number, required: true },
-    subtotal: { type: Number, required: true },
+    precioUnitario: { type: Number, required: true, min: 0 },
+    subtotal: { type: Number, required: true, min: 0 },
     observacion: { type: String, default: '' }
   },
   { _id: false }
@@ -64,7 +64,7 @@ const PedidoSchema = new Schema(
       enum: ['ABIERTO', 'EN_PREPARACION', 'ENTREGADO', 'CANCELADO', 'CERRADO'],
       default: 'ABIERTO'
     },
-    total: { type: Number, required: true, default: 0 },
+    total: { type: Number, required: true, default: 0, min: 0 },
     mesa: { type: Schema.Types.ObjectId, ref: 'Mesa', required: false },
     usuario: { type: Schema.Types.ObjectId, ref: 'Usuario', required: true },
     detalles: [DetallePedidoSchema],
@@ -76,9 +76,9 @@ const PedidoSchema = new Schema(
       enum: ['Efectivo', 'Tarjeta', 'Transferencia', 'QR', 'Otro'],
       required: false
     },
-    montoDescuento: { type: Number, default: 0 },
-    montoPropina: { type: Number, default: 0 },
-    subtotalCierre: { type: Number, default: 0 },
+    montoDescuento: { type: Number, default: 0, min: 0 },
+    montoPropina: { type: Number, default: 0, min: 0 },
+    subtotalCierre: { type: Number, default: 0, min: 0 },
     clienteNombre: { type: String, required: false },
     clienteCI: { type: String, required: false },
     clienteNIT: { type: String, required: false },

@@ -1,0 +1,3461 @@
+openapi: 3.0.3
+info:
+  title: Sabor & Gestión API
+  description: API REST del sistema Sabor & Gestión para la gestión operativa del restaurante.
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000
+    description: Servidor de desarrollo local
+tags:
+  - name: Usuarios
+    description: Gestión de empleados, autenticación JWT, roles y control de caja
+  - name: Categorías
+    description: Categorización de platos del menú
+  - name: Platos
+    description: Catálogo de platos y gestión de menú
+  - name: Mesas
+    description: Administración y estado operativo de mesas en salón
+  - name: Ubicaciones
+    description: Áreas y zonas físicas del restaurante
+  - name: Ingredientes
+    description: Inventario de insumos e ingredientes con disponibilidad booleana
+  - name: Recetas
+    description: Escandallos y relación plato-ingredientes
+  - name: Pedidos
+    description: 'Flujo completo de órdenes: creación, cocina, cuenta y cancelación'
+  - name: Pagos
+    description: Cobro, arqueo, generación de QR, simulación y facturación por correo
+  - name: Dashboard
+    description: Métricas, KPIs de ventas, ocupación y reportes del negocio
+  - name: Upload
+    description: Carga de imágenes multimedia hacia Cloudinary
+  - name: Health
+    description: Verificación de salud y disponibilidad del servicio
+paths:
+  /api/health:
+    get:
+      tags:
+        - Health
+      summary: Verificar el estado del servidor
+      description: Endpoint público para comprobar la operatividad y estado de salud del backend.
+      operationId: obtenerEstadoSalud
+      responses:
+        '200':
+          description: Servidor en funcionamiento
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: success
+                message: API de Sabor & Gestión funcionando correctamente 🚀
+  /api/upload:
+    post:
+      tags:
+        - Upload
+      summary: Subir imagen a Cloudinary
+      description: Sube un archivo de imagen al almacenamiento en la nube Cloudinary. Requiere rol Administrador. Debe enviarse como multipart/form-data con el campo "imagen".
+      operationId: subirImagen
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - imagen
+              properties:
+                imagen:
+                  type: string
+                  format: binary
+                  description: Archivo de imagen a subir (JPG, PNG, WebP)
+      responses:
+        '200':
+          description: Imagen subida exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubirImagenResponse'
+        '400':
+          description: No se proporcionó ninguna imagen válida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error interno al procesar la imagen
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+  /api/usuarios/login:
+    post:
+      tags:
+        - Usuarios
+      summary: Iniciar sesión de empleado
+      description: Endpoint público para autenticación de empleados (Administrador, Mesero, Cajero, Cocinero) con correo y contraseña. Devuelve token JWT firmado.
+      operationId: loginUsuario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginUsuarioRequest'
+      responses:
+        '200':
+          description: Inicio de sesión exitoso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginUsuarioResponse'
+        '400':
+          description: Correo y contraseña requeridos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: Credenciales inválidas o usuario inactivo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+  /api/usuarios:
+    get:
+      tags:
+        - Usuarios
+      summary: Listar todos los usuarios
+      description: Retorna la lista de empleados registrados con contraseñas excluidas. Requiere usuario autenticado.
+      operationId: obtenerUsuarios
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lista de usuarios obtenida exitosamente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UsuarioNormalizado'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al obtener usuarios
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+    post:
+      tags:
+        - Usuarios
+      summary: Crear un nuevo usuario
+      description: Crea un nuevo usuario empleado. Requiere rol de Administrador. Valida unicidad dual de CI y correo electrónico.
+      operationId: crearUsuario
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearUsuarioRequest'
+      responses:
+        '201':
+          description: Usuario creado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrearUsuarioResponse'
+        '400':
+          description: Validación fallida o correo/CI duplicado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error en el servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/usuarios/{id}:
+    put:
+      tags:
+        - Usuarios
+      summary: Actualizar datos de un usuario
+      description: Actualiza los datos del empleado especificado por ID. Requiere rol de Administrador. Si se envía nueva contraseña, se hashea con salt 10.
+      operationId: actualizarUsuario
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador del usuario
+          schema:
+            type: string
+          example: '{{usuarioId}}'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActualizarUsuarioRequest'
+      responses:
+        '200':
+          description: Usuario actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActualizarUsuarioResponse'
+        '400':
+          description: Datos inválidos o duplicado de CI/correo con otro usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Usuario no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al actualizar usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+    delete:
+      tags:
+        - Usuarios
+      summary: Eliminar usuario físicamente
+      description: Elimina permanentemente un usuario por su ID. Requiere rol de Administrador.
+      operationId: eliminarUsuario
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador del usuario a eliminar
+          schema:
+            type: string
+          example: '{{usuarioId}}'
+      responses:
+        '200':
+          description: Usuario eliminado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeRespuestaResponse'
+              example:
+                mensaje: Usuario eliminado del sistema exitosamente
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Usuario no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al eliminar usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+  /api/usuarios/{id}/estado:
+    patch:
+      tags:
+        - Usuarios
+      summary: Cambiar estado activo/inactivo de un usuario
+      description: Activa o desactiva a un usuario. Permitido para roles Administrador y Cajero. Si el usuario es Cajero, solo puede cambiar su propia caja y debe existir al menos una caja activa restante. Si se desactiva con un reporte de arqueo, se genera automáticamente el CierreCaja en la base de datos.
+      operationId: cambiarEstadoUsuario
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador del usuario
+          schema:
+            type: string
+          example: '{{usuarioId}}'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CambiarEstadoUsuarioRequest'
+      responses:
+        '200':
+          description: Estado del usuario actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CambiarEstadoUsuarioResponse'
+        '400':
+          description: Debe existir al menos una caja activa en el sistema
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (un cajero solo puede cambiar su propia caja o rol sin permisos)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Usuario no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al cambiar estado del usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+  /api/categorias:
+    get:
+      tags:
+        - Categorías
+      summary: Listar categorías del menú
+      description: Endpoint público para consultar todas las categorías registradas en el menú.
+      operationId: obtenerCategorias
+      responses:
+        '200':
+          description: Lista de categorías obtenida exitosamente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Categoria'
+        '500':
+          description: Error al obtener las categorías
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+    post:
+      tags:
+        - Categorías
+      summary: Crear una nueva categoría
+      description: Crea una categoría de menú. Requiere rol de Administrador. Valida que el nombre contenga solo letras y no esté duplicado.
+      operationId: crearCategoria
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoriaRequest'
+      responses:
+        '201':
+          description: Categoría creada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Categoria'
+        '400':
+          description: Nombre inválido o duplicado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al crear la categoría
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+  /api/categorias/{id}:
+    put:
+      tags:
+        - Categorías
+      summary: Actualizar una categoría existente
+      description: Actualiza el nombre de una categoría. Requiere rol de Administrador.
+      operationId: actualizarCategoria
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador de la categoría
+          schema:
+            type: string
+          example: '{{categoriaId}}'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoriaRequest'
+      responses:
+        '200':
+          description: Categoría actualizada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Categoria'
+        '400':
+          description: Nombre inválido o duplicado con otra categoría
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Categoría no encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al actualizar categoría
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+    delete:
+      tags:
+        - Categorías
+      summary: Eliminar una categoría
+      description: Elimina una categoría por su identificador. Requiere rol de Administrador.
+      operationId: eliminarCategoria
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador de la categoría
+          schema:
+            type: string
+          example: '{{categoriaId}}'
+      responses:
+        '200':
+          description: Categoría eliminada correctamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeRespuestaResponse'
+              example:
+                mensaje: Categoría eliminada correctamente
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Categoría no encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al eliminar categoría
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+  /api/platos:
+    get:
+      tags:
+        - Platos
+      summary: Listar catálogo de platos
+      description: Endpoint público para consultar todos los platos del catálogo, con filtrado opcional por categoría.
+      operationId: obtenerPlatos
+      parameters:
+        - name: category
+          in: query
+          required: false
+          description: ID de la categoría para filtrar platos
+          schema:
+            type: string
+          example: '{{categoriaId}}'
+      responses:
+        '200':
+          description: Lista de platos obtenida exitosamente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Plato'
+        '500':
+          description: Error al obtener platos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+    post:
+      tags:
+        - Platos
+      summary: Crear un nuevo plato
+      description: Crea un nuevo plato. Requiere rol Administrador. Obligatorio enviar imagenUrl e imagenPublicId obtenidas previamente desde POST /api/upload.
+      operationId: crearPlato
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearPlatoRequest'
+      responses:
+        '201':
+          description: Plato creado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plato'
+        '400':
+          description: Falta imagenUrl o imagenPublicId de Cloudinary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al crear el plato
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+  /api/platos/{id}:
+    get:
+      tags:
+        - Platos
+      summary: Obtener detalle de un plato
+      description: Obtiene el detalle de un plato por ID con su categoría poblada. Requiere usuario autenticado.
+      operationId: obtenerPlatoPorId
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador del plato
+          schema:
+            type: string
+          example: '{{platoId}}'
+      responses:
+        '200':
+          description: Detalle del plato
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plato'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Plato no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al obtener el plato
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+    put:
+      tags:
+        - Platos
+      summary: Actualizar un plato
+      description: Actualiza los campos de un plato. Requiere rol Administrador. Si se reemplaza la imagen, elimina automáticamente la anterior de Cloudinary.
+      operationId: actualizarPlato
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador del plato
+          schema:
+            type: string
+          example: '{{platoId}}'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActualizarPlatoRequest'
+      responses:
+        '200':
+          description: Plato actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plato'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Plato no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al actualizar el plato
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+    delete:
+      tags:
+        - Platos
+      summary: Eliminar un plato e imagen
+      description: Elimina el plato de la base de datos y su archivo asociado en Cloudinary. Requiere rol de Administrador.
+      operationId: eliminarPlato
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador del plato
+          schema:
+            type: string
+          example: '{{platoId}}'
+      responses:
+        '200':
+          description: Plato e imagen eliminados correctamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeRespuestaResponse'
+              example:
+                mensaje: Plato e imagen eliminados correctamente
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Plato no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al eliminar el plato
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+  /api/mesas:
+    get:
+      tags:
+        - Mesas
+      summary: Listar todas las mesas
+      description: Obtiene las mesas del restaurante con su ubicación poblada y estado mapeado (Disponible, Ocupada, Esperando pago). Admite filtrado por ubicación. Requiere autenticación.
+      operationId: obtenerMesas
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: location
+          in: query
+          required: false
+          description: Filtrar por ID o nombre de ubicación
+          schema:
+            type: string
+          example: '{{ubicacionId}}'
+      responses:
+        '200':
+          description: Lista de mesas obtenida exitosamente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MesaDTO'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al obtener mesas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+    post:
+      tags:
+        - Mesas
+      summary: Crear mesa o lote de mesas
+      description: Crea una mesa o un lote de mesas. Requiere rol Administrador. Acepta nomenclatura bilingüe (name/numero, capacity/capacidad, location/ubicacion, type/tipo, status/estado).
+      operationId: crearMesa
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/CrearMesaRequest'
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/CrearMesaRequest'
+      responses:
+        '201':
+          description: Mesa o lote creado exitosamente
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/MesaDTO'
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/MesaDTO'
+        '400':
+          description: Datos de entrada inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al crear la mesa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/mesas/{id}:
+    get:
+      tags:
+        - Mesas
+      summary: Obtener detalle de una mesa
+      description: Obtiene los datos detallados de una mesa por su ID. Requiere autenticación.
+      operationId: obtenerMesaPorId
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador de la mesa
+          schema:
+            type: string
+          example: '{{mesaId}}'
+      responses:
+        '200':
+          description: Detalle de la mesa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MesaDTO'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Mesa no encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al obtener la mesa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+    put:
+      tags:
+        - Mesas
+      summary: Actualizar campos generales de una mesa
+      description: Actualiza nombre, capacidad, tipo o ubicación de una mesa. Requiere rol de Administrador. Valida regla de formato de nombre de mesa.
+      operationId: actualizarMesa
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador de la mesa
+          schema:
+            type: string
+          example: '{{mesaId}}'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActualizarMesaRequest'
+      responses:
+        '200':
+          description: Mesa actualizada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MesaDTO'
+        '400':
+          description: Regla de formato de nombre fallida o nombre ya registrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Mesa no encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al actualizar mesa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+    delete:
+      tags:
+        - Mesas
+      summary: Eliminar una mesa
+      description: Elimina una mesa por ID. Requiere rol Administrador.
+      operationId: eliminarMesa
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador de la mesa
+          schema:
+            type: string
+          example: '{{mesaId}}'
+      responses:
+        '200':
+          description: Mesa eliminada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EliminarMesaResponse'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Mesa no encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al eliminar mesa
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/mesas/{id}/estado:
+    patch:
+      tags:
+        - Mesas
+      summary: Actualizar solo el estado de una mesa
+      description: 'Actualiza el estado operativo de una mesa. Valores aceptados: "Libre", "Ocupada", "Cuenta Solicitada". Requiere autenticación.'
+      operationId: actualizarEstadoMesa
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador de la mesa
+          schema:
+            type: string
+          example: '{{mesaId}}'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActualizarEstadoMesaRequest'
+      responses:
+        '200':
+          description: Estado de la mesa actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MesaDTO'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Mesa no encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al actualizar estado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/ubicaciones:
+    get:
+      tags:
+        - Ubicaciones
+      summary: Listar ubicaciones físicas
+      description: Obtiene la lista de todas las ubicaciones o áreas registradas (ej. Salón Principal, Terraza, Patio). Requiere usuario autenticado.
+      operationId: obtenerUbicaciones
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lista de ubicaciones
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ubicacion'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al obtener ubicaciones
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+    post:
+      tags:
+        - Ubicaciones
+      summary: Crear una nueva ubicación
+      description: Registra una nueva área física en el restaurante. Requiere rol Administrador. Valida unicidad de nombre.
+      operationId: crearUbicacion
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearUbicacionRequest'
+      responses:
+        '201':
+          description: Ubicación creada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ubicacion'
+        '400':
+          description: Nombre requerido o ya existente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al crear ubicación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/ubicaciones/{id}:
+    put:
+      tags:
+        - Ubicaciones
+      summary: Actualizar una ubicación
+      description: Actualiza el nombre o descripción de una ubicación existente. Requiere rol Administrador.
+      operationId: actualizarUbicacion
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador de la ubicación
+          schema:
+            type: string
+          example: '{{ubicacionId}}'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearUbicacionRequest'
+      responses:
+        '200':
+          description: Ubicación actualizada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ubicacion'
+        '400':
+          description: Nombre requerido o ubicación ya existente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Ubicación no encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al actualizar ubicación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+    delete:
+      tags:
+        - Ubicaciones
+      summary: Eliminar una ubicación
+      description: Elimina una ubicación por ID. Requiere rol Administrador.
+      operationId: eliminarUbicacion
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador de la ubicación
+          schema:
+            type: string
+          example: '{{ubicacionId}}'
+      responses:
+        '200':
+          description: Ubicación eliminada correctamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeRespuestaResponse'
+              example:
+                mensaje: Ubicación eliminada correctamente
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Ubicación no encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al eliminar ubicación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/inventario/estado:
+    get:
+      tags:
+        - Ingredientes
+      summary: Consultar estado general de inventario
+      description: Obtiene todos los ingredientes con su unidad de medida y disponibilidad booleana actual. Requiere autenticación.
+      operationId: obtenerEstadoInventario
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lista de ingredientes y disponibilidad
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ingrediente'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al obtener el estado del inventario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/inventario/ingredientes:
+    get:
+      tags:
+        - Ingredientes
+      summary: Listar ingredientes del inventario
+      description: Lista todos los ingredientes registrados en el inventario. Requiere autenticación.
+      operationId: listarIngredientes
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lista de ingredientes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ingrediente'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al obtener ingredientes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+    post:
+      tags:
+        - Ingredientes
+      summary: Crear un nuevo ingrediente
+      description: Crea un ingrediente con su unidad de medida y estado de disponibilidad booleano. Requiere rol de Administrador.
+      operationId: crearIngrediente
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearIngredienteRequest'
+      responses:
+        '201':
+          description: Ingrediente creado con éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrearIngredienteResponse'
+        '400':
+          description: Nombre o unidad requeridos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al crear ingrediente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/inventario/ingredientes/{id}:
+    put:
+      tags:
+        - Ingredientes
+      summary: Actualizar un ingrediente
+      description: Actualiza nombre, unidad de medida o disponibilidad booleana de un ingrediente. Requiere rol de Administrador.
+      operationId: actualizarIngrediente
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador del ingrediente
+          schema:
+            type: string
+          example: '{{ingredienteId}}'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActualizarIngredienteRequest'
+      responses:
+        '200':
+          description: Ingrediente actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActualizarIngredienteResponse'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Ingrediente no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al actualizar ingrediente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+    delete:
+      tags:
+        - Ingredientes
+      summary: Eliminar un ingrediente
+      description: Elimina un ingrediente del inventario por su ID. Requiere rol de Administrador.
+      operationId: eliminarIngrediente
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador del ingrediente
+          schema:
+            type: string
+          example: '{{ingredienteId}}'
+      responses:
+        '200':
+          description: Ingrediente eliminado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeRespuestaResponse'
+              example:
+                mensaje: Ingrediente eliminado exitosamente
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Ingrediente no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al eliminar ingrediente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/inventario/recetas:
+    get:
+      tags:
+        - Recetas
+      summary: Listar recetas / escandallos
+      description: Obtiene todas las recetas registradas en el sistema junto con los ingredientes asociados a cada plato. Requiere autenticación.
+      operationId: obtenerRecetas
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lista de recetas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Receta'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al obtener recetas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+    post:
+      tags:
+        - Recetas
+      summary: Crear o actualizar receta de un plato
+      description: Crea o actualiza la receta asociada a un plato. Si ya existía, actualiza los ingredientes (200); de lo contrario la crea (201). Requiere rol Administrador.
+      operationId: guardarReceta
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GuardarRecetaRequest'
+      responses:
+        '200':
+          description: Receta actualizada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuardarRecetaResponse'
+        '201':
+          description: Receta creada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuardarRecetaResponse'
+        '400':
+          description: Falta ID de plato o lista de ingredientes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: El plato indicado no existe en la base de datos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al guardar la receta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/inventario/recetas/{id}:
+    delete:
+      tags:
+        - Recetas
+      summary: Eliminar una receta
+      description: Elimina una receta por su identificador único. Requiere rol de Administrador.
+      operationId: eliminarReceta
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador único de la receta
+          schema:
+            type: string
+          example: '{{recetaId}}'
+      responses:
+        '200':
+          description: Receta eliminada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeRespuestaResponse'
+              example:
+                mensaje: Receta eliminada exitosamente
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Receta no encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al eliminar receta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/pedidos:
+    get:
+      tags:
+        - Pedidos
+      summary: Listar pedidos con filtros
+      description: 'Obtiene los pedidos del restaurante. Admite filtrado por hoy, fecha, mesa, activo, cajero, mesero, o reportesCierre=true para arqueos de 48h. Requiere autenticación (personal operativo: Mesero, Cajero, Cocinero, Administrador).'
+      operationId: obtenerPedidos
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: hoy
+          in: query
+          required: false
+          description: Filtrar pedidos del día de hoy
+          schema:
+            type: boolean
+        - name: fecha
+          in: query
+          required: false
+          description: Filtrar por fecha específica (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+          example: '2026-09-27'
+        - name: mesa
+          in: query
+          required: false
+          description: ID de la mesa para filtrar sus pedidos
+          schema:
+            type: string
+          example: '{{mesaId}}'
+        - name: activo
+          in: query
+          required: false
+          description: Filtrar solo pedidos activos (ABIERTO, EN_PREPARACION, ENTREGADO, CUENTA_SOLICITADA)
+          schema:
+            type: boolean
+        - name: cajero
+          in: query
+          required: false
+          description: ID del cajero asignado
+          schema:
+            type: string
+          example: '{{usuarioId}}'
+        - name: mesero
+          in: query
+          required: false
+          description: ID del usuario mesero que creó el pedido
+          schema:
+            type: string
+          example: '{{usuarioId}}'
+        - name: reportesCierre
+          in: query
+          required: false
+          description: Retorna los reportes de cierre de caja registrados en las últimas 48 horas
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Lista de pedidos o reportes de cierre
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Pedido'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al obtener pedidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+    post:
+      tags:
+        - Pedidos
+      summary: Crear un nuevo pedido
+      description: Crea un pedido validando previamente la disponibilidad de los ingredientes requeridos según las recetas. El backend calcula los subtotales e importes con los precios oficiales de Plato obtenidos vía PlatoRepository y almacena el snapshot histórico de precioUnitario; los importes enviados por el cliente no son confiables y se recalculan. Si se envía mesa y no existe en la base de datos, retorna 404. Genera el código correlativo PED-XXXX y cambia automáticamente el estado de la mesa a "Ocupada". Requiere rol Mesero o Administrador.
+      operationId: crearPedido
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearPedidoRequest'
+      responses:
+        '201':
+          description: Pedido registrado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pedido'
+        '400':
+          description: Error de validación (ingredientes no disponibles, montos negativos o cantidades inválidas)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PedidoErrorIngredientesResponse'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Mesero o Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Mesa no encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al registrar pedido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/pedidos/pendientes-cobro:
+    get:
+      tags:
+        - Pedidos
+      summary: Listar pedidos pendientes de cobro para Caja
+      description: Obtiene las órdenes activas cuyas mesas están en estado "Cuenta Solicitada", estructuradas con subtotales, propinas y desglose de ítems para el cobro. Requiere rol Cajero o Administrador.
+      operationId: obtenerPedidosPendientesCobro
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cajero
+          in: query
+          required: false
+          description: ID de cajero asignado
+          schema:
+            type: string
+          example: '{{usuarioId}}'
+      responses:
+        '200':
+          description: Lista de pedidos en espera de cobro
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PayloadCajaDTO'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Cajero o Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al obtener pedidos pendientes de cobro
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/pedidos/{id}:
+    put:
+      tags:
+        - Pedidos
+      summary: Actualizar contenido de un pedido
+      description: Actualiza platos (detalles), descuentos, propinas o datos del comensal. El backend recalcula los subtotales e importes con los precios oficiales de Plato obtenidos vía PlatoRepository y almacena el snapshot histórico; no confía en montos provistos por el cliente. Si el pedido estaba en ENTREGADO y se añaden platos, se reabre a ABIERTO y la mesa se reactiva como Ocupada. Requiere rol Mesero o Administrador.
+      operationId: actualizarPedido
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador del pedido
+          schema:
+            type: string
+          example: '{{pedidoId}}'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActualizarPedidoRequest'
+      responses:
+        '200':
+          description: Pedido actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pedido'
+        '400':
+          description: Error de validación (montos negativos o cantidades inválidas)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Mesero o Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Pedido no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al actualizar el pedido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/pedidos/{id}/estado:
+    patch:
+      tags:
+        - Pedidos
+      summary: Actualizar estado del pedido (Cocina)
+      description: 'Actualiza el estado operativo del pedido en cocina: ABIERTO -> EN_PREPARACION -> ENTREGADO. Al pasar a ENTREGADO dispara la alerta "¡Listo!" a meseros por WebSocket. Requiere rol Cocinero o Administrador.'
+      operationId: actualizarEstadoPedido
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador del pedido
+          schema:
+            type: string
+          example: '{{pedidoId}}'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActualizarEstadoPedidoRequest'
+      responses:
+        '200':
+          description: Estado del pedido actualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActualizarEstadoPedidoResponse'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Cocinero o Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Pedido no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al actualizar estado del pedido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/pedidos/{id}/solicitar-cuenta:
+    patch:
+      tags:
+        - Pedidos
+      summary: Solicitar cuenta de un pedido
+      description: Solicita la cuenta de la orden, cambiando el estado de la mesa a "Cuenta Solicitada" (notificando estado de WebSocket "Esperando pago" a los clientes) y notificando a caja en tiempo real. Requiere rol Mesero o Administrador.
+      operationId: solicitarCuentaPedido
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador del pedido
+          schema:
+            type: string
+          example: '{{pedidoId}}'
+      responses:
+        '200':
+          description: Cuenta solicitada correctamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitarCuentaResponse'
+        '400':
+          description: Pedido sin mesa o pedido ya cerrado/cancelado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Mesero o Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Pedido o mesa no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al solicitar la cuenta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/pedidos/{id}/cancel:
+    patch:
+      tags:
+        - Pedidos
+      summary: Cancelar pedido y liberar mesa
+      description: Cancela un pedido cambiando su estado a CANCELADO y libera la mesa poniéndola en "Libre" (emitiendo statusSocket "Disponible" en WebSocket). Requiere rol Mesero o Administrador.
+      operationId: cancelarPedido
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador del pedido
+          schema:
+            type: string
+          example: '{{pedidoId}}'
+      responses:
+        '200':
+          description: Pedido cancelado y mesa liberada correctamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelarPedidoResponse'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Mesero o Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Pedido no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al cancelar pedido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/pagos/generar-qr/{pedidoId}:
+    post:
+      tags:
+        - Pagos
+      summary: Generar QR estático de pago
+      description: Genera un código QR con ID del pedido y monto para cobro estático. Requiere autenticación.
+      operationId: generarPagoQR
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: pedidoId
+          in: path
+          required: true
+          description: Identificador del pedido
+          schema:
+            type: string
+          example: '{{pedidoId}}'
+      responses:
+        '200':
+          description: Código QR generado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerarPagoQRResponse'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Pedido no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al generar QR
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+  /api/pagos/{pedidoId}/procesar:
+    post:
+      tags:
+        - Pagos
+      summary: Procesar pago final y cerrar orden
+      description: 'Procesa el pago mediante una transacción atómica en MongoDB: cierra el pedido (CERRADO), crea el documento Pago, libera la mesa a "Libre" y genera el comprobante. Requiere rol Cajero o Administrador.'
+      operationId: procesarPagoFinal
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: pedidoId
+          in: path
+          required: true
+          description: Identificador del pedido
+          schema:
+            type: string
+          example: '{{pedidoId}}'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcesarPagoRequest'
+      responses:
+        '200':
+          description: Pago procesado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcesarPagoResponse'
+        '400':
+          description: Pedido ya cerrado o cancelado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Cajero o Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Pedido no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al procesar el pago
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+  /api/pagos/notificar-qr/{pedidoId}:
+    post:
+      tags:
+        - Pagos
+      summary: Simular notificación de transferencia QR
+      description: Endpoint público que simula la confirmación de transferencia QR desde un dispositivo móvil o webhook, emitiendo eventos WebSocket a la caja.
+      operationId: simularPagoQR
+      parameters:
+        - name: pedidoId
+          in: path
+          required: true
+          description: Identificador del pedido
+          schema:
+            type: string
+          example: '{{pedidoId}}'
+      responses:
+        '200':
+          description: Simulación exitosa y caja notificada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimularPagoQRResponse'
+        '404':
+          description: Pedido no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al simular pago QR
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+  /api/pagos/{pedidoId}/enviar-recibo:
+    post:
+      tags:
+        - Pagos
+      summary: Enviar recibo de pago por correo electrónico
+      description: Genera el comprobante HTML detallado y lo envía al correo electrónico proporcionado mediante EmailService. Requiere rol Cajero o Administrador.
+      operationId: enviarReciboCorreo
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: pedidoId
+          in: path
+          required: true
+          description: Identificador del pedido
+          schema:
+            type: string
+          example: '{{pedidoId}}'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnviarReciboCorreoRequest'
+      responses:
+        '200':
+          description: Recibo enviado por correo exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeRespuestaResponse'
+              example:
+                mensaje: Recibo enviado por correo exitosamente
+        '400':
+          description: Correo electrónico requerido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Cajero o Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Pedido no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al enviar el correo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+  /api/dashboard/resumen:
+    get:
+      tags:
+        - Dashboard
+      summary: Obtener resumen, KPIs y métricas del negocio
+      description: Retorna los KPIs del día (ventasHoy, ordenesHoy, clientesEstimados, mesasActivas, ocupacionPorcentaje), platos más vendidos, categorías populares y órdenes recientes. Requiere rol Administrador.
+      operationId: obtenerResumenDashboard
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Resumen consolidado del dashboard
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResumenDashboardDTO'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al generar resumen del Dashboard
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 'Autenticación mediante token JWT en cabecera: Authorization: Bearer <token>'
+  schemas:
+    MensajeErrorResponse:
+      type: object
+      required:
+        - mensaje
+      properties:
+        mensaje:
+          type: string
+          example: Mensaje descriptivo del error
+    MensajeErrorDetalleResponse:
+      type: object
+      required:
+        - mensaje
+      properties:
+        mensaje:
+          type: string
+          example: Error en el servidor
+        error:
+          type: string
+          example: Detalle técnico del error
+    MensajeRespuestaResponse:
+      type: object
+      required:
+        - mensaje
+      properties:
+        mensaje:
+          type: string
+          example: Operación realizada exitosamente
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        message:
+          type: string
+          example: API de Sabor & Gestión funcionando correctamente 🚀
+    SubirImagenResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: Imagen subida con éxito
+        url:
+          type: string
+          example: https://res.cloudinary.com/demo/image/upload/sample.jpg
+        publicId:
+          type: string
+          example: platos/abc123xyz
+    UsuarioNormalizado:
+      type: object
+      properties:
+        id:
+          type: string
+          example: '000000000000000000000001'
+        _id:
+          type: string
+          example: '000000000000000000000001'
+        nombre:
+          type: string
+          example: Juan
+        apellido:
+          type: string
+          example: Pérez
+        ci:
+          type: string
+          example: '12345678'
+        email:
+          type: string
+          format: email
+          example: juan.perez@example.com
+        rol:
+          type: string
+          enum:
+            - Administrador
+            - Mesero
+            - Cocinero
+            - Cajero
+          example: Mesero
+        estado:
+          type: boolean
+          example: true
+        verificado:
+          type: boolean
+          example: true
+        zona:
+          type: string
+          example: Salón Principal
+        ubicacion:
+          type: string
+          example: Salón Principal
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    LoginUsuarioRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: admin@example.com
+        password:
+          type: string
+          format: password
+          example: Password123!
+    LoginUsuarioResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: Login exitoso
+        token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        usuario:
+          $ref: '#/components/schemas/UsuarioNormalizado'
+    CrearUsuarioRequest:
+      type: object
+      required:
+        - nombre
+        - apellido
+        - ci
+        - email
+        - password
+        - rol
+      properties:
+        nombre:
+          type: string
+          example: Carlos
+        apellido:
+          type: string
+          example: Mendoza
+        ci:
+          type: string
+          example: '87654321'
+        email:
+          type: string
+          format: email
+          example: carlos.mendoza@example.com
+        password:
+          type: string
+          format: password
+          example: ClaveSegura123!
+        rol:
+          type: string
+          enum:
+            - Administrador
+            - Mesero
+            - Cocinero
+            - Cajero
+          example: Cajero
+        zona:
+          type: string
+          example: Salón Principal
+    CrearUsuarioResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: Usuario creado exitosamente
+        usuario:
+          $ref: '#/components/schemas/UsuarioNormalizado'
+    ActualizarUsuarioRequest:
+      type: object
+      properties:
+        nombre:
+          type: string
+          example: Carlos
+        apellido:
+          type: string
+          example: Mendoza
+        ci:
+          type: string
+          example: '87654321'
+        email:
+          type: string
+          format: email
+          example: carlos.mendoza@example.com
+        password:
+          type: string
+          format: password
+          example: NuevaClave456!
+        rol:
+          type: string
+          enum:
+            - Administrador
+            - Mesero
+            - Cocinero
+            - Cajero
+          example: Cajero
+        zona:
+          type: string
+          example: Terraza
+    ActualizarUsuarioResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: Usuario actualizado
+        usuario:
+          $ref: '#/components/schemas/UsuarioNormalizado'
+    ReporteCierreCajaDTO:
+      type: object
+      properties:
+        totalDia:
+          type: number
+          example: 1540.5
+        efectivo:
+          type: number
+          example: 800
+        tarjeta:
+          type: number
+          example: 500
+        qr:
+          type: number
+          example: 240.5
+        descuentos:
+          type: number
+          example: 50
+        propinas:
+          type: number
+          example: 80
+        pagosProcesados:
+          type: number
+          example: 12
+    CambiarEstadoUsuarioRequest:
+      type: object
+      required:
+        - estado
+      properties:
+        estado:
+          type: boolean
+          example: false
+        reporte:
+          $ref: '#/components/schemas/ReporteCierreCajaDTO'
+    CambiarEstadoUsuarioResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: Usuario marcado como Inactivo
+        usuario:
+          $ref: '#/components/schemas/UsuarioNormalizado'
+    Categoria:
+      type: object
+      properties:
+        _id:
+          type: string
+          example: '000000000000000000000010'
+        nombre:
+          type: string
+          example: Platos Fuertes
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CategoriaRequest:
+      type: object
+      required:
+        - nombre
+      properties:
+        nombre:
+          type: string
+          example: Bebidas
+    Plato:
+      type: object
+      properties:
+        _id:
+          type: string
+          example: '000000000000000000000020'
+        nombre:
+          type: string
+          example: Lomo Montado
+        descripcion:
+          type: string
+          example: Corte de lomo vacuno acompañado con papas fritas, arroz y huevo frito.
+        precio:
+          type: number
+          example: 45
+        imagenUrl:
+          type: string
+          example: https://res.cloudinary.com/demo/image/upload/lomo.jpg
+        imagenPublicId:
+          type: string
+          example: platos/lomo_montado_123
+        disponible:
+          type: boolean
+          example: true
+        categoria:
+          oneOf:
+            - type: string
+              example: '000000000000000000000010'
+            - $ref: '#/components/schemas/Categoria'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CrearPlatoRequest:
+      type: object
+      required:
+        - nombre
+        - descripcion
+        - precio
+        - imagenUrl
+        - imagenPublicId
+        - categoria
+      properties:
+        nombre:
+          type: string
+          example: Pique Macho
+        descripcion:
+          type: string
+          example: Trozos de lomo salteado con salchichas, cebolla, locoto y papas fritas.
+        precio:
+          type: number
+          example: 65
+        imagenUrl:
+          type: string
+          example: https://res.cloudinary.com/demo/image/upload/pique.jpg
+        imagenPublicId:
+          type: string
+          example: platos/pique_123
+        categoria:
+          type: string
+          example: '{{categoriaId}}'
+    ActualizarPlatoRequest:
+      type: object
+      properties:
+        nombre:
+          type: string
+          example: Pique Macho Especial
+        descripcion:
+          type: string
+          example: Pique tradicional con porción extra de carne.
+        precio:
+          type: number
+          example: 75
+        imagenUrl:
+          type: string
+          example: https://res.cloudinary.com/demo/image/upload/pique_esp.jpg
+        imagenPublicId:
+          type: string
+          example: platos/pique_esp_456
+        categoria:
+          type: string
+          example: '{{categoriaId}}'
+        disponible:
+          type: boolean
+          example: true
+    MesaDTO:
+      type: object
+      properties:
+        id:
+          type: string
+          example: '000000000000000000000030'
+        _id:
+          type: string
+          example: '000000000000000000000030'
+        name:
+          type: string
+          example: Mesa 1 Interior
+        numero:
+          type: string
+          example: Mesa 1 Interior
+        capacity:
+          type: integer
+          example: 4
+        location:
+          type: string
+          example: Interior
+        locationId:
+          type: string
+          nullable: true
+          example: '000000000000000000000040'
+        status:
+          type: string
+          example: Disponible
+          description: Mapeo para visualización en frontend y eventos WebSocket (Disponible, Ocupada, Esperando pago)
+        type:
+          type: string
+          enum:
+            - normal
+            - vip
+          example: normal
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CrearMesaRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Mesa 5 Interior
+        numero:
+          type: string
+          example: Mesa 5 Interior
+        capacity:
+          type: integer
+          example: 4
+        capacidad:
+          type: integer
+          example: 4
+        location:
+          type: string
+          example: Interior
+        ubicacion:
+          type: string
+          example: Interior
+        type:
+          type: string
+          enum:
+            - normal
+            - vip
+          example: normal
+        tipo:
+          type: string
+          enum:
+            - normal
+            - vip
+          example: normal
+        status:
+          type: string
+          example: Libre
+          description: Alias opcional en inglés para el estado de la mesa
+        estado:
+          type: string
+          enum:
+            - Libre
+            - Ocupada
+            - Cuenta Solicitada
+          example: Libre
+    ActualizarMesaRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Mesa 5 Terraza
+        numero:
+          type: string
+          example: Mesa 5 Terraza
+        capacity:
+          type: integer
+          example: 6
+        capacidad:
+          type: integer
+          example: 6
+        location:
+          type: string
+          example: Terraza
+        ubicacion:
+          type: string
+          example: Terraza
+        type:
+          type: string
+          enum:
+            - normal
+            - vip
+          example: vip
+        tipo:
+          type: string
+          enum:
+            - normal
+            - vip
+          example: vip
+        status:
+          type: string
+          example: Libre
+          description: Alias opcional en inglés para el estado de la mesa
+        estado:
+          type: string
+          enum:
+            - Libre
+            - Ocupada
+            - Cuenta Solicitada
+          example: Libre
+    ActualizarEstadoMesaRequest:
+      type: object
+      required:
+        - estado
+      properties:
+        estado:
+          type: string
+          enum:
+            - Libre
+            - Ocupada
+            - Cuenta Solicitada
+          example: Ocupada
+          description: Estado operativo de la mesa en MongoDB
+    EliminarMesaResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: Mesa eliminada
+        mesa:
+          $ref: '#/components/schemas/MesaDTO'
+    Ubicacion:
+      type: object
+      properties:
+        id:
+          type: string
+          example: '000000000000000000000040'
+        nombre:
+          type: string
+          example: Terraza
+    CrearUbicacionRequest:
+      type: object
+      required:
+        - nombre
+      properties:
+        nombre:
+          type: string
+          example: Patio Central
+        descripcion:
+          type: string
+          example: Área al aire libre con mesas con sombrilla
+    Ingrediente:
+      type: object
+      properties:
+        _id:
+          type: string
+          example: '000000000000000000000050'
+        nombre:
+          type: string
+          example: Lomo de Res
+        unidadMedida:
+          type: string
+          example: gramos
+        disponible:
+          type: boolean
+          example: true
+        fechaRegistro:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CrearIngredienteRequest:
+      type: object
+      required:
+        - nombre
+        - unidadMedida
+      properties:
+        nombre:
+          type: string
+          example: Papas
+        unidadMedida:
+          type: string
+          example: kilos
+        disponible:
+          type: boolean
+          example: true
+    CrearIngredienteResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: Ingrediente creado con éxito
+        ingrediente:
+          $ref: '#/components/schemas/Ingrediente'
+    ActualizarIngredienteRequest:
+      type: object
+      properties:
+        nombre:
+          type: string
+          example: Papas Holandesas
+        unidadMedida:
+          type: string
+          example: kilos
+        disponible:
+          type: boolean
+          example: true
+    ActualizarIngredienteResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: Ingrediente actualizado
+        ingrediente:
+          $ref: '#/components/schemas/Ingrediente'
+    RecetaIngrediente:
+      type: object
+      required:
+        - ingrediente
+        - cantidadNecesaria
+      properties:
+        ingrediente:
+          oneOf:
+            - type: string
+              example: '000000000000000000000050'
+            - $ref: '#/components/schemas/Ingrediente'
+        cantidadNecesaria:
+          type: number
+          example: 350
+    Receta:
+      type: object
+      properties:
+        _id:
+          type: string
+          example: '000000000000000000000060'
+        plato:
+          oneOf:
+            - type: string
+              example: '000000000000000000000020'
+            - $ref: '#/components/schemas/Plato'
+        ingredientes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecetaIngrediente'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    GuardarRecetaRequest:
+      type: object
+      required:
+        - plato
+        - ingredientes
+      properties:
+        plato:
+          type: string
+          example: '{{platoId}}'
+        ingredientes:
+          type: array
+          items:
+            type: object
+            required:
+              - ingrediente
+              - cantidadNecesaria
+            properties:
+              ingrediente:
+                type: string
+                example: '{{ingredienteId}}'
+              cantidadNecesaria:
+                type: number
+                example: 250
+    GuardarRecetaResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: Receta creada exitosamente
+        receta:
+          $ref: '#/components/schemas/Receta'
+    DetallePedido:
+      type: object
+      required:
+        - plato
+        - cantidad
+        - precioUnitario
+        - subtotal
+      properties:
+        plato:
+          oneOf:
+            - type: string
+              example: '000000000000000000000020'
+            - $ref: '#/components/schemas/Plato'
+        nombrePlato:
+          type: string
+          example: Lomo Montado
+        cantidad:
+          type: integer
+          minimum: 1
+          example: 2
+        precioUnitario:
+          type: number
+          minimum: 0
+          example: 45
+          description: Snapshot histórico del precio unitario del plato obtenido por el backend al momento del pedido
+        subtotal:
+          type: number
+          minimum: 0
+          example: 90
+          description: Subtotal de la línea (precioUnitario × cantidad)
+        observacion:
+          type: string
+          example: Término medio
+    CrearDetallePedidoInput:
+      type: object
+      required:
+        - plato
+        - cantidad
+      properties:
+        plato:
+          type: string
+          example: '{{platoId}}'
+          description: ID del plato a ordenar
+        cantidad:
+          type: integer
+          minimum: 1
+          example: 2
+          description: Cantidad de porciones (entero >= 1)
+        precioUnitario:
+          type: number
+          minimum: 0
+          example: 45
+          description: Opcional / Informativo. El backend no confía en este valor; consulta el precio oficial de Plato en BD vía PlatoRepository y almacena el snapshot histórico.
+        subtotal:
+          type: number
+          minimum: 0
+          example: 90
+          description: Opcional / Informativo. El backend recalcula subtotal = precioUnitario × cantidad.
+        observacion:
+          type: string
+          example: Sin cebolla
+          description: Nota o exclusión de ingredientes (ej. "sin Cebolla")
+    Pedido:
+      type: object
+      properties:
+        _id:
+          type: string
+          example: '000000000000000000000070'
+        codigo:
+          type: string
+          example: PED-0001
+        fechaDiaBolivia:
+          type: string
+          example: '2026-09-27'
+        fechaHoraBolivia:
+          type: string
+          example: 27/09/2026 14:30:00
+        fechaHora:
+          type: string
+          format: date-time
+        estado:
+          type: string
+          enum:
+            - ABIERTO
+            - EN_PREPARACION
+            - ENTREGADO
+            - CANCELADO
+            - CERRADO
+          example: ABIERTO
+        total:
+          type: number
+          minimum: 0
+          example: 90
+        mesa:
+          oneOf:
+            - type: string
+              example: '000000000000000000000030'
+            - $ref: '#/components/schemas/MesaDTO'
+        usuario:
+          oneOf:
+            - type: string
+              example: '000000000000000000000001'
+            - $ref: '#/components/schemas/UsuarioNormalizado'
+        detalles:
+          type: array
+          items:
+            $ref: '#/components/schemas/DetallePedido'
+        qrUrl:
+          type: string
+          example: https://api.qrserver.com/v1/create-qr-code/?...
+        metodoPago:
+          type: string
+          enum:
+            - Efectivo
+            - Tarjeta
+            - Transferencia
+            - QR
+            - Otro
+          example: Efectivo
+        montoDescuento:
+          type: number
+          minimum: 0
+          example: 0
+        montoPropina:
+          type: number
+          minimum: 0
+          example: 0
+        subtotalCierre:
+          type: number
+          minimum: 0
+          example: 90
+        clienteNombre:
+          type: string
+          example: Carlos Mendoza
+        clienteCI:
+          type: string
+          example: '12345678'
+        clienteNIT:
+          type: string
+          example: '12345678019'
+        cajeroAsignado:
+          type: string
+          example: '000000000000000000000001'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CrearPedidoRequest:
+      type: object
+      required:
+        - detalles
+      properties:
+        mesa:
+          type: string
+          example: '{{mesaId}}'
+          description: ID de la mesa asignada (si se especifica y no existe en BD, retorna 404)
+        detalles:
+          type: array
+          items:
+            $ref: '#/components/schemas/CrearDetallePedidoInput'
+          description: Lista de platos y cantidades a ordenar
+        montoDescuento:
+          type: number
+          minimum: 0
+          example: 0
+          description: Monto de descuento a aplicar (no puede ser negativo)
+        montoPropina:
+          type: number
+          minimum: 0
+          example: 0
+          description: Monto de propina voluntaria (no puede ser negativo)
+        total:
+          type: number
+          minimum: 0
+          example: 90
+          description: Opcional / Informativo. El backend calcula el total automáticamente aplicando la fórmula Math.max(0, subtotal - montoDescuento + montoPropina).
+        clienteNombre:
+          type: string
+          example: Consumidor Final
+          description: Nombre del comensal o cliente en mesa
+        clienteCI:
+          type: string
+          example: '12345678'
+          description: Cédula de identidad del cliente
+        clienteNIT:
+          type: string
+          example: '12345678019'
+          description: NIT del cliente para facturación
+    PedidoErrorIngredientesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        mensaje:
+          type: string
+          example: No se puede registrar el pedido por restricciones de receta o ingredientes
+        errores:
+          type: array
+          items:
+            type: string
+          example:
+            - 'El plato "Lomo Montado" no se puede preparar porque falta: Lomo de Res'
+        faltantes:
+          type: array
+          items:
+            type: string
+          example:
+            - Lomo de Res
+    ActualizarPedidoRequest:
+      type: object
+      properties:
+        detalles:
+          type: array
+          items:
+            $ref: '#/components/schemas/CrearDetallePedidoInput'
+          description: Nuevos detalles del pedido. Si se proveen, el backend recalcula subtotales, totales y snapshot con precios oficiales de Plato en BD.
+        estado:
+          type: string
+          enum:
+            - ABIERTO
+            - EN_PREPARACION
+            - ENTREGADO
+            - CANCELADO
+            - CERRADO
+          example: ABIERTO
+        metodoPago:
+          type: string
+          enum:
+            - Efectivo
+            - Tarjeta
+            - Transferencia
+            - QR
+            - Otro
+          example: Efectivo
+        montoDescuento:
+          type: number
+          minimum: 0
+          example: 10
+          description: Monto de descuento (no puede ser negativo)
+        montoPropina:
+          type: number
+          minimum: 0
+          example: 5
+          description: Monto de propina (no puede ser negativo)
+        subtotalCierre:
+          type: number
+          minimum: 0
+          example: 140
+          description: Subtotal de cierre (no puede ser negativo)
+        total:
+          type: number
+          minimum: 0
+          example: 135
+          description: Opcional / Informativo. El backend recalcula el total automáticamente si se modifican detalles, descuento o propina.
+        clienteNombre:
+          type: string
+          example: Carlos Mendoza
+        clienteCI:
+          type: string
+          example: '87654321'
+        clienteNIT:
+          type: string
+          example: '87654321012'
+        cajeroAsignado:
+          type: string
+          example: '{{usuarioId}}'
+    ActualizarEstadoPedidoRequest:
+      type: object
+      required:
+        - estado
+      properties:
+        estado:
+          type: string
+          enum:
+            - ABIERTO
+            - EN_PREPARACION
+            - ENTREGADO
+            - CERRADO
+            - CANCELADO
+          example: EN_PREPARACION
+    ActualizarEstadoPedidoResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: Pedido movido a EN_PREPARACION
+        pedido:
+          $ref: '#/components/schemas/Pedido'
+    CancelarPedidoResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: Pedido anulado y mesa liberada correctamente
+        pedido:
+          $ref: '#/components/schemas/Pedido'
+    ItemPayloadCaja:
+      type: object
+      properties:
+        platoId:
+          type: string
+          example: '000000000000000000000020'
+        nombre:
+          type: string
+          example: Lomo Montado
+        cantidad:
+          type: integer
+          example: 2
+        precioUnitario:
+          type: number
+          example: 45
+        subtotal:
+          type: number
+          example: 90
+        observacion:
+          type: string
+          example: ''
+    PayloadCajaDTO:
+      type: object
+      properties:
+        pedidoId:
+          type: string
+          example: '000000000000000000000070'
+        codigo:
+          type: string
+          example: PED-0001
+        mesa:
+          type: string
+          example: Mesa 1 Interior
+        mesero:
+          type: string
+          example: Juan Pérez
+        estado:
+          type: string
+          example: ABIERTO
+        subtotal:
+          type: number
+          example: 90
+        itemsSubtotal:
+          type: number
+          example: 90
+        descuento:
+          type: number
+          example: 0
+        montoDescuento:
+          type: number
+          example: 0
+        propina:
+          type: number
+          example: 0
+        montoPropina:
+          type: number
+          example: 0
+        total:
+          type: number
+          example: 90
+        clienteNombre:
+          type: string
+          example: Consumidor Final
+        clienteCI:
+          type: string
+          example: ''
+        clienteNIT:
+          type: string
+          example: ''
+        tiempoEsperaMinutos:
+          type: integer
+          example: 15
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemPayloadCaja'
+        fechaHoraBolivia:
+          type: string
+          example: 27/09/2026 14:30:00
+    SolicitarCuentaResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: Cuenta solicitada correctamente
+        solicitud:
+          $ref: '#/components/schemas/PayloadCajaDTO'
+    GenerarPagoQRResponse:
+      type: object
+      properties:
+        qrUrl:
+          type: string
+          example: https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=SABOR_GESTION_ID_abc123_TOTAL_90
+        total:
+          type: number
+          example: 90
+    ProcesarPagoRequest:
+      type: object
+      properties:
+        metodoPago:
+          type: string
+          enum:
+            - Efectivo
+            - Tarjeta
+            - QR
+          example: Efectivo
+        porcentajeDescuento:
+          type: number
+          example: 0
+        porcentajePropina:
+          type: number
+          example: 10
+        montoDescuento:
+          type: number
+          example: 0
+        montoPropina:
+          type: number
+          example: 9
+        subtotalCierre:
+          type: number
+          example: 90
+        cajeroAsignado:
+          type: string
+          example: '{{usuarioId}}'
+    ComprobantePago:
+      type: object
+      properties:
+        pedidoId:
+          type: string
+          example: '000000000000000000000070'
+        meseroNombre:
+          type: string
+          example: Juan Pérez
+        subtotal:
+          type: number
+          example: 90
+        montoDescuento:
+          type: number
+          example: 0
+        montoPropina:
+          type: number
+          example: 9
+        descuentoAplicado:
+          type: number
+          example: 0
+        propinaAplicada:
+          type: number
+          example: 9
+        total:
+          type: number
+          example: 99
+        totalPagado:
+          type: number
+          example: 99
+        metodoPago:
+          type: string
+          example: Efectivo
+        cajeroAsignado:
+          type: string
+          example: '000000000000000000000001'
+        fechaBolivia:
+          type: string
+          example: 27/09/2026 15:00:00
+        fecha:
+          type: string
+          format: date-time
+    ProcesarPagoResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: Pago procesado exitosamente
+        comprobante:
+          $ref: '#/components/schemas/ComprobantePago'
+    SimularPagoQRResponse:
+      type: object
+      properties:
+        exito:
+          type: boolean
+          example: true
+        mensaje:
+          type: string
+          example: Simulación de pago exitosa. Notificando a la caja...
+    EnviarReciboCorreoRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          example: consumidor@example.com
+        clienteNombre:
+          type: string
+          example: Carlos Mendoza
+        clienteCI:
+          type: string
+          example: '87654321'
+    KPIsDashboard:
+      type: object
+      properties:
+        ventasHoy:
+          type: number
+          example: 3450
+        ordenesHoy:
+          type: integer
+          example: 28
+        clientesEstimados:
+          type: integer
+          example: 75
+        mesasActivas:
+          type: integer
+          example: 6
+        ocupacionPorcentaje:
+          type: number
+          example: 60
+    PlatoPopularDTO:
+      type: object
+      properties:
+        nombre:
+          type: string
+          example: Pique Macho
+        cantidad:
+          type: integer
+          example: 14
+        imagen:
+          type: string
+          example: https://res.cloudinary.com/demo/image/upload/pique.jpg
+    CategoriaPopularDTO:
+      type: object
+      properties:
+        nombre:
+          type: string
+          example: Platos Fuertes
+        pedidos:
+          type: integer
+          example: 20
+        porcentaje:
+          type: number
+          example: 71.4
+    OrdenRecienteDTO:
+      type: object
+      properties:
+        id:
+          type: string
+          example: PED-0001
+        mesa:
+          type: string
+          example: Mesa 3 Interior
+        hora:
+          type: string
+          example: '14:25'
+        estado:
+          type: string
+          example: En Cocina
+        total:
+          type: number
+          example: 120
+    ResumenDashboardDTO:
+      type: object
+      properties:
+        kpis:
+          $ref: '#/components/schemas/KPIsDashboard'
+        platosMasVendidos:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatoPopularDTO'
+        categoriasPopulares:
+          type: array
+          items:
+            $ref: '#/components/schemas/CategoriaPopularDTO'
+        ordenesRecientes:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrdenRecienteDTO'

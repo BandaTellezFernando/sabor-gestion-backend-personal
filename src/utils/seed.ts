@@ -43,7 +43,7 @@ const seed = async () => {
     const admin = await Usuario.create({
       nombre: 'Admin',
       apellido: 'Sabor',
-      ci: '123456789',
+      ci: '12345678',
       email: 'admin@sabor.com',
       password: passwordHash,
       rol: 'Administrador',
@@ -57,7 +57,7 @@ const seed = async () => {
     await Usuario.create({
       nombre: 'Juan',
       apellido: 'Mesero',
-      ci: '987654321',
+      ci: '87654321',
       email: 'mesero@sabor.com',
       password: meseroPass,
       rol: 'Mesero',
@@ -93,7 +93,7 @@ const seed = async () => {
     const mesasData = []
     for (let i = 1; i <= 8; i++) {
       mesasData.push({
-        numero: i,
+        numero: String(i),
         capacidad: Math.ceil(i / 2) * 2,
         estado: 'Libre'
       })

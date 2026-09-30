@@ -7,6 +7,7 @@ import {
   IPedido
 } from '../repositories/pedido.repo'
 import { MesaRepository, mesaRepository } from '../repositories/mesa.repo'
+import { PlatoRepository, platoRepository } from '../repositories/plato.repo'
 import { ESTADOS_MESA, ESTADOS_PEDIDO } from '../utils/constants'
 import {
   obtenerFechaBolivia,
@@ -67,7 +68,8 @@ export interface ResultadoSolicitarCuenta {
 export class PedidoService {
   constructor(
     private pedidoRepo: PedidoRepository = pedidoRepository,
-    private mesaRepo: MesaRepository = mesaRepository
+    private mesaRepo: MesaRepository = mesaRepository,
+    private platoRepo: PlatoRepository = platoRepository
   ) {}
 
   /**
@@ -146,57 +148,147 @@ export class PedidoService {
   }
 
   /**
-   * Valida disponibilidad de ingredientes, genera correlativo diario PED-XXXX,
+   * Procesa cada detalle de pedido obteniendo el precio real y nombre desde PlatoRepository,
+   * calculando subtotal = precioReal * cantidad y validando la disponibilidad de recetas e ingredientes.
+   */
+  private async procesarDetallesPedido(detalles: any[]): Promise<{
+    detallesCalculados: any[]
+    subtotal: number
+  }> {
+    if (!detalles || !Array.isArray(detalles) || detalles.length === 0) {
+      throw new PedidoServiceError(400, 'El pedido debe incluir al menos un plato en detalles')
+    }
+
+    const detallesCalculados: any[] = []
+
+    for (const d of detalles) {
+      const platoId = d.plato?._id || d.plato || d.platoId
+      if (!platoId) {
+        throw new PedidoServiceError(400, 'Cada detalle debe especificar un plato')
+      }
+
+      const cantidad = Number(d.cantidad)
+      if (!Number.isInteger(cantidad) || cantidad < 1) {
+        throw new PedidoServiceError(
+          400,
+          'La cantidad de cada plato debe ser un número entero mayor o igual a 1'
+        )
+      }
+
+      const platoDoc = await this.platoRepo.buscarPorId(String(platoId))
+      if (!platoDoc) {
+        throw new PedidoServiceError(404, `Plato no encontrado con ID: ${platoId}`)
+      }
+
+      const precioReal = Number(platoDoc.precio)
+      if (isNaN(precioReal) || precioReal < 0) {
+        throw new PedidoServiceError(400, `El precio del plato "${platoDoc.nombre}" no es válido`)
+      }
+
+      const subtotalDetalle = Number((precioReal * cantidad).toFixed(2))
+
+      detallesCalculados.push({
+        plato: platoDoc._id,
+        nombrePlato: platoDoc.nombre || 'Plato',
+        cantidad,
+        precioUnitario: precioReal,
+        subtotal: subtotalDetalle,
+        observacion: String(d.observacion || '').trim()
+      })
+    }
+
+    // 🛡️ ESCUDO: Validar ingredientes antes de permitir registrar los detalles
+    const itemsParaValidar = detallesCalculados.map((item) => ({
+      platoId: item.plato.toString(),
+      cantidad: item.cantidad,
+      observacion: item.observacion
+    }))
+
+    const validacion = await validarDisponibilidadIngredientes(itemsParaValidar)
+    if (!validacion.success) {
+      throw new PedidoServiceError(
+        400,
+        'No se puede registrar el pedido por restricciones de receta o ingredientes',
+        {
+          errores: validacion.errores,
+          faltantes: validacion.faltantes
+        }
+      )
+    }
+
+    const subtotal = Number(
+      detallesCalculados.reduce((sum, item) => sum + item.subtotal, 0).toFixed(2)
+    )
+
+    return { detallesCalculados, subtotal }
+  }
+
+  /**
+   * Valida existencia de mesa, calcula importes mediante PlatoRepository,
+   * valida ingredientes, genera correlativo diario PED-XXXX,
    * crea el pedido en BD y actualiza el estado de la mesa a 'Ocupada'.
    */
   async crearPedido(datos: any, usuarioAuthId?: string): Promise<ResultadoCrearPedido> {
-    // 🛡️ ESCUDO: Validar ingredientes antes de permitir que el mesero cree la orden
-    if (datos.detalles && Array.isArray(datos.detalles)) {
-      const itemsParaValidar = datos.detalles.map((detalle: any) => ({
-        platoId: detalle.plato,
-        cantidad: Number(detalle.cantidad),
-        observacion: detalle.observacion || ''
-      }))
-
-      const validacion = await validarDisponibilidadIngredientes(itemsParaValidar)
-
-      if (!validacion.success) {
-        throw new PedidoServiceError(
-          400,
-          'No se puede registrar el pedido por restricciones de receta o ingredientes',
-          {
-            errores: validacion.errores,
-            faltantes: validacion.faltantes
-          }
-        )
+    // 1. Validar existencia de mesa si fue enviada (404 si no existe)
+    let mesaIdString: string | undefined = undefined
+    if (datos.mesa) {
+      const mesaId = (datos.mesa._id || datos.mesa).toString()
+      mesaIdString = mesaId
+      const mesaExiste = await this.mesaRepo.buscarPorId(mesaId)
+      if (!mesaExiste) {
+        throw new PedidoServiceError(404, 'Mesa no encontrada')
       }
     }
 
-    // 1. Generar código diario secuencial y fechas Bolivia
+    // 2. Procesar detalles con precios reales de Plato, calcular subtotales y validar recetas/ingredientes
+    const { detallesCalculados, subtotal } = await this.procesarDetallesPedido(datos.detalles)
+
+    // 3. Validar montos de descuento y propina (no negativos)
+    const montoDescuento = Number(datos.montoDescuento || 0)
+    const montoPropina = Number(datos.montoPropina || 0)
+
+    if (montoDescuento < 0) {
+      throw new PedidoServiceError(400, 'El monto de descuento no puede ser negativo')
+    }
+    if (montoPropina < 0) {
+      throw new PedidoServiceError(400, 'El monto de propina no puede ser negativo')
+    }
+
+    // 4. Calcular total final en backend (ignorando cualquier total manipulado por el frontend)
+    const totalCalculado = Number(
+      Math.max(0, subtotal - montoDescuento + montoPropina).toFixed(2)
+    )
+
+    // 5. Generar código diario secuencial y fechas Bolivia
     const pedidoId = new Types.ObjectId()
     const { codigo, fechaDiaBolivia } = await generarSiguienteCodigoPedido()
     const fechaHora = obtenerFechaBolivia()
     const usuarioResponsable = usuarioAuthId || datos.usuario
 
     const nuevoPedidoDoc = await this.pedidoRepo.crear({
+      ...datos,
       _id: pedidoId,
       codigo,
       fechaDiaBolivia,
-      ...datos,
+      detalles: detallesCalculados,
+      total: totalCalculado,
+      subtotalCierre: subtotal,
+      montoDescuento,
+      montoPropina,
+      mesa: mesaIdString || undefined,
       usuario: usuarioResponsable,
       fechaHoraBolivia: formatearFechaBolivia(fechaHora),
       fechaHora
     })
 
-    // 2. Poblar datos para vista de cocina
+    // 6. Poblar datos para vista de cocina
     const pedidoPoblado = await this.pedidoRepo.buscarPorIdPoblado(nuevoPedidoDoc._id)
 
-    // 3. AUTOMATIZACIÓN: Cambiar estado de la mesa a 'Ocupada'
+    // 7. AUTOMATIZACIÓN: Cambiar estado de la mesa a 'Ocupada'
     let mesaActualizada: any = null
-    const mesaId = datos.mesa
-    if (mesaId) {
+    if (mesaIdString) {
       mesaActualizada = await this.mesaRepo.actualizarEstado(
-        mesaId.toString(),
+        mesaIdString,
         ESTADOS_MESA.OCUPADA
       )
     }
@@ -253,8 +345,7 @@ export class PedidoService {
         $in: [
           ESTADOS_PEDIDO.ABIERTO,
           ESTADOS_PEDIDO.EN_PREPARACION,
-          ESTADOS_PEDIDO.ENTREGADO,
-          'SERVIDO'
+          ESTADOS_PEDIDO.ENTREGADO
         ]
       }
     }
@@ -380,11 +471,25 @@ export class PedidoService {
       throw new PedidoServiceError(404, 'Pedido no encontrado')
     }
 
+    if (montoDescuento !== undefined && Number(montoDescuento) < 0) {
+      throw new PedidoServiceError(400, 'El monto de descuento no puede ser negativo')
+    }
+    if (montoPropina !== undefined && Number(montoPropina) < 0) {
+      throw new PedidoServiceError(400, 'El monto de propina no puede ser negativo')
+    }
+    if (total !== undefined && Number(total) < 0) {
+      throw new PedidoServiceError(400, 'El total no puede ser negativo')
+    }
+
     const updates: any = {}
-    if (total !== undefined) updates.total = total
-    if (detalles !== undefined) updates.detalles = detalles
     if (estado !== undefined) updates.estado = estado
     if (metodoPago !== undefined) updates.metodoPago = metodoPago
+
+    if (detalles !== undefined) {
+      const { detallesCalculados, subtotal } = await this.procesarDetallesPedido(detalles)
+      updates.detalles = detallesCalculados
+      updates.subtotalCierre = subtotal
+    }
 
     // Solo reabrir el pedido a ABIERTO si se están agregando nuevos platos (detalles)
     if (
@@ -398,35 +503,44 @@ export class PedidoService {
     if (clienteCI !== undefined) updates.clienteCI = clienteCI
     if (clienteNIT !== undefined) updates.clienteNIT = clienteNIT
     if (cajeroAsignado !== undefined) updates.cajeroAsignado = cajeroAsignado
-    if (montoDescuento !== undefined) updates.montoDescuento = montoDescuento
-    if (montoPropina !== undefined) updates.montoPropina = montoPropina
+    if (montoDescuento !== undefined) updates.montoDescuento = Number(montoDescuento)
+    if (montoPropina !== undefined) updates.montoPropina = Number(montoPropina)
+    if (subtotalCierre !== undefined && updates.subtotalCierre === undefined) {
+      if (Number(subtotalCierre) < 0) {
+        throw new PedidoServiceError(400, 'El subtotal no puede ser negativo')
+      }
+      updates.subtotalCierre = Number(subtotalCierre)
+    }
 
-    // Recalcular total si hay descuento o propina o subtotalCierre
+    // Recalcular total si hay descuento o propina o subtotalCierre o nuevos detalles
     const finalSub =
       updates.subtotalCierre !== undefined
         ? updates.subtotalCierre
-        : pedidoAnterior?.subtotalCierre || updates.total || pedidoAnterior?.total || 0
+        : pedidoAnterior?.subtotalCierre || pedidoAnterior?.total || 0
     const finalDesc =
       updates.montoDescuento !== undefined
         ? updates.montoDescuento
-        : pedidoAnterior?.montoDescuento || 0
+        : Number(pedidoAnterior?.montoDescuento || 0)
     const finalProp =
       updates.montoPropina !== undefined
         ? updates.montoPropina
-        : pedidoAnterior?.montoPropina || 0
+        : Number(pedidoAnterior?.montoPropina || 0)
 
     if (
+      updates.detalles !== undefined ||
       updates.montoDescuento !== undefined ||
       updates.montoPropina !== undefined ||
       updates.subtotalCierre !== undefined
     ) {
-      updates.total = Math.max(0, finalSub - finalDesc + finalProp)
+      updates.total = Number(Math.max(0, finalSub - finalDesc + finalProp).toFixed(2))
       if (
         !updates.subtotalCierre &&
         (!pedidoAnterior?.subtotalCierre || pedidoAnterior.subtotalCierre === 0)
       ) {
         updates.subtotalCierre = finalSub
       }
+    } else if (total !== undefined) {
+      updates.total = Number(total)
     }
 
     const pedidoActualizado = await this.pedidoRepo.actualizar(id, updates)
