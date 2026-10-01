@@ -2266,9 +2266,6 @@ components:
         id:
           type: string
           example: '000000000000000000000001'
-        _id:
-          type: string
-          example: '000000000000000000000001'
         nombre:
           type: string
           example: Juan
@@ -2296,18 +2293,14 @@ components:
         verificado:
           type: boolean
           example: true
-        zona:
-          type: string
-          example: Salón Principal
-        ubicacion:
-          type: string
-          example: Salón Principal
         createdAt:
           type: string
-          format: date-time
+          example: '2026-10-01 11:12:15'
+          description: Fecha de creación en hora de Bolivia (YYYY-MM-DD HH:mm:ss)
         updatedAt:
           type: string
-          format: date-time
+          example: '2026-10-01 11:12:15'
+          description: Fecha de última actualización en hora de Bolivia (YYYY-MM-DD HH:mm:ss)
     LoginUsuarioRequest:
       type: object
       required:
@@ -2368,9 +2361,6 @@ components:
             - Cocinero
             - Cajero
           example: Cajero
-        zona:
-          type: string
-          example: Salón Principal
     CrearUsuarioResponse:
       type: object
       properties:
@@ -2407,9 +2397,6 @@ components:
             - Cocinero
             - Cajero
           example: Cajero
-        zona:
-          type: string
-          example: Terraza
     ActualizarUsuarioResponse:
       type: object
       properties:

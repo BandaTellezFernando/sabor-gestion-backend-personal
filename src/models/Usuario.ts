@@ -9,7 +9,6 @@ export interface IUsuario extends Document {
   rol: string
   estado: boolean
   verificado: boolean
-  ubicacion?: string
 }
 
 const UsuarioSchema = new Schema(
@@ -24,7 +23,6 @@ const UsuarioSchema = new Schema(
       enum: ['Administrador', 'Mesero', 'Cocinero', 'Cajero'],
       required: true
     },
-    ubicacion: { type: String, required: false },
     estado: { type: Boolean, default: true },
     verificado: { type: Boolean, default: true }
   },

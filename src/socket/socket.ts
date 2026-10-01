@@ -4,7 +4,6 @@ import jwt from 'jsonwebtoken'
 import { UsuarioTokenPayload } from '../middlewares/auth.middleware'
 
 export interface UsuarioSocketPayload extends UsuarioTokenPayload {
-  zona?: string
   iat?: number
   exp?: number
 }

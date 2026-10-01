@@ -12,7 +12,6 @@ export interface UsuarioCrearDatos {
   email: string
   password: string
   rol: string
-  ubicacion?: string
   estado?: boolean
   verificado?: boolean
 }
@@ -24,7 +23,6 @@ export interface UsuarioActualizarDatos {
   email?: string
   password?: string
   rol?: string
-  ubicacion?: string
   estado?: boolean
   verificado?: boolean
 }

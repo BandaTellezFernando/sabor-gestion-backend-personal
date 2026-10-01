@@ -7,7 +7,11 @@ import {
   UsuarioCrearDatos,
   UsuarioActualizarDatos
 } from '../repositories/usuarios.repo'
-import { obtenerFechaBolivia, formatearFechaBolivia } from '../utils/fechaBolivia'
+import {
+  obtenerFechaBolivia,
+  formatearFechaBolivia,
+  formatearFechaHoraBolivia
+} from '../utils/fechaBolivia'
 
 export class UsuarioServiceError extends Error {
   constructor(
@@ -31,7 +35,6 @@ export interface UsuarioCrearDTO {
   email?: string
   password?: string
   rol?: string
-  zona?: string
 }
 
 export interface UsuarioActualizarDTO {
@@ -41,7 +44,6 @@ export interface UsuarioActualizarDTO {
   email?: string
   password?: string
   rol?: string
-  zona?: string
 }
 
 export interface ReporteCierreCajaDTO {
@@ -61,7 +63,6 @@ export interface UsuarioCambioEstadoDTO {
 
 export interface UsuarioNormalizado {
   id: string
-  _id: string
   nombre: string
   apellido: string
   ci: string
@@ -69,10 +70,8 @@ export interface UsuarioNormalizado {
   rol: string
   estado: boolean
   verificado: boolean
-  zona: string
-  ubicacion?: string
-  createdAt?: Date | string
-  updatedAt?: Date | string
+  createdAt?: string
+  updatedAt?: string
 }
 
 export interface ResultadoCambioEstado {
@@ -94,9 +93,9 @@ export class UsuarioService {
 
   /**
    * Mapea un documento de usuario de MongoDB al formato requerido por el frontend,
-   * garantizando la exclusión absoluta del campo password.
+   * exponiendo únicamente id (sin _id) y con fechas formateadas en hora de Bolivia.
    */
-  private normalizarUsuario(u: any, zonaFallback = ''): UsuarioNormalizado {
+  private normalizarUsuario(u: any): UsuarioNormalizado {
     const raw =
       u && typeof u.toObject === 'function'
         ? u.toObject()
@@ -104,11 +103,9 @@ export class UsuarioService {
           ? u._doc
           : u || {}
     const id = raw._id ? raw._id.toString() : raw.id ? raw.id.toString() : ''
-    const zona = raw.ubicacion || raw.zona || zonaFallback || ''
 
     return {
       id,
-      _id: id,
       nombre: raw.nombre || '',
       apellido: raw.apellido || '',
       ci: raw.ci || '',
@@ -116,15 +113,13 @@ export class UsuarioService {
       rol: raw.rol || '',
       estado: raw.estado !== undefined ? raw.estado : true,
       verificado: raw.verificado !== undefined ? raw.verificado : true,
-      zona,
-      ubicacion: raw.ubicacion || undefined,
-      createdAt: raw.createdAt,
-      updatedAt: raw.updatedAt
+      createdAt: raw.createdAt ? formatearFechaHoraBolivia(raw.createdAt) : undefined,
+      updatedAt: raw.updatedAt ? formatearFechaHoraBolivia(raw.updatedAt) : undefined
     }
   }
 
   /**
-   * Obtiene la lista completa de usuarios mapeando ubicacion a zona y sin contraseñas
+   * Obtiene la lista completa de usuarios sin contraseñas
    */
   async obtenerUsuarios(): Promise<UsuarioNormalizado[]> {
     const usuarios = await this.usuarioRepo.buscarTodos()
@@ -152,7 +147,6 @@ export class UsuarioService {
     const email = dto.email ? String(dto.email).trim() : ''
     const password = dto.password ? String(dto.password) : ''
     const rol = dto.rol ? String(dto.rol).trim() : ''
-    const zona = dto.zona ? String(dto.zona).trim() : ''
 
     const regexNombres = /^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]+$/
     if (!regexNombres.test(nombre) || nombre.length > 30) {
@@ -200,12 +194,11 @@ export class UsuarioService {
       ci,
       email,
       password: passwordHasheada,
-      rol,
-      ubicacion: zona
+      rol
     })
 
     const usuarioCreado = await this.usuarioRepo.buscarPorId(nuevoUsuario._id.toString())
-    return this.normalizarUsuario(usuarioCreado, zona)
+    return this.normalizarUsuario(usuarioCreado)
   }
 
   /**
@@ -271,7 +264,6 @@ export class UsuarioService {
     if (dto.ci !== undefined) datosActualizados.ci = dto.ci
     if (dto.email !== undefined) datosActualizados.email = dto.email
     if (dto.rol !== undefined) datosActualizados.rol = dto.rol
-    if (dto.zona !== undefined) datosActualizados.ubicacion = dto.zona
 
     // Si viene nueva contraseña no vacía, se hashea con salt 10
     if (dto.password && typeof dto.password === 'string' && dto.password.trim() !== '') {
@@ -284,7 +276,7 @@ export class UsuarioService {
       throw new UsuarioServiceError(404, 'Usuario no encontrado tras actualizar')
     }
 
-    return this.normalizarUsuario(usuarioActualizado, dto.zona || '')
+    return this.normalizarUsuario(usuarioActualizado)
   }
 
   /**
@@ -349,7 +341,7 @@ export class UsuarioService {
 
     return {
       estado: estadoBool,
-      usuario: this.normalizarUsuario(usuarioActualizado, usuarioActualizado.ubicacion)
+      usuario: this.normalizarUsuario(usuarioActualizado)
     }
   }
 
@@ -364,7 +356,7 @@ export class UsuarioService {
   }
 
   /**
-   * Inicia sesión de empleado validando credenciales y estado activo, emitiendo JWT con { id, rol, zona }
+   * Inicia sesión de empleado validando credenciales y estado activo, emitiendo JWT con { id, rol }
    */
   async loginUsuario(email: string, password: string): Promise<ResultadoLoginUsuario> {
     if (!email || !password) {
@@ -391,13 +383,10 @@ export class UsuarioService {
       throw new Error('JWT_SECRET no está configurado en las variables de entorno')
     }
 
-    const zona = usuario.ubicacion || ''
-
     const token = jwt.sign(
       {
         id: usuario._id.toString(),
-        rol: usuario.rol,
-        zona
+        rol: usuario.rol
       },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
@@ -405,7 +394,7 @@ export class UsuarioService {
 
     return {
       token,
-      usuario: this.normalizarUsuario(usuario, zona)
+      usuario: this.normalizarUsuario(usuario)
     }
   }
 }
