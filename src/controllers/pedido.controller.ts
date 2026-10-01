@@ -43,8 +43,8 @@ export const crearPedido = async (req: CustomRequest, res: Response): Promise<vo
       })
       return
     }
-    const err = error as Error
-    res.status(500).json({ mensaje: 'Error al registrar el pedido', error: err.message })
+    console.error('Error al registrar el pedido:', error)
+    res.status(500).json({ mensaje: 'Error al registrar el pedido' })
   }
 }
 
@@ -57,8 +57,8 @@ export const obtenerPedidos = async (req: Request, res: Response): Promise<void>
       res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
       return
     }
-    const err = error as Error
-    res.status(500).json({ mensaje: 'Error al obtener los pedidos', error: err.message })
+    console.error('Error al obtener los pedidos:', error)
+    res.status(500).json({ mensaje: 'Error al obtener los pedidos' })
   }
 }
 
@@ -88,8 +88,8 @@ export const cancelarPedido = async (req: Request, res: Response): Promise<void>
       res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
       return
     }
-    const err = error as Error
-    res.status(500).json({ mensaje: 'Error al procesar la cancelación', error: err.message })
+    console.error('Error al procesar la cancelación:', error)
+    res.status(500).json({ mensaje: 'Error al procesar la cancelación' })
   }
 }
 
@@ -140,10 +140,10 @@ export const actualizarEstadoPedido = async (req: Request, res: Response): Promi
       res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
       return
     }
-    const err = error as Error
+    console.error('Error al actualizar el estado del pedido:', error)
     res
       .status(500)
-      .json({ mensaje: 'Error al actualizar el estado del pedido', error: err.message })
+      .json({ mensaje: 'Error al actualizar el estado del pedido' })
   }
 }
 
@@ -181,8 +181,8 @@ export const actualizarPedido = async (req: Request, res: Response): Promise<voi
       res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
       return
     }
-    const err = error as Error
-    res.status(500).json({ mensaje: 'Error al actualizar el pedido', error: err.message })
+    console.error('Error al actualizar el pedido:', error)
+    res.status(500).json({ mensaje: 'Error al actualizar el pedido' })
   }
 }
 
@@ -201,10 +201,9 @@ export const obtenerPedidosPendientesCobro = async (
       res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
       return
     }
-    const err = error as Error
+    console.error('Error al obtener pedidos pendientes de cobro:', error)
     res.status(500).json({
-      mensaje: 'Error al obtener pedidos pendientes de cobro',
-      error: err.message
+      mensaje: 'Error al obtener pedidos pendientes de cobro'
     })
   }
 }
@@ -236,10 +235,9 @@ export const solicitarCuentaPedido = async (req: Request, res: Response): Promis
       res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
       return
     }
-    const err = error as Error
+    console.error('Error al solicitar la cuenta:', error)
     res.status(500).json({
-      mensaje: 'Error al solicitar la cuenta',
-      error: err.message
+      mensaje: 'Error al solicitar la cuenta'
     })
   }
 }

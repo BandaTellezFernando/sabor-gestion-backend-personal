@@ -1,4 +1,5 @@
 // src/services/plato.service.ts
+import { Types } from 'mongoose'
 import { PlatoRepository, IPlato } from '../repositories/plato.repo'
 import { eliminarDeCloudinary } from '../configs/cloudinary'
 
@@ -12,6 +13,20 @@ export class PlatoServiceError extends Error {
   }
 }
 
+export interface PlatoResponseDTO {
+  id: string
+  _id: string
+  nombre: string
+  descripcion: string
+  precio: number
+  imagenUrl: string
+  imagenPublicId: string
+  disponible: boolean
+  categoria: any
+  createdAt?: Date
+  updatedAt?: Date
+}
+
 export class PlatoService {
   private platoRepo: PlatoRepository
 
@@ -19,10 +34,65 @@ export class PlatoService {
     this.platoRepo = platoRepo || new PlatoRepository()
   }
 
+  private toDTO(p: any): PlatoResponseDTO {
+    const raw =
+      p && typeof p.toObject === 'function'
+        ? p.toObject()
+        : p && p._doc
+          ? p._doc
+          : p || {}
+    const id = raw._id ? raw._id.toString() : raw.id ? raw.id.toString() : ''
+
+    let categoria = raw.categoria
+    if (categoria) {
+      const catRaw =
+        typeof categoria.toObject === 'function'
+          ? categoria.toObject()
+          : categoria._doc || categoria
+
+      const esPoblado =
+        catRaw &&
+        typeof catRaw === 'object' &&
+        !(catRaw instanceof Types.ObjectId) &&
+        typeof catRaw.nombre === 'string'
+
+      if (esPoblado) {
+        const catId = catRaw._id ? catRaw._id.toString() : catRaw.id ? catRaw.id.toString() : ''
+        categoria = {
+          id: catId,
+          _id: catId,
+          nombre: catRaw.nombre,
+          createdAt: catRaw.createdAt,
+          updatedAt: catRaw.updatedAt
+        }
+      } else {
+        const catId =
+          catRaw && (catRaw._id || catRaw.id)
+            ? (catRaw._id || catRaw.id).toString()
+            : categoria.toString()
+        categoria = catId
+      }
+    }
+
+    return {
+      id,
+      _id: id,
+      nombre: raw.nombre || '',
+      descripcion: raw.descripcion || '',
+      precio: Number(raw.precio || 0),
+      imagenUrl: raw.imagenUrl || '',
+      imagenPublicId: raw.imagenPublicId || '',
+      disponible: raw.disponible !== undefined ? Boolean(raw.disponible) : true,
+      categoria,
+      createdAt: raw.createdAt,
+      updatedAt: raw.updatedAt
+    }
+  }
+
   /**
    * Valida reglas de negocio y crea un nuevo plato
    */
-  async crearPlato(datos: any): Promise<IPlato> {
+  async crearPlato(datos: any): Promise<PlatoResponseDTO> {
     const { nombre, descripcion, precio, imagenUrl, imagenPublicId, categoria } = datos
 
     if (!imagenUrl || !imagenPublicId) {
@@ -32,7 +102,7 @@ export class PlatoService {
       )
     }
 
-    return await this.platoRepo.crear({
+    const nuevoPlato = await this.platoRepo.crear({
       nombre,
       descripcion,
       precio,
@@ -40,34 +110,36 @@ export class PlatoService {
       imagenPublicId,
       categoria
     })
+    return this.toDTO(nuevoPlato)
   }
 
   /**
    * Obtiene la lista de platos con filtros opcionales (ej: categoría)
    */
-  async obtenerPlatos(category?: string): Promise<IPlato[]> {
+  async obtenerPlatos(category?: string): Promise<PlatoResponseDTO[]> {
     let filtro: Record<string, any> = {}
     if (category) {
       filtro = { categoria: category }
     }
-    return await this.platoRepo.buscarTodos(filtro)
+    const platos = await this.platoRepo.buscarTodos(filtro)
+    return platos.map((p) => this.toDTO(p))
   }
 
   /**
    * Obtiene el detalle de un plato por su ID
    */
-  async obtenerPlatoPorId(id: string): Promise<IPlato> {
+  async obtenerPlatoPorId(id: string): Promise<PlatoResponseDTO> {
     const plato = await this.platoRepo.buscarPorIdConCategoria(id)
     if (!plato) {
       throw new PlatoServiceError(404, 'Plato no encontrado')
     }
-    return plato
+    return this.toDTO(plato)
   }
 
   /**
    * Actualiza los datos de un plato y limpia la imagen anterior en Cloudinary si fue sustituida
    */
-  async actualizarPlato(id: string, datos: any): Promise<IPlato> {
+  async actualizarPlato(id: string, datos: any): Promise<PlatoResponseDTO> {
     const plato = await this.platoRepo.buscarPorId(id)
     if (!plato) {
       throw new PlatoServiceError(404, 'Plato no encontrado')
@@ -94,7 +166,7 @@ export class PlatoService {
       throw new PlatoServiceError(404, 'Plato no encontrado')
     }
 
-    return platoActualizado
+    return this.toDTO(platoActualizado)
   }
 
   /**

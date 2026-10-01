@@ -313,7 +313,7 @@ export class PedidoService {
       const cierres = await this.pedidoRepo.buscarReportesCierre(limite)
       return cierres.map((cierre: any) => {
         const cierrePlano = typeof cierre.toObject === 'function' ? cierre.toObject() : cierre
-        const { fechaCierreBolivia, fechaCierre, ...restoCierre } = cierrePlano
+        const { fechaCierreBolivia, fechaCierre, __v, ...restoCierre } = cierrePlano
 
         return {
           ...restoCierre,

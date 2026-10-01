@@ -22,6 +22,17 @@ export interface IngredienteInputDTO {
   disponible?: boolean | string
 }
 
+export interface IngredienteResponseDTO {
+  id: string
+  _id: string
+  nombre: string
+  unidadMedida: string
+  disponible: boolean
+  fechaRegistro?: Date
+  createdAt?: Date
+  updatedAt?: Date
+}
+
 export class IngredienteService {
   private ingredienteRepo: IngredienteRepository
 
@@ -29,28 +40,49 @@ export class IngredienteService {
     this.ingredienteRepo = ingredienteRepo || ingredienteRepository
   }
 
+  private toDTO(i: any): IngredienteResponseDTO {
+    const raw =
+      i && typeof i.toObject === 'function'
+        ? i.toObject()
+        : i && i._doc
+          ? i._doc
+          : i || {}
+    const id = raw._id ? raw._id.toString() : raw.id ? raw.id.toString() : ''
+    return {
+      id,
+      _id: id,
+      nombre: raw.nombre || '',
+      unidadMedida: raw.unidadMedida || '',
+      disponible: raw.disponible !== undefined ? Boolean(raw.disponible) : true,
+      fechaRegistro: raw.fechaRegistro,
+      createdAt: raw.createdAt,
+      updatedAt: raw.updatedAt
+    }
+  }
+
   /**
    * Obtiene todos los ingredientes ordenados alfabéticamente
    */
-  async obtenerIngredientes(): Promise<IIngrediente[]> {
-    return await this.ingredienteRepo.buscarTodos()
+  async obtenerIngredientes(): Promise<IngredienteResponseDTO[]> {
+    const ingredientes = await this.ingredienteRepo.buscarTodos()
+    return ingredientes.map((i) => this.toDTO(i))
   }
 
   /**
    * Obtiene un ingrediente por su identificador único
    */
-  async obtenerIngredientePorId(id: string): Promise<IIngrediente> {
+  async obtenerIngredientePorId(id: string): Promise<IngredienteResponseDTO> {
     const ingrediente = await this.ingredienteRepo.buscarPorId(id)
     if (!ingrediente) {
       throw new IngredienteServiceError(404, 'Ingrediente no encontrado')
     }
-    return ingrediente
+    return this.toDTO(ingrediente)
   }
 
   /**
    * Valida reglas de negocio y crea un nuevo ingrediente con disponibilidad booleana
    */
-  async crearIngrediente(body: IngredienteInputDTO): Promise<IIngrediente> {
+  async crearIngrediente(body: IngredienteInputDTO): Promise<IngredienteResponseDTO> {
     const nombre = body.nombre ? String(body.nombre).trim() : ''
     const unidadMedida = body.unidadMedida ? String(body.unidadMedida).trim() : ''
 
@@ -63,11 +95,12 @@ export class IngredienteService {
 
     const disponible = body.disponible !== undefined ? Boolean(body.disponible) : true
 
-    return await this.ingredienteRepo.crear({
+    const nuevoIngrediente = await this.ingredienteRepo.crear({
       nombre,
       unidadMedida,
       disponible
     })
+    return this.toDTO(nuevoIngrediente)
   }
 
   /**
@@ -76,7 +109,7 @@ export class IngredienteService {
   async actualizarIngrediente(
     id: string,
     body: IngredienteInputDTO
-  ): Promise<IIngrediente> {
+  ): Promise<IngredienteResponseDTO> {
     const existente = await this.ingredienteRepo.buscarPorId(id)
     if (!existente) {
       throw new IngredienteServiceError(404, 'Ingrediente no encontrado')
@@ -92,7 +125,7 @@ export class IngredienteService {
       throw new IngredienteServiceError(404, 'Ingrediente no encontrado')
     }
 
-    return actualizado
+    return this.toDTO(actualizado)
   }
 
   /**

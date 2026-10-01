@@ -42,8 +42,6 @@ export interface UsuarioActualizarDTO {
   password?: string
   rol?: string
   zona?: string
-  telefono?: string
-  direcciones?: any[]
 }
 
 export interface ReporteCierreCajaDTO {
@@ -73,8 +71,6 @@ export interface UsuarioNormalizado {
   verificado: boolean
   zona: string
   ubicacion?: string
-  telefono?: string
-  direcciones?: any[]
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -101,17 +97,29 @@ export class UsuarioService {
    * garantizando la exclusión absoluta del campo password.
    */
   private normalizarUsuario(u: any, zonaFallback = ''): UsuarioNormalizado {
-    const id = u._id ? u._id.toString() : u.id ? u.id.toString() : ''
-    const zona = u.ubicacion || u.zona || zonaFallback || ''
-    const copy = { ...u }
-    delete copy.password
+    const raw =
+      u && typeof u.toObject === 'function'
+        ? u.toObject()
+        : u && u._doc
+          ? u._doc
+          : u || {}
+    const id = raw._id ? raw._id.toString() : raw.id ? raw.id.toString() : ''
+    const zona = raw.ubicacion || raw.zona || zonaFallback || ''
 
     return {
-      ...copy,
       id,
       _id: id,
+      nombre: raw.nombre || '',
+      apellido: raw.apellido || '',
+      ci: raw.ci || '',
+      email: raw.email || '',
+      rol: raw.rol || '',
+      estado: raw.estado !== undefined ? raw.estado : true,
+      verificado: raw.verificado !== undefined ? raw.verificado : true,
       zona,
-      ubicacion: u.ubicacion || undefined
+      ubicacion: raw.ubicacion || undefined,
+      createdAt: raw.createdAt,
+      updatedAt: raw.updatedAt
     }
   }
 
@@ -264,8 +272,6 @@ export class UsuarioService {
     if (dto.email !== undefined) datosActualizados.email = dto.email
     if (dto.rol !== undefined) datosActualizados.rol = dto.rol
     if (dto.zona !== undefined) datosActualizados.ubicacion = dto.zona
-    if (dto.telefono !== undefined) datosActualizados.telefono = dto.telefono
-    if (dto.direcciones !== undefined) datosActualizados.direcciones = dto.direcciones
 
     // Si viene nueva contraseña no vacía, se hashea con salt 10
     if (dto.password && typeof dto.password === 'string' && dto.password.trim() !== '') {
@@ -343,10 +349,7 @@ export class UsuarioService {
 
     return {
       estado: estadoBool,
-      usuario: {
-        ...usuarioActualizado,
-        zona: usuarioActualizado.ubicacion
-      }
+      usuario: this.normalizarUsuario(usuarioActualizado, usuarioActualizado.ubicacion)
     }
   }
 

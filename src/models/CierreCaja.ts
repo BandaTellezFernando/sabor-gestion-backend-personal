@@ -34,7 +34,8 @@ const CierreCajaSchema: Schema = new Schema(
     fechaCierre: { type: Date, default: obtenerFechaBolivia }
   },
   {
-    timestamps: true
+    timestamps: true,
+    versionKey: false
   }
 )
 

@@ -11,6 +11,14 @@ export class CategoriaServiceError extends Error {
   }
 }
 
+export interface CategoriaResponseDTO {
+  id: string
+  _id: string
+  nombre: string
+  createdAt?: Date
+  updatedAt?: Date
+}
+
 export class CategoriaService {
   private categoriaRepo: CategoriaRepository
 
@@ -18,28 +26,46 @@ export class CategoriaService {
     this.categoriaRepo = categoriaRepo || new CategoriaRepository()
   }
 
+  private toDTO(c: any): CategoriaResponseDTO {
+    const raw =
+      c && typeof c.toObject === 'function'
+        ? c.toObject()
+        : c && c._doc
+          ? c._doc
+          : c || {}
+    const id = raw._id ? raw._id.toString() : raw.id ? raw.id.toString() : ''
+    return {
+      id,
+      _id: id,
+      nombre: raw.nombre || '',
+      createdAt: raw.createdAt,
+      updatedAt: raw.updatedAt
+    }
+  }
+
   /**
    * Obtiene todas las categorías registradas
    */
-  async obtenerCategorias(): Promise<ICategoria[]> {
-    return await this.categoriaRepo.buscarTodos()
+  async obtenerCategorias(): Promise<CategoriaResponseDTO[]> {
+    const categorias = await this.categoriaRepo.buscarTodos()
+    return categorias.map((c) => this.toDTO(c))
   }
 
   /**
    * Obtiene una categoría por su identificador
    */
-  async obtenerCategoriaPorId(id: string): Promise<ICategoria> {
+  async obtenerCategoriaPorId(id: string): Promise<CategoriaResponseDTO> {
     const categoria = await this.categoriaRepo.buscarPorId(id)
     if (!categoria) {
       throw new CategoriaServiceError(404, 'Categoría no encontrada')
     }
-    return categoria
+    return this.toDTO(categoria)
   }
 
   /**
    * Valida las reglas de negocio y crea una nueva categoría
    */
-  async crearCategoria(datos: { nombre?: string; [key: string]: any }): Promise<ICategoria> {
+  async crearCategoria(datos: { nombre?: string; [key: string]: any }): Promise<CategoriaResponseDTO> {
     const { nombre } = datos
 
     if (!nombre || typeof nombre !== 'string' || nombre.trim() === '') {
@@ -64,10 +90,11 @@ export class CategoriaService {
       throw new CategoriaServiceError(400, 'Ya existe una categoría con ese nombre')
     }
 
-    return await this.categoriaRepo.crear({
+    const nuevaCategoria = await this.categoriaRepo.crear({
       ...datos,
       nombre: nombreNormalizado
     })
+    return this.toDTO(nuevaCategoria)
   }
 
   /**
@@ -76,7 +103,7 @@ export class CategoriaService {
   async actualizarCategoria(
     id: string,
     datos: { nombre?: string; [key: string]: any }
-  ): Promise<ICategoria> {
+  ): Promise<CategoriaResponseDTO> {
     const { nombre } = datos
 
     if (!nombre || typeof nombre !== 'string' || nombre.trim() === '') {
@@ -109,7 +136,7 @@ export class CategoriaService {
       throw new CategoriaServiceError(404, 'Categoría no encontrada')
     }
 
-    return categoriaActualizada
+    return this.toDTO(categoriaActualizada)
   }
 
   /**

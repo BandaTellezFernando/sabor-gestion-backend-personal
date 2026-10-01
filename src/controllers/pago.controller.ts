@@ -89,9 +89,8 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
       res.status(error.statusCode).json({ mensaje: error.message })
       return
     }
-    const err = error as Error
-    console.error('Error en la transacción de pago:', err)
-    res.status(500).json({ mensaje: 'Error al procesar el pago', error: err.message })
+    console.error('Error en la transacción de pago:', error)
+    res.status(500).json({ mensaje: 'Error al procesar el pago' })
   }
 }
 

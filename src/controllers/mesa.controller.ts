@@ -19,8 +19,8 @@ export const crearMesa = async (req: Request, res: Response): Promise<void> => {
       res.status(error.statusCode).json({ mensaje: error.message })
       return
     }
-    const err = error as Error
-    res.status(500).json({ mensaje: 'Error al crear la mesa', error: err.message || err })
+    console.error('Error al crear la mesa:', error)
+    res.status(500).json({ mensaje: 'Error al crear la mesa' })
   }
 }
 
@@ -34,8 +34,8 @@ export const obtenerMesas = async (req: Request, res: Response): Promise<void> =
       res.status(error.statusCode).json({ mensaje: error.message })
       return
     }
-    const err = error as Error
-    res.status(500).json({ mensaje: 'Error al obtener las mesas', error: err.message || err })
+    console.error('Error al obtener las mesas:', error)
+    res.status(500).json({ mensaje: 'Error al obtener las mesas' })
   }
 }
 
@@ -49,8 +49,8 @@ export const obtenerMesaPorId = async (req: Request, res: Response): Promise<voi
       res.status(error.statusCode).json({ mensaje: error.message })
       return
     }
-    const err = error as Error
-    res.status(500).json({ mensaje: 'Error al obtener la mesa', error: err.message || err })
+    console.error('Error al obtener la mesa:', error)
+    res.status(500).json({ mensaje: 'Error al obtener la mesa' })
   }
 }
 
@@ -69,8 +69,8 @@ export const actualizarMesa = async (req: Request, res: Response): Promise<void>
       res.status(error.statusCode).json({ mensaje: error.message })
       return
     }
-    const err = error as Error
-    res.status(500).json({ mensaje: 'Error al actualizar la mesa', error: err.message || err })
+    console.error('Error al actualizar la mesa:', error)
+    res.status(500).json({ mensaje: 'Error al actualizar la mesa' })
   }
 }
 
@@ -90,8 +90,8 @@ export const actualizarEstadoMesa = async (req: Request, res: Response): Promise
       res.status(error.statusCode).json({ mensaje: error.message })
       return
     }
-    const err = error as Error
-    res.status(500).json({ mensaje: 'Error al actualizar estado', error: err.message || err })
+    console.error('Error al actualizar estado:', error)
+    res.status(500).json({ mensaje: 'Error al actualizar estado' })
   }
 }
 
@@ -110,7 +110,7 @@ export const eliminarMesa = async (req: Request, res: Response): Promise<void> =
       res.status(error.statusCode).json({ mensaje: error.message })
       return
     }
-    const err = error as Error
-    res.status(500).json({ mensaje: 'Error al eliminar mesa', error: err.message || err })
+    console.error('Error al eliminar mesa:', error)
+    res.status(500).json({ mensaje: 'Error al eliminar mesa' })
   }
 }

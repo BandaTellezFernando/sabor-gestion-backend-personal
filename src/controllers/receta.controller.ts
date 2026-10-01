@@ -18,10 +18,9 @@ export const obtenerRecetas = async (
       res.status(error.statusCode).json({ mensaje: error.message })
       return
     }
-    const err = error as Error
+    console.error('Error al obtener recetas:', error)
     res.status(500).json({
-      mensaje: 'Error al obtener recetas',
-      error: err.message
+      mensaje: 'Error al obtener recetas'
     })
   }
 }
@@ -58,10 +57,9 @@ export const guardarReceta = async (
       res.status(error.statusCode).json({ mensaje: error.message })
       return
     }
-    const err = error as Error
+    console.error('Error al guardar la receta:', error)
     res.status(500).json({
-      mensaje: 'Error al guardar la receta',
-      error: err.message
+      mensaje: 'Error al guardar la receta'
     })
   }
 }
@@ -91,10 +89,9 @@ export const eliminarReceta = async (
       res.status(error.statusCode).json({ mensaje: error.message })
       return
     }
-    const err = error as Error
+    console.error('Error al eliminar receta:', error)
     res.status(500).json({
-      mensaje: 'Error al eliminar receta',
-      error: err.message
+      mensaje: 'Error al eliminar receta'
     })
   }
 }

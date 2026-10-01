@@ -16,9 +16,9 @@ export const obtenerResumenDashboard = async (req: Request, res: Response): Prom
       res.status(error.statusCode).json({ mensaje: error.message })
       return
     }
-    const err = error as Error
+    console.error('Error al generar el resumen del Dashboard:', error)
     res
       .status(500)
-      .json({ mensaje: 'Error al generar el resumen del Dashboard', error: err.message })
+      .json({ mensaje: 'Error al generar el resumen del Dashboard' })
   }
 }

@@ -11,10 +11,8 @@ export const obtenerUbicaciones = async (req: Request, res: Response): Promise<v
       res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
       return
     }
-    const err = error as Error
-    res
-      .status(500)
-      .json({ mensaje: 'Error al obtener ubicaciones', error: err.message || err })
+    console.error('Error al obtener ubicaciones:', error)
+    res.status(500).json({ mensaje: 'Error al obtener ubicaciones' })
   }
 }
 
@@ -27,9 +25,8 @@ export const crearUbicacion = async (req: Request, res: Response): Promise<void>
       res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
       return
     }
-    const err = error as Error
     console.error('crearUbicacion error:', error)
-    res.status(500).json({ mensaje: 'Error al crear ubicacion', error: err.message || err })
+    res.status(500).json({ mensaje: 'Error al crear ubicacion' })
   }
 }
 
@@ -43,10 +40,8 @@ export const actualizarUbicacion = async (req: Request, res: Response): Promise<
       res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
       return
     }
-    const err = error as Error
-    res
-      .status(500)
-      .json({ mensaje: 'Error al actualizar ubicación', error: err.message || err })
+    console.error('Error al actualizar ubicación:', error)
+    res.status(500).json({ mensaje: 'Error al actualizar ubicación' })
   }
 }
 
@@ -60,9 +55,7 @@ export const eliminarUbicacion = async (req: Request, res: Response): Promise<vo
       res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
       return
     }
-    const err = error as Error
-    res
-      .status(500)
-      .json({ mensaje: 'Error al eliminar ubicación', error: err.message || err })
+    console.error('Error al eliminar ubicación:', error)
+    res.status(500).json({ mensaje: 'Error al eliminar ubicación' })
   }
 }

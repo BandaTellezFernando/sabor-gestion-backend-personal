@@ -15,8 +15,6 @@ export interface UsuarioCrearDatos {
   ubicacion?: string
   estado?: boolean
   verificado?: boolean
-  telefono?: string
-  direcciones?: any[]
 }
 
 export interface UsuarioActualizarDatos {
@@ -29,8 +27,6 @@ export interface UsuarioActualizarDatos {
   ubicacion?: string
   estado?: boolean
   verificado?: boolean
-  telefono?: string
-  direcciones?: any[]
 }
 
 export interface CierreCajaCrearDatos {

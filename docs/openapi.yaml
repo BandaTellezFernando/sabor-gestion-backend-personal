@@ -214,7 +214,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/usuarios/{id}:
     put:
       tags:
@@ -274,7 +274,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
     delete:
       tags:
         - Usuarios
@@ -816,7 +816,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
     post:
       tags:
         - Mesas
@@ -869,7 +869,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/mesas/{id}:
     get:
       tags:
@@ -911,7 +911,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
     put:
       tags:
         - Mesas
@@ -970,7 +970,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
     delete:
       tags:
         - Mesas
@@ -1017,7 +1017,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/mesas/{id}/estado:
     patch:
       tags:
@@ -1065,7 +1065,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/ubicaciones:
     get:
       tags:
@@ -1095,7 +1095,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
     post:
       tags:
         - Ubicaciones
@@ -1140,7 +1140,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/ubicaciones/{id}:
     put:
       tags:
@@ -1200,7 +1200,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
     delete:
       tags:
         - Ubicaciones
@@ -1249,7 +1249,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/inventario/estado:
     get:
       tags:
@@ -1279,7 +1279,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/inventario/ingredientes:
     get:
       tags:
@@ -1309,7 +1309,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
     post:
       tags:
         - Ingredientes
@@ -1354,7 +1354,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/inventario/ingredientes/{id}:
     put:
       tags:
@@ -1408,7 +1408,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
     delete:
       tags:
         - Ingredientes
@@ -1457,7 +1457,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/inventario/recetas:
     get:
       tags:
@@ -1487,7 +1487,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
     post:
       tags:
         - Recetas
@@ -1544,7 +1544,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/inventario/recetas/{id}:
     delete:
       tags:
@@ -1594,7 +1594,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/pedidos:
     get:
       tags:
@@ -1672,7 +1672,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
     post:
       tags:
         - Pedidos
@@ -1723,7 +1723,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/pedidos/pendientes-cobro:
     get:
       tags:
@@ -1767,7 +1767,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/pedidos/{id}:
     put:
       tags:
@@ -1827,7 +1827,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/pedidos/{id}/estado:
     patch:
       tags:
@@ -1881,7 +1881,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/pedidos/{id}/solicitar-cuenta:
     patch:
       tags:
@@ -1935,7 +1935,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/pedidos/{id}/cancel:
     patch:
       tags:
@@ -1983,7 +1983,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/pagos/generar-qr/{pedidoId}:
     post:
       tags:
@@ -2085,7 +2085,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/pagos/notificar-qr/{pedidoId}:
     post:
       tags:
@@ -2215,7 +2215,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MensajeErrorDetalleResponse'
+                $ref: '#/components/schemas/MensajeErrorResponse'
 components:
   securitySchemes:
     bearerAuth:
@@ -2231,18 +2231,6 @@ components:
       properties:
         mensaje:
           type: string
-          example: Mensaje descriptivo del error
-    MensajeErrorDetalleResponse:
-      type: object
-      required:
-        - mensaje
-      properties:
-        mensaje:
-          type: string
-          example: Error en el servidor
-        error:
-          type: string
-          example: Detalle técnico del error
     MensajeRespuestaResponse:
       type: object
       required:
@@ -2475,6 +2463,9 @@ components:
     Categoria:
       type: object
       properties:
+        id:
+          type: string
+          example: '000000000000000000000010'
         _id:
           type: string
           example: '000000000000000000000010'
@@ -2498,6 +2489,9 @@ components:
     Plato:
       type: object
       properties:
+        id:
+          type: string
+          example: '000000000000000000000020'
         _id:
           type: string
           example: '000000000000000000000020'
@@ -2755,6 +2749,9 @@ components:
     Ingrediente:
       type: object
       properties:
+        id:
+          type: string
+          example: '000000000000000000000050'
         _id:
           type: string
           example: '000000000000000000000050'
@@ -2836,6 +2833,9 @@ components:
     Receta:
       type: object
       properties:
+        id:
+          type: string
+          example: '000000000000000000000060'
         _id:
           type: string
           example: '000000000000000000000060'

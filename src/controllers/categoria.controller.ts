@@ -10,7 +10,8 @@ export const crearCategoria = async (req: Request, res: Response): Promise<any> 
     if (error instanceof CategoriaServiceError) {
       return res.status(error.statusCode).json({ mensaje: error.message })
     }
-    return res.status(500).json({ mensaje: 'Error al crear la categoría', error })
+    console.error('Error al crear la categoría:', error)
+    return res.status(500).json({ mensaje: 'Error al crear la categoría' })
   }
 }
 
@@ -22,7 +23,8 @@ export const obtenerCategorias = async (req: Request, res: Response): Promise<an
     if (error instanceof CategoriaServiceError) {
       return res.status(error.statusCode).json({ mensaje: error.message })
     }
-    return res.status(500).json({ mensaje: 'Error al obtener las categorías', error })
+    console.error('Error al obtener las categorías:', error)
+    return res.status(500).json({ mensaje: 'Error al obtener las categorías' })
   }
 }
 
@@ -35,7 +37,8 @@ export const actualizarCategoria = async (req: Request, res: Response): Promise<
     if (error instanceof CategoriaServiceError) {
       return res.status(error.statusCode).json({ mensaje: error.message })
     }
-    return res.status(500).json({ mensaje: 'Error al actualizar la categoría', error })
+    console.error('Error al actualizar la categoría:', error)
+    return res.status(500).json({ mensaje: 'Error al actualizar la categoría' })
   }
 }
 
@@ -48,6 +51,7 @@ export const eliminarCategoria = async (req: Request, res: Response): Promise<an
     if (error instanceof CategoriaServiceError) {
       return res.status(error.statusCode).json({ mensaje: error.message })
     }
-    return res.status(500).json({ mensaje: 'Error al eliminar la categoría', error })
+    console.error('Error al eliminar la categoría:', error)
+    return res.status(500).json({ mensaje: 'Error al eliminar la categoría' })
   }
 }

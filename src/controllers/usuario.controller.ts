@@ -43,8 +43,7 @@ export const crearUsuario = async (
     }
     console.error('ERROR DETALLADO:', error)
     res.status(500).json({
-      mensaje: 'Error en el servidor',
-      error: error.message
+      mensaje: 'Error en el servidor'
     })
   }
 }
@@ -70,8 +69,7 @@ export const actualizarUsuario = async (
     }
     console.error('Error al actualizar:', error)
     res.status(500).json({
-      mensaje: 'Error al actualizar el usuario',
-      error: error.message || error
+      mensaje: 'Error al actualizar el usuario'
     })
   }
 }

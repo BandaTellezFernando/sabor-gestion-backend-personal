@@ -11,7 +11,8 @@ export const crearPlato = async (req: Request, res: Response): Promise<any> => {
     if (error instanceof PlatoServiceError) {
       return res.status(error.statusCode).json({ mensaje: error.message })
     }
-    return res.status(500).json({ mensaje: 'Error al crear el plato', error })
+    console.error('Error al crear el plato:', error)
+    return res.status(500).json({ mensaje: 'Error al crear el plato' })
   }
 }
 
@@ -25,7 +26,8 @@ export const obtenerPlatos = async (req: Request, res: Response): Promise<any> =
     if (error instanceof PlatoServiceError) {
       return res.status(error.statusCode).json({ mensaje: error.message })
     }
-    return res.status(500).json({ mensaje: 'Error al obtener los platos', error })
+    console.error('Error al obtener los platos:', error)
+    return res.status(500).json({ mensaje: 'Error al obtener los platos' })
   }
 }
 
@@ -39,7 +41,8 @@ export const obtenerPlatoPorId = async (req: Request, res: Response): Promise<an
     if (error instanceof PlatoServiceError) {
       return res.status(error.statusCode).json({ mensaje: error.message })
     }
-    return res.status(500).json({ mensaje: 'Error al obtener el plato', error })
+    console.error('Error al obtener el plato:', error)
+    return res.status(500).json({ mensaje: 'Error al obtener el plato' })
   }
 }
 
@@ -53,7 +56,8 @@ export const actualizarPlato = async (req: Request, res: Response): Promise<any>
     if (error instanceof PlatoServiceError) {
       return res.status(error.statusCode).json({ mensaje: error.message })
     }
-    return res.status(500).json({ mensaje: 'Error al actualizar el plato', error })
+    console.error('Error al actualizar el plato:', error)
+    return res.status(500).json({ mensaje: 'Error al actualizar el plato' })
   }
 }
 
@@ -67,6 +71,7 @@ export const eliminarPlato = async (req: Request, res: Response): Promise<any> =
     if (error instanceof PlatoServiceError) {
       return res.status(error.statusCode).json({ mensaje: error.message })
     }
-    return res.status(500).json({ mensaje: 'Error al eliminar el plato', error })
+    console.error('Error al eliminar el plato:', error)
+    return res.status(500).json({ mensaje: 'Error al eliminar el plato' })
   }
 }

@@ -18,10 +18,9 @@ export const obtenerEstadoInventario = async (
       res.status(error.statusCode).json({ mensaje: error.message })
       return
     }
-    const err = error as Error
+    console.error('Error al obtener el estado del inventario:', error)
     res.status(500).json({
-      mensaje: 'Error al obtener el estado del inventario',
-      error: err.message
+      mensaje: 'Error al obtener el estado del inventario'
     })
   }
 }
@@ -48,10 +47,9 @@ export const crearIngrediente = async (
       res.status(error.statusCode).json({ mensaje: error.message })
       return
     }
-    const err = error as Error
+    console.error('Error al crear ingrediente:', error)
     res.status(500).json({
-      mensaje: 'Error al crear ingrediente',
-      error: err.message
+      mensaje: 'Error al crear ingrediente'
     })
   }
 }
@@ -79,10 +77,9 @@ export const actualizarIngrediente = async (
       res.status(error.statusCode).json({ mensaje: error.message })
       return
     }
-    const err = error as Error
+    console.error('Error al actualizar ingrediente:', error)
     res.status(500).json({
-      mensaje: 'Error al actualizar ingrediente',
-      error: err.message
+      mensaje: 'Error al actualizar ingrediente'
     })
   }
 }
@@ -109,10 +106,9 @@ export const eliminarIngrediente = async (
       res.status(error.statusCode).json({ mensaje: error.message })
       return
     }
-    const err = error as Error
+    console.error('Error al eliminar ingrediente:', error)
     res.status(500).json({
-      mensaje: 'Error al eliminar ingrediente',
-      error: err.message
+      mensaje: 'Error al eliminar ingrediente'
     })
   }
 }
