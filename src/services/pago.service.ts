@@ -78,7 +78,6 @@ export class PagoService {
       porcentajePropina = 0,
       montoDescuento: bodyMontoDescuento,
       montoPropina: bodyMontoPropina,
-      subtotalCierre: bodySubtotalCierre,
       cajeroAsignado: bodyCajeroAsignado,
       cajeroId: authCajeroId
     } = dto
@@ -107,7 +106,25 @@ export class PagoService {
 
     // ─── 2. CÁLCULOS FINANCIEROS (Puros, fuera de la transacción) ───────────────
     const ped: any = pedido
-    const subtotal = Number(bodySubtotalCierre || ped.subtotalCierre || pedido.total || 0)
+
+    // Autoridad financiera: El subtotal proviene exclusivamente de datos confiables del Pedido.
+    // El subtotalCierre provisto en el body por el cliente es completamente ignorado.
+    let subtotal = Number(ped.subtotalCierre || 0)
+
+    if (subtotal <= 0 && Array.isArray(ped.detalles) && ped.detalles.length > 0) {
+      subtotal = ped.detalles.reduce(
+        (acc: number, item: any) =>
+          acc + Number(item.subtotal || Number(item.precioUnitario || 0) * Number(item.cantidad || 1)),
+        0
+      )
+    }
+
+    if (subtotal <= 0) {
+      throw new PagoServiceError(
+        400,
+        'No se pudo determinar un subtotal válido para el pedido a partir de sus detalles o registro de cierre.'
+      )
+    }
 
     const montoDescuento =
       bodyMontoDescuento !== undefined && bodyMontoDescuento !== null
