@@ -61,6 +61,7 @@ export interface ResultadoActualizarPedido {
 export interface ResultadoSolicitarCuenta {
   payload: any
   mesaActualizada: any
+  cajeroAsignado?: any
 }
 
 // ─── Clase Principal PedidoService ───────────────────────────────────────────
@@ -682,7 +683,8 @@ export class PedidoService {
 
     return {
       payload,
-      mesaActualizada
+      mesaActualizada,
+      cajeroAsignado: pedidoPoblado?.cajeroAsignado
     }
   }
 }

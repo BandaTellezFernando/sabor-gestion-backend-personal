@@ -85,6 +85,12 @@ export const initSocket = (httpServer: HTTPServer) => {
 
     if (rolUsuario === 'Mesero') {
       socket.join('room:meseros')
+    } else if (rolUsuario === 'Cajero') {
+      socket.join('room:caja')
+      const usuarioId = socket.data?.usuario?.id
+      if (usuarioId) {
+        socket.join(`user:${usuarioId}`)
+      }
     }
 
     socket.on('disconnect', () => {

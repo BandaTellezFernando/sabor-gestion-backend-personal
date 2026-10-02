@@ -170,8 +170,9 @@ export const actualizarPedido = async (req: Request, res: Response): Promise<voi
       const payloadCaja = PedidoService.formatearPayloadCaja(resultado.pedidoDoc)
       try {
         const io = getIO()
-        io.emit('caja:nueva_cuenta', payloadCaja)
-        io.emit('caja:solicitud_pago', payloadCaja)
+        const cajeroTarget = resultado.cajeroAsignado.toString()
+        io.to(`user:${cajeroTarget}`).emit('caja:nueva_cuenta', payloadCaja)
+        io.to(`user:${cajeroTarget}`).emit('caja:solicitud_pago', payloadCaja)
       } catch (e) {}
     }
 
@@ -211,12 +212,19 @@ export const obtenerPedidosPendientesCobro = async (
 export const solicitarCuentaPedido = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params
-    const { payload, mesaActualizada } = await pedidoService.solicitarCuentaPedido(String(id))
+    const { payload, mesaActualizada, cajeroAsignado } =
+      await pedidoService.solicitarCuentaPedido(String(id))
 
     try {
       const io = getIO()
-      io.emit('caja:nueva_cuenta', payload)
-      io.emit('caja:solicitud_pago', payload)
+      if (cajeroAsignado) {
+        const cajeroTarget = cajeroAsignado.toString()
+        io.to(`user:${cajeroTarget}`).emit('caja:nueva_cuenta', payload)
+        io.to(`user:${cajeroTarget}`).emit('caja:solicitud_pago', payload)
+      } else {
+        io.to('room:caja').emit('caja:nueva_cuenta', payload)
+        io.to('room:caja').emit('caja:solicitud_pago', payload)
+      }
       io.emit('mesas:updated', {
         id: mesaActualizada._id.toString(),
         status: 'Esperando pago',
