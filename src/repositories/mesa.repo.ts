@@ -159,7 +159,8 @@ export class MesaRepository {
 
     return (await Mesa.findByIdAndUpdate(id, update, {
       returnDocument: 'after',
-      session
+      session,
+      runValidators: true
     }).populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
   }
 
@@ -174,7 +175,7 @@ export class MesaRepository {
     return (await Mesa.findByIdAndUpdate(
       id,
       { estado: backendStatus },
-      { returnDocument: 'after', session }
+      { returnDocument: 'after', session, runValidators: true }
     ).populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
   }
 

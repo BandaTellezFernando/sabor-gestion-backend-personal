@@ -8,7 +8,7 @@ import {
   eliminarMesa
 } from '../controllers/mesa.controller'
 import { verificarToken } from '../middlewares/auth.middleware'
-import { soloAdmins } from '../middlewares/rol.middleware'
+import { soloAdmins, permitirRoles } from '../middlewares/rol.middleware'
 
 const router = Router()
 
@@ -18,7 +18,12 @@ router.get('/:id', verificarToken, obtenerMesaPorId)
 // Actualizar campos generales de la mesa (solo admin)
 router.put('/:id', verificarToken, soloAdmins, actualizarMesa)
 // Actualizar solo el estado (p. ej. mesero cambia a 'Ocupada' / 'Disponible')
-router.patch('/:id/estado', verificarToken, actualizarEstadoMesa)
+router.patch(
+  '/:id/estado',
+  verificarToken,
+  permitirRoles('Mesero', 'Administrador'),
+  actualizarEstadoMesa
+)
 // Eliminar mesa (solo admin)
 router.delete('/:id', verificarToken, soloAdmins, eliminarMesa)
 

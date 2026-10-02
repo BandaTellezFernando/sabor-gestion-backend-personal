@@ -1,4 +1,5 @@
 // src/services/mesa.service.ts
+import mongoose from 'mongoose'
 import {
   MesaRepository,
   mesaRepository,
@@ -181,6 +182,9 @@ export class MesaService {
    * Obtiene los datos detallados de una mesa por su ID
    */
   async obtenerMesaPorId(id: string): Promise<MesaResponseDTO> {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new MesaServiceError(400, 'ID de mesa inválido')
+    }
     const mesa = await this.mesaRepo.buscarPorId(id)
     if (!mesa) {
       throw new MesaServiceError(404, 'Mesa no encontrada')
@@ -223,6 +227,10 @@ export class MesaService {
    * Valida reglas de negocio y actualiza los campos generales de una mesa
    */
   async actualizarMesa(id: string, body: MesaPayloadDTO): Promise<MesaResponseDTO> {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new MesaServiceError(400, 'ID de mesa inválido')
+    }
+
     const datosActualizar: MesaActualizarDatos = {}
 
     const nombreAValidar = body.name !== undefined ? body.name : body.numero
@@ -253,10 +261,20 @@ export class MesaService {
       datosActualizar.location = String(loc)
     }
 
-    if (body.status !== undefined) {
-      datosActualizar.estado = this.estadoFrontendToBackend(body.status)
-    } else if (body.estado !== undefined) {
-      datosActualizar.estado = this.estadoFrontendToBackend(body.estado)
+    const estadoRaw = body.status !== undefined ? body.status : body.estado
+    if (estadoRaw !== undefined) {
+      if (typeof estadoRaw !== 'string' || estadoRaw.trim() === '') {
+        throw new MesaServiceError(400, 'El estado de la mesa es requerido')
+      }
+      const backendStatus = this.estadoFrontendToBackend(estadoRaw.trim()) || estadoRaw.trim()
+      const ESTADOS_VALIDOS = ['Libre', 'Ocupada', 'Cuenta Solicitada']
+      if (!ESTADOS_VALIDOS.includes(backendStatus)) {
+        throw new MesaServiceError(
+          400,
+          'Estado de mesa no válido. Estados aceptados: Libre, Ocupada, Cuenta Solicitada (o Disponible, Esperando pago)'
+        )
+      }
+      datosActualizar.estado = backendStatus
     }
 
     if (body.type !== undefined) datosActualizar.tipo = body.type
@@ -264,32 +282,76 @@ export class MesaService {
       datosActualizar.tipo = body.tipo
     }
 
-    const mesaActualizada = await this.mesaRepo.actualizar(id, datosActualizar)
-    if (!mesaActualizada) {
-      throw new MesaServiceError(404, 'Mesa no encontrada')
-    }
+    try {
+      const mesaActualizada = await this.mesaRepo.actualizar(id, datosActualizar)
+      if (!mesaActualizada) {
+        throw new MesaServiceError(404, 'Mesa no encontrada')
+      }
 
-    return this.mapMesa(mesaActualizada)!
+      return this.mapMesa(mesaActualizada)!
+    } catch (err: any) {
+      if (err instanceof MesaServiceError) throw err
+      if (err?.name === 'ValidationError' || err?.name === 'CastError') {
+        throw new MesaServiceError(400, err.message)
+      }
+      throw err
+    }
   }
 
   /**
    * Actualiza únicamente el estado de una mesa
    */
-  async actualizarEstadoMesa(id: string, estado: string): Promise<MesaResponseDTO> {
-    const backendStatus = this.estadoFrontendToBackend(estado) || estado
-    const mesaActualizada = await this.mesaRepo.actualizarEstado(id, backendStatus)
-
-    if (!mesaActualizada) {
-      throw new MesaServiceError(404, 'Mesa no encontrada')
+  async actualizarEstadoMesa(id: string, estado: any): Promise<MesaResponseDTO> {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new MesaServiceError(400, 'ID de mesa inválido')
     }
 
-    return this.mapMesa(mesaActualizada)!
+    if (estado === undefined || estado === null) {
+      throw new MesaServiceError(400, 'El estado de la mesa es requerido')
+    }
+
+    if (typeof estado !== 'string') {
+      throw new MesaServiceError(400, 'El estado de la mesa debe ser un texto válido')
+    }
+
+    const trimmed = estado.trim()
+    if (trimmed === '') {
+      throw new MesaServiceError(400, 'El estado de la mesa es requerido')
+    }
+
+    const backendStatus = this.estadoFrontendToBackend(trimmed) || trimmed
+    const ESTADOS_VALIDOS = ['Libre', 'Ocupada', 'Cuenta Solicitada']
+    if (!ESTADOS_VALIDOS.includes(backendStatus)) {
+      throw new MesaServiceError(
+        400,
+        'Estado de mesa no válido. Estados aceptados: Libre, Ocupada, Cuenta Solicitada (o Disponible, Esperando pago)'
+      )
+    }
+
+    try {
+      const mesaActualizada = await this.mesaRepo.actualizarEstado(id, backendStatus)
+
+      if (!mesaActualizada) {
+        throw new MesaServiceError(404, 'Mesa no encontrada')
+      }
+
+      return this.mapMesa(mesaActualizada)!
+    } catch (err: any) {
+      if (err instanceof MesaServiceError) throw err
+      if (err?.name === 'ValidationError' || err?.name === 'CastError') {
+        throw new MesaServiceError(400, err.message)
+      }
+      throw err
+    }
   }
 
   /**
    * Elimina una mesa de la base de datos
    */
   async eliminarMesa(id: string): Promise<MesaResponseDTO> {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new MesaServiceError(400, 'ID de mesa inválido')
+    }
     const eliminado = await this.mesaRepo.eliminar(id)
     if (!eliminado) {
       throw new MesaServiceError(404, 'Mesa no encontrada')
