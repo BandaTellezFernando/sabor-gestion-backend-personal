@@ -502,13 +502,31 @@ export class PedidoService {
       montoDescuento,
       montoPropina,
       subtotalCierre,
-      metodoPago,
       estado
     } = body
 
     const pedidoAnterior = await this.pedidoRepo.buscarPorId(id)
     if (!pedidoAnterior) {
       throw new PedidoServiceError(404, 'Pedido no encontrado')
+    }
+
+    // 🛡️ Regla de inmutabilidad: Pedidos CERRADO o CANCELADO no admiten modificaciones
+    if (
+      pedidoAnterior.estado === ESTADOS_PEDIDO.CERRADO ||
+      pedidoAnterior.estado === ESTADOS_PEDIDO.CANCELADO
+    ) {
+      throw new PedidoServiceError(
+        400,
+        `No se puede modificar un pedido en estado "${pedidoAnterior.estado}".`
+      )
+    }
+
+    // 🛡️ Regla de autoridad de estado: El cliente NO puede forzar el estado por PUT
+    if (estado !== undefined) {
+      throw new PedidoServiceError(
+        400,
+        'No se permite modificar el estado del pedido directamente mediante este endpoint.'
+      )
     }
 
     if (montoDescuento !== undefined && Number(montoDescuento) < 0) {
@@ -520,10 +538,12 @@ export class PedidoService {
     if (total !== undefined && Number(total) < 0) {
       throw new PedidoServiceError(400, 'El total no puede ser negativo')
     }
+    if (subtotalCierre !== undefined && Number(subtotalCierre) < 0) {
+      throw new PedidoServiceError(400, 'El subtotal no puede ser negativo')
+    }
 
-    const updates: any = {}
-    if (estado !== undefined) updates.estado = estado
-    if (metodoPago !== undefined) updates.metodoPago = metodoPago
+    // Allowlist explícita para evitar Mass Assignment
+    const updates: Partial<IPedido> & Record<string, any> = {}
 
     if (detalles !== undefined) {
       const { detallesCalculados, subtotal } = await this.procesarDetallesPedido(detalles)
@@ -539,28 +559,24 @@ export class PedidoService {
       updates.estado = ESTADOS_PEDIDO.ABIERTO
     }
 
-    if (clienteNombre !== undefined) updates.clienteNombre = clienteNombre
-    if (clienteCI !== undefined) updates.clienteCI = clienteCI
-    if (clienteNIT !== undefined) updates.clienteNIT = clienteNIT
+    if (clienteNombre !== undefined) updates.clienteNombre = String(clienteNombre).trim()
+    if (clienteCI !== undefined) updates.clienteCI = String(clienteCI).trim()
+    if (clienteNIT !== undefined) updates.clienteNIT = String(clienteNIT).trim()
     if (cajeroAsignado !== undefined) updates.cajeroAsignado = cajeroAsignado
     if (montoDescuento !== undefined) updates.montoDescuento = Number(montoDescuento)
     if (montoPropina !== undefined) updates.montoPropina = Number(montoPropina)
-    if (subtotalCierre !== undefined && updates.subtotalCierre === undefined) {
-      if (Number(subtotalCierre) < 0) {
-        throw new PedidoServiceError(400, 'El subtotal no puede ser negativo')
-      }
-      updates.subtotalCierre = Number(subtotalCierre)
-    }
 
-    // Recalcular total si hay descuento o propina o subtotalCierre o nuevos detalles
+    // Autoridad Financiera: subtotal y total siempre calculados por backend
     const finalSub =
       updates.subtotalCierre !== undefined
         ? updates.subtotalCierre
-        : pedidoAnterior?.subtotalCierre || pedidoAnterior?.total || 0
+        : Number(pedidoAnterior?.subtotalCierre || pedidoAnterior?.total || 0)
+
     const finalDesc =
       updates.montoDescuento !== undefined
         ? updates.montoDescuento
         : Number(pedidoAnterior?.montoDescuento || 0)
+
     const finalProp =
       updates.montoPropina !== undefined
         ? updates.montoPropina
@@ -569,8 +585,7 @@ export class PedidoService {
     if (
       updates.detalles !== undefined ||
       updates.montoDescuento !== undefined ||
-      updates.montoPropina !== undefined ||
-      updates.subtotalCierre !== undefined
+      updates.montoPropina !== undefined
     ) {
       updates.total = Number(Math.max(0, finalSub - finalDesc + finalProp).toFixed(2))
       if (
@@ -579,8 +594,6 @@ export class PedidoService {
       ) {
         updates.subtotalCierre = finalSub
       }
-    } else if (total !== undefined) {
-      updates.total = Number(total)
     }
 
     const pedidoActualizado = await this.pedidoRepo.actualizar(id, updates)
