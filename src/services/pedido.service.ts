@@ -384,6 +384,16 @@ export class PedidoService {
       throw new PedidoServiceError(404, 'Pedido no encontrado')
     }
 
+    if (
+      pedido.estado !== ESTADOS_PEDIDO.ABIERTO &&
+      pedido.estado !== ESTADOS_PEDIDO.EN_PREPARACION
+    ) {
+      throw new PedidoServiceError(
+        400,
+        `No se puede cancelar un pedido en estado "${pedido.estado}". Solo se pueden cancelar pedidos en estado "${ESTADOS_PEDIDO.ABIERTO}" o "${ESTADOS_PEDIDO.EN_PREPARACION}".`
+      )
+    }
+
     pedido.estado = ESTADOS_PEDIDO.CANCELADO
     await this.pedidoRepo.guardar(pedido)
 
@@ -413,10 +423,40 @@ export class PedidoService {
     pedidoId: string,
     nuevoEstado: string
   ): Promise<ResultadoActualizarEstado> {
+    const estadosValidos = Object.values(ESTADOS_PEDIDO) as string[]
+    if (!estadosValidos.includes(nuevoEstado)) {
+      throw new PedidoServiceError(
+        400,
+        `Estado no válido: "${nuevoEstado}". Estados permitidos: ${estadosValidos.join(', ')}`
+      )
+    }
+
     // 1. Obtener estado ANTERIOR del pedido
     const pedidoAnterior = await this.pedidoRepo.buscarPorId(pedidoId)
     if (!pedidoAnterior) {
       throw new PedidoServiceError(404, 'Pedido no encontrado')
+    }
+
+    // Validar máquina de estados para cocina:
+    // ABIERTO -> ABIERTO (idempotente), EN_PREPARACION
+    // EN_PREPARACION -> EN_PREPARACION (idempotente), ENTREGADO
+    // ENTREGADO -> ENTREGADO (idempotente)
+    // CANCELADO -> (terminal, no permite transiciones)
+    // CERRADO -> (terminal, no permite transiciones)
+    const transicionesPermitidas: Record<string, string[]> = {
+      [ESTADOS_PEDIDO.ABIERTO]: [ESTADOS_PEDIDO.ABIERTO, ESTADOS_PEDIDO.EN_PREPARACION],
+      [ESTADOS_PEDIDO.EN_PREPARACION]: [ESTADOS_PEDIDO.EN_PREPARACION, ESTADOS_PEDIDO.ENTREGADO],
+      [ESTADOS_PEDIDO.ENTREGADO]: [ESTADOS_PEDIDO.ENTREGADO],
+      [ESTADOS_PEDIDO.CANCELADO]: [],
+      [ESTADOS_PEDIDO.CERRADO]: []
+    }
+
+    const permitidos = transicionesPermitidas[pedidoAnterior.estado] || []
+    if (!permitidos.includes(nuevoEstado)) {
+      throw new PedidoServiceError(
+        400,
+        `No se permite la transición de estado desde "${pedidoAnterior.estado}" hacia "${nuevoEstado}".`
+      )
     }
 
     const yaEstabaListo =
