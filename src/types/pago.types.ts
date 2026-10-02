@@ -15,6 +15,10 @@ export interface ProcesarPagoDTO {
   porcentajePropina?: number
   montoDescuento?: number
   montoPropina?: number
+  /**
+   * @deprecated Ignorado por el backend. Por autoridad financiera, el subtotal
+   * oficial se deriva exclusivamente de los detalles del pedido persistido.
+   */
   subtotalCierre?: number
   cajeroAsignado?: string | Types.ObjectId | null
   cajeroId?: string | Types.ObjectId | null

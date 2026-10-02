@@ -1023,7 +1023,7 @@ paths:
       tags:
         - Mesas
       summary: Actualizar solo el estado de una mesa
-      description: 'Actualiza el estado operativo de una mesa. Valores aceptados: "Libre", "Ocupada", "Cuenta Solicitada". Requiere autenticación.'
+      description: 'Actualiza el estado operativo de una mesa. Requiere autenticación JWT con rol Mesero o Administrador (Cajero y Cocinero son denegados con 403). Acepta los estados oficiales en MongoDB ("Libre", "Ocupada", "Cuenta Solicitada") o los alias de compatibilidad frontend ("Disponible", "Esperando pago").'
       operationId: actualizarEstadoMesa
       security:
         - bearerAuth: []
@@ -1048,8 +1048,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MesaDTO'
+        '400':
+          description: Error de validación (ID malformado, estado ausente, null, tipo no string, cadena vacía o estado no permitido)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
         '401':
           description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Mesero o Administrador)
           content:
             application/json:
               schema:
@@ -1773,7 +1785,7 @@ paths:
       tags:
         - Pedidos
       summary: Actualizar contenido de un pedido
-      description: Actualiza platos (detalles), descuentos, propinas o datos del comensal. El backend recalcula los subtotales e importes con los precios oficiales de Plato obtenidos vía PlatoRepository y almacena el snapshot histórico; no confía en montos provistos por el cliente. Si el pedido estaba en ENTREGADO y se añaden platos, se reabre a ABIERTO y la mesa se reactiva como Ocupada. Requiere rol Mesero o Administrador.
+      description: Actualiza platos (detalles), descuentos, propinas o datos del comensal. El backend recalcula los subtotales e importes con los precios oficiales de Plato obtenidos vía PlatoRepository y almacena el snapshot histórico; no confía en montos provistos por el cliente. Los campos 'total', 'subtotalCierre' y 'metodoPago' son ignorados por el backend (autoridad financiera exclusiva), mientras que cualquier intento de enviar 'estado' es explícitamente rechazado con 400. Si el pedido estaba en ENTREGADO y se añaden platos, se reabre a ABIERTO y la mesa se reactiva como Ocupada. Requiere rol Mesero o Administrador.
       operationId: actualizarPedido
       security:
         - bearerAuth: []
@@ -1799,7 +1811,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Pedido'
         '400':
-          description: Error de validación (montos negativos o cantidades inválidas)
+          description: Error de validación (intento de enviar 'estado', modificación sobre pedido CERRADO o CANCELADO, montos negativos o cantidades inválidas)
           content:
             application/json:
               schema:
@@ -1858,6 +1870,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ActualizarEstadoPedidoResponse'
+        '400':
+          description: Transición inválida, salto de estado, estado no válido o intento de modificar un pedido en estado terminal (CERRADO o CANCELADO)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
         '401':
           description: No autenticado
           content:
@@ -1953,6 +1971,12 @@ paths:
           schema:
             type: string
           example: '{{pedidoId}}'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelarPedidoRequest'
       responses:
         '200':
           description: Pedido cancelado y mesa liberada correctamente
@@ -1960,6 +1984,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CancelarPedidoResponse'
+        '400':
+          description: Pedido en estado no cancelable (ENTREGADO, CERRADO o CANCELADO)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
         '401':
           description: No autenticado
           content:
@@ -2031,7 +2061,8 @@ paths:
       tags:
         - Pagos
       summary: Procesar pago final y cerrar orden
-      description: 'Procesa el pago mediante una transacción atómica en MongoDB: cierra el pedido (CERRADO), crea el documento Pago, libera la mesa a "Libre" y genera el comprobante. Requiere rol Cajero o Administrador.'
+      description: >-
+        Procesa el pago mediante una transacción atómica en MongoDB: calcula el subtotal oficial con autoridad exclusiva del backend (desde ped.subtotalCierre o recálculo de detalles confiables, ignorando cualquier subtotal provisto en el body), cierra el pedido (CERRADO), crea el documento Pago, libera la mesa a "Libre" y genera el comprobante. Requiere rol Cajero o Administrador.
       operationId: procesarPagoFinal
       security:
         - bearerAuth: []
@@ -2091,7 +2122,8 @@ paths:
       tags:
         - Pagos
       summary: Simular notificación de transferencia QR
-      description: Endpoint público que simula la confirmación de transferencia QR desde un dispositivo móvil o webhook, emitiendo eventos WebSocket a la caja.
+      description: >-
+        Endpoint público de simulación que representa un webhook bancario o interacción de dispositivo externo confirmando una transferencia QR. No requiere autenticación JWT. Este endpoint NO crea un registro de Pago, NO cierra el Pedido, NO libera la Mesa ni ejecuta transacciones financieras; únicamente emite el evento WebSocket de alerta a caja (caja:notificacion_qr). El cobro oficial debe completarse posteriormente mediante POST /api/pagos/{pedidoId}/procesar con metodoPago = "QR".
       operationId: simularPagoQR
       parameters:
         - name: pedidoId
@@ -2703,8 +2735,11 @@ components:
             - Libre
             - Ocupada
             - Cuenta Solicitada
+            - Disponible
+            - Esperando pago
           example: Ocupada
-          description: Estado operativo de la mesa en MongoDB
+          description: >-
+            Estado operativo a asignar. Acepta los valores oficiales persistidos en MongoDB ('Libre', 'Ocupada', 'Cuenta Solicitada') o los alias de compatibilidad de frontend ('Disponible' que se traduce internamente a 'Libre', 'Esperando pago' que se traduce a 'Cuenta Solicitada', y 'Ocupada').
     EliminarMesaResponse:
       type: object
       properties:
@@ -3091,17 +3126,9 @@ components:
           items:
             $ref: '#/components/schemas/CrearDetallePedidoInput'
           description: Nuevos detalles del pedido. Si se proveen, el backend recalcula subtotales, totales y snapshot con precios oficiales de Plato en BD.
-        estado:
-          type: string
-          enum:
-            - ABIERTO
-            - EN_PREPARACION
-            - ENTREGADO
-            - CANCELADO
-            - CERRADO
-          example: ABIERTO
         metodoPago:
           type: string
+          deprecated: true
           enum:
             - Efectivo
             - Tarjeta
@@ -3109,6 +3136,7 @@ components:
             - QR
             - Otro
           example: Efectivo
+          description: Ignorado por este endpoint. El método de pago no se actualiza por esta vía (se establece durante el procesamiento del pago).
         montoDescuento:
           type: number
           minimum: 0
@@ -3121,14 +3149,16 @@ components:
           description: Monto de propina (no puede ser negativo)
         subtotalCierre:
           type: number
+          deprecated: true
           minimum: 0
           example: 140
-          description: Subtotal de cierre (no puede ser negativo)
+          description: Ignorado por este endpoint. Por autoridad financiera, el subtotal se deriva exclusivamente del catálogo oficial de platos.
         total:
           type: number
+          deprecated: true
           minimum: 0
           example: 135
-          description: Opcional / Informativo. El backend recalcula el total automáticamente si se modifican detalles, descuento o propina.
+          description: Ignorado por este endpoint. Por autoridad financiera, el backend recalcula automáticamente el total en función de los detalles, descuentos y propinas.
         clienteNombre:
           type: string
           example: Carlos Mendoza
@@ -3152,9 +3182,8 @@ components:
             - ABIERTO
             - EN_PREPARACION
             - ENTREGADO
-            - CERRADO
-            - CANCELADO
           example: EN_PREPARACION
+          description: 'Estado operativo al que se transiciona en cocina (solo se admiten transiciones progresivas: ABIERTO -> EN_PREPARACION -> ENTREGADO).'
     ActualizarEstadoPedidoResponse:
       type: object
       properties:
@@ -3163,6 +3192,13 @@ components:
           example: Pedido movido a EN_PREPARACION
         pedido:
           $ref: '#/components/schemas/Pedido'
+    CancelarPedidoRequest:
+      type: object
+      properties:
+        motivoCancelacion:
+          type: string
+          example: Cliente canceló la orden por demora
+          description: Motivo opcional de la cancelación del pedido
     CancelarPedidoResponse:
       type: object
       properties:
@@ -3291,7 +3327,9 @@ components:
           example: 9
         subtotalCierre:
           type: number
+          deprecated: true
           example: 90
+          description: Ignorado por el backend. Por autoridad financiera, el subtotal oficial se deriva exclusivamente del pedido persistido (ped.subtotalCierre o recálculo interno).
         cajeroAsignado:
           type: string
           example: '{{usuarioId}}'

@@ -281,7 +281,7 @@ El salón opera bajo tres estados mutuamente excluyentes:
 | Estado Origen | Estado Destino | Evento Disparador | Rol Autorizado | Validación del Sistema |
 | :--- | :--- | :--- | :--- | :--- |
 | `Libre` | `Ocupada` | Apertura de comanda y asignación | Camarero / Admin | Mesa sin pedidos previos activos. |
-| `Ocupada` | `Cuenta Solicitada` | Solicitud formal de la cuenta | Camarero / Cajero | Pedido asociado en estado `ENTREGADO`. |
+| `Ocupada` | `Cuenta Solicitada` | Solicitud formal de la cuenta | Mesero / Administrador | Pedido asociado en estado `ENTREGADO`. |
 | `Cuenta Solicitada` | `Libre` | Registro de pago exitoso | Cajero / Admin | Pago registrado como `COMPLETADO`. |
 | `Ocupada` | `Libre` | Cancelación justificada de comanda | Camarero / Admin | Pedido anulado sin consumo pendiente. |
 
