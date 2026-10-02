@@ -113,7 +113,7 @@ export const actualizarEstadoPedido = async (req: Request, res: Response): Promi
           ' [WEBSOCKET] Emitiendo alerta de listo a meseros para pedido:',
           pedidoActualizado._id.toString()
         )
-        io.emit('mesas:alerta_listo', {
+        io.to('room:meseros').emit('mesas:alerta_listo', {
           pedidoId: pedidoActualizado._id.toString(),
           mesaId: pedidoActualizado.mesa
             ? (pedidoActualizado.mesa as any)._id?.toString() ||

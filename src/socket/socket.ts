@@ -83,6 +83,10 @@ export const initSocket = (httpServer: HTTPServer) => {
     const rolUsuario = socket.data?.usuario?.rol
     console.log(`⚡ Usuario conectado: ${socket.id} (Rol: ${rolUsuario || 'Desconocido'})`)
 
+    if (rolUsuario === 'Mesero') {
+      socket.join('room:meseros')
+    }
+
     socket.on('disconnect', () => {
       console.log(`🔥 Usuario desconectado: ${socket.id}`)
     })
