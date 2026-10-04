@@ -18,13 +18,12 @@ info:
     - **`mesas:created`**: Emitido tras la creación de nuevas mesas. Payload: `MesaResponseDTO` o `MesaResponseDTO[]`.
     - **`mesas:deleted`**: Emitido tras eliminar una mesa. Payload: `{ id, mesaId }`.
     - **`mesas:alerta_listo`**: Notificación prioritaria a meseros cuando cocina pasa un pedido a `ENTREGADO` (`recogido: false`).
-    - **`mesas:pago_completado`**: Notificación a meseros y salón tras liquidar la comanda en caja.
+    - **`mesas:pago_completado`**: Notificación a meseros y salón tras liquidar la comanda en caja y liberar la mesa. Payload: `{ mesaId, mesaNombre, pedidoId, mensaje }`.
     - **`cocina:nuevo_pedido`**: Notificación a la pantalla KDS de Cocina ante una nueva comanda. Payload: `PedidoCocinaDTO`.
     - **`cocina:actualizar_tablero`**: Actualización del tablero KDS de cocina ante modificaciones o transiciones de estado. Payload: `PedidoCocinaDTO` / `Pedido`.
     - **`cocina:pedido_recogido`**: Retira la comanda del tablero de platos pendientes de recogida. Payload: `{ pedidoId, codigo, mesaId, mesaNombre, recogido: true, recogidoPor, fechaRecogida }`.
-    - **`caja:nueva_cuenta` / `caja:solicitud_pago`**: Alerta a terminales de caja cuando un mesero solicita la cuenta de una mesa. Payload: `PayloadCajaDTO`.
-    - **`caja:notificacion_qr`**: Alerta a caja ante la recepción de una notificación de pago QR.
-    - **`caja:pago_confirmado`**: Notificación emitida tras procesar y liquidar exitosamente el cobro.
+    - **`caja:nueva_cuenta` / `caja:solicitud_pago`**: Alerta a terminales de caja cuando un mesero solicita la cuenta de una mesa o se modifica una comanda en proceso de pago. Payload: `PayloadCajaDTO`.
+    - **`caja:pago_confirmado`**: Alerta a caja emitida en la simulación de confirmación de pago QR. Payload: `{ pedidoId, mensaje, fecha }`.
     - **`inventario:actualizado`**: Notificación general ante mutaciones en el inventario o recetas para refresco de vistas.
   version: 1.0.0
 servers:
@@ -2603,8 +2602,8 @@ paths:
     post:
       tags:
         - Pagos
-      summary: Simular notificación de pago QR
-      description: Endpoint público de simulación que representa un webhook bancario o interacción de dispositivo externo confirmando un pago QR. No requiere autenticación JWT. Este endpoint NO crea un registro de Pago, NO cierra el Pedido, NO libera la Mesa ni ejecuta transacciones financieras; únicamente emite el evento WebSocket de alerta a caja (caja:notificacion_qr). El cobro oficial debe completarse posteriormente mediante POST /api/pagos/{pedidoId}/procesar con metodoPago = "QR".
+      summary: Simular confirmación de pago QR
+      description: Endpoint público de simulación de confirmación de pago QR para pruebas. No requiere autenticación JWT. Este endpoint NO crea un registro de Pago, NO cierra el Pedido, NO libera la Mesa ni ejecuta transacciones financieras; únicamente emite el evento WebSocket de alerta a caja (caja:pago_confirmado). El cobro oficial debe completarse posteriormente mediante POST /api/pagos/{pedidoId}/procesar con metodoPago = "QR".
       operationId: simularPagoQR
       parameters:
         - name: pedidoId
@@ -4252,15 +4251,22 @@ x-websockets:
             type: string
     mesas:pago_completado:
       summary: Confirmación de comanda cobrada y mesa liberada
+      description: Emitido tras procesar el pago para notificar a meseros y salón la liberación de la mesa y el cobro del pedido.
       payload:
         type: object
         properties:
-          pedidoId:
-            type: string
           mesaId:
             type: string
-          comprobante:
-            $ref: "#/components/schemas/ComprobantePago"
+            example: "000000000000000000000030"
+          mesaNombre:
+            type: string
+            example: Mesa 1 Salón
+          pedidoId:
+            type: string
+            example: "000000000000000000000070"
+          mensaje:
+            type: string
+            example: Pago procesado exitosamente
     cocina:nuevo_pedido:
       summary: Nueva orden registrada para preparación culinaria
       payload:
@@ -4291,19 +4297,29 @@ x-websockets:
             format: date-time
     caja:nueva_cuenta:
       summary: Solicitud de cobro de cuenta emitida por mesero
+      description: Emitido a la sala room:caja o al usuario cajero cuando el mesero solicita la cuenta o actualiza un pedido en proceso de pago.
       payload:
         $ref: "#/components/schemas/PayloadCajaDTO"
-    caja:notificacion_qr:
-      summary: Notificación de pago QR recibido
+    caja:solicitud_pago:
+      summary: Solicitud de cobro de cuenta (alias operativo emitido en paralelo)
+      description: Emitido en paralelo con caja:nueva_cuenta a la sala room:caja o al cajero asignado.
+      payload:
+        $ref: "#/components/schemas/PayloadCajaDTO"
+    caja:pago_confirmado:
+      summary: Alerta a caja en simulación de confirmación de pago QR
+      description: Emitido en la simulación de confirmación de pago QR (/api/pagos/notificar-qr/:pedidoId) para alertar a los terminales de caja.
       payload:
         type: object
         properties:
           pedidoId:
             type: string
-          codigo:
+            example: "000000000000000000000070"
+          mensaje:
             type: string
-          monto:
-            type: number
+            example: Transferencia QR recibida
+          fecha:
+            type: string
+            example: 04/10/2026 17:21:00
     inventario:actualizado:
       summary: Señal de actualización de ingredientes o recetas
       description: Emitido para notificar la recarga requerida de catálogos e inventarios en terminales activas.
