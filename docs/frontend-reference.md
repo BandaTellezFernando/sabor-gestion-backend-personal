@@ -157,20 +157,38 @@ El middleware `verificarToken` intercepta las solicitudes no autorizadas:
 
 El backend define cuatro (4) roles jerárquicos y operativos. No existen roles adicionales.
 
-| Rol Oficial | Propósito Operativo | Acciones Permitidas en Backend |
-|:---|:---|:---|
-| **Administrador** | Gestión integral y gerencial | Acceso absoluto a todos los módulos: alta, baja, modificación y eliminación de usuarios, categorías, platos, mesas, ubicaciones, ingredientes, recetas; consulta de cierres de caja y analíticas del dashboard; anulación de pedidos. |
-| **Mesero** | Atención en salón y toma de órdenes | Consulta de catálogo y categorías; visualización de mesas y ubicaciones; apertura de nuevos pedidos (`POST /api/pedidos`); edición de platos y observaciones en pedidos abiertos (`PUT /api/pedidos/:id`); marcar pedido como recogido (`PATCH /api/pedidos/:id/recoger`); solicitud formal de cuenta (`PATCH /api/pedidos/:id/solicitar-cuenta`); actualización de estado operativo de mesas (`PATCH /api/mesas/:id/estado`). |
-| **Cajero** | Facturación, cobros y arqueo | Consulta de pedidos pendientes de cobro (`GET /api/pedidos/pendientes-cobro`); procesamiento definitivo de pagos (`POST /api/pagos/:pedidoId/procesar`); generación y envío de comprobantes por correo; consulta de mesas y pedidos; cambio de su propio estado activo/inactivo para cierre de turno y registro de `CierreCaja`. |
-| **Cocinero** | Producción culinaria y comandas | Visualización de pedidos en cocina; actualización de estados de comanda (`PATCH /api/pedidos/:id/estado` para transiciones `ABIERTO` -> `EN_PREPARACION` -> `ENTREGADO`); consulta de inventario de ingredientes y recetarios/escandallos. |
+| Rol Oficial | Propósito Operativo | Acciones Permitidas en Backend | Restricciones Estrictas de Seguridad |
+|:---|:---|:---|:---|
+| **Administrador** | Gestión integral y gerencial | Acceso absoluto a todos los módulos: usuarios, categorías, platos, mesas, ubicaciones, pedidos, inventario, recetas, pagos, reportes de cierre y analíticas del dashboard. | Ninguna restricción de ruta ni propiedad. |
+| **Mesero** | Atención en salón y toma de órdenes | Consulta de catálogo y categorías; consulta de ubicaciones (`GET /api/ubicaciones`) y mesas (`GET /api/mesas`, `GET /api/mesas/:id`); gestión de ocupación temporal (`POST/DELETE/GET /api/mesas/:id/ocupar-temporal`); cambio operativo de estado de mesas (`PATCH /api/mesas/:id/estado`); apertura de pedidos (`POST /api/pedidos`); consulta de sus propios pedidos (`GET /api/pedidos`); edición de sus pedidos (`PUT /api/pedidos/:id`); solicitud de cuenta (`PATCH /api/pedidos/:id/solicitar-cuenta`); recogida física (`PATCH /api/pedidos/:id/recoger`); cancelación de comanda (`PATCH /api/pedidos/:id/cancel`). | Bloqueado en administración de usuarios/platos/mesas/recetas. Bloqueado en pagos (`POST /api/pagos/*`). Solo puede consultar, modificar, cancelar, solicitar cuenta o recoger sus **propios** pedidos (`403` si intenta acceder a pedidos de otros meseros o consultar `reportesCierre=true`). |
+| **Cajero** | Facturación, cobros y arqueo | Consulta de pedidos pendientes de cobro (`GET /api/pedidos/pendientes-cobro`); procesamiento definitivo de pagos (`POST /api/pagos/:pedidoId/procesar`); generación de QR estático (`POST /api/pagos/generar-qr/:pedidoId`); emisión y reenvío de comprobantes por correo (`POST /api/pagos/:pedidoId/enviar-recibo`); cierre de turno y arqueo (`PATCH /api/usuarios/:id/estado`). | Bloqueado en `GET /api/pedidos` general (`403`, debe usar exclusivamente `/pendientes-cobro`), bloqueado en `GET /api/mesas` (`403`) y `GET /api/ubicaciones` (`403`). No puede abrir comandas ni alterar producción culinaria. |
+| **Cocinero** | Producción culinaria y comandas | Visualización de comandas activas para pantalla KDS (`GET /api/pedidos/cocina` y `GET /api/pedidos` sanitizado); actualización de estado culinario (`PATCH /api/pedidos/:id/estado` para `ABIERTO` -> `EN_PREPARACION` -> `ENTREGADO`); consulta de ingredientes (`GET /api/inventario/ingredientes`, `GET /api/inventario/estado`); consulta de recetarios/escandallos (`GET /api/inventario/recetas`). | Bloqueado en `GET /api/mesas` (`403`) y `GET /api/ubicaciones` (`403`). Bloqueado en creación/edición de pedidos, pagos, cancelación o solicitud de cuentas. Los pedidos consultados por el Cocinero tienen todos los montos y datos fiscales omitidos. Bloqueado en `reportesCierre=true`. |
 
 ### 3.1 Respuesta de Denegación de Permisos (HTTP 403 Forbidden)
-Si un usuario autenticado intenta ejecutar un endpoint que no le corresponde (por ejemplo, un Cocinero intentando cobrar una cuenta o un Mesero intentando eliminar un plato), el middleware `permitirRoles` responderá:
+Si un usuario autenticado intenta ejecutar un endpoint que no le corresponde (por ejemplo, un Cocinero intentando ver las mesas, un Cajero intentando listar todos los pedidos o un Mesero intentando modificar el pedido de otro mesero), el servidor responderá:
 ```json
 {
   "mensaje": "Acceso denegado. No tienes permisos para realizar esta acción."
 }
 ```
+*(O un mensaje específico de propiedad como `"Acceso denegado. Solo el mesero responsable del pedido o un Administrador pueden modificar este pedido."`)*
+
+### 3.2 Reglas de Propiedad (Ownership) y Scoping de Datos por Rol
+
+1. **Scoping Automático en `GET /api/pedidos`:**
+   - **Administrador:** Obtiene todos los pedidos solicitados sin filtros forzados y puede consultar arqueos con `reportesCierre=true`.
+   - **Mesero:** El backend inyecta automáticamente el filtro `usuario = <authUserId>`. El mesero solo ve sus propios pedidos. Si envía el parámetro `mesero=<otroUsuarioId>` o `reportesCierre=true`, el servidor responde inmediatamente `403 Forbidden`.
+   - **Cocinero:** El backend restringe la consulta automáticamente a comandas relevantes para cocina (`ABIERTO`, `EN_PREPARACION`, y `ENTREGADO` no recogido). Además, aplica un DTO de sanitización que elimina campos financieros sensibles (`total`, `subtotalCierre`, `montoDescuento`, `montoPropina`, `clienteCI`, `clienteNIT`, `cajeroAsignado`, `qrUrl`, `metodoPago`). Si envía `reportesCierre=true`, recibe `403 Forbidden`.
+   - **Cajero:** Tiene prohibido invocar `GET /api/pedidos` (`403 Forbidden`). Debe invocar `GET /api/pedidos/pendientes-cobro` que contiene el DTO especializado para facturación.
+
+2. **Control de Propiedad en Mutaciones de Pedido:**
+   En los endpoints de manipulación de comandas (`PUT /api/pedidos/:id`, `PATCH /api/pedidos/:id/solicitar-cuenta`, `PATCH /api/pedidos/:id/recoger`, `PATCH /api/pedidos/:id/cancel`), el backend valida:
+   ```typescript
+   if (pedido.usuario.toString() !== usuarioAuthId && usuarioRol !== 'Administrador') {
+     return res.status(403).json({ mensaje: "Acceso denegado..." });
+   }
+   ```
+   Un mesero solo puede operar sobre las órdenes que él mismo haya creado. Solo el Administrador tiene autorización global para intervenir en comandas de otros usuarios.
 
 ---
 
@@ -179,9 +197,9 @@ Si un usuario autenticado intenta ejecutar un endpoint que no le corresponde (po
 Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
 
 ### 4.0 Alcance del Contrato y Conteo de Operaciones HTTP
-- **Rutas URI Únicas (Paths):** El backend define exactamente **32 rutas URI**.
-- **Operaciones HTTP Reales (Método + Ruta):** El backend implementa exactamente **48 operaciones HTTP activas**.
-- **Alcance Documental:** Las 48 operaciones documentadas a continuación corresponden a la **totalidad de operaciones activas del backend** (no se trata de un subconjunto). Toda la superficie funcional del servidor está completamente cubierta.
+- **Rutas URI Únicas (Paths):** El backend define exactamente **33 rutas URI**.
+- **Operaciones HTTP Reales (Método + Ruta):** El backend implementa exactamente **49 operaciones HTTP activas**.
+- **Alcance Documental:** Las 49 operaciones documentadas a continuación corresponden a la **totalidad de operaciones activas del backend** (no se trata de un subconjunto). Toda la superficie funcional del servidor está completamente cubierta.
 
 ---
 
@@ -196,9 +214,8 @@ Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
   - `401 Unauthorized`: Credenciales inválidas o usuario inactivo.
 
 #### `GET /api/usuarios`
-- **Seguridad:** Requiere Token (`verificarToken`).
-- **Roles:** Cualquier usuario autenticado.
-- **Respuesta:** `200 OK` con arreglo de usuarios `UsuarioNormalizado[]` (excluye contraseñas).
+- **Seguridad:** Solo `Administrador` (`soloAdmins`). Meseros, Cocineros y Cajeros reciben `403 Forbidden`.
+- **Respuesta:** `200 OK` con arreglo de usuarios `UsuarioNormalizado[]` (excluye contraseñas) o `403 Forbidden`.
 
 #### `POST /api/usuarios`
 - **Seguridad:** Solo `Administrador`.
@@ -300,7 +317,7 @@ Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
 ### 4.4 Módulo 4: Ubicaciones de Salón (`/api/ubicaciones`)
 
 #### `GET /api/ubicaciones`
-- **Seguridad:** Requiere Token (`verificarToken`).
+- **Seguridad:** Requiere Token (`Mesero` o `Administrador`). Cajeros y Cocineros reciben `403 Forbidden`.
 - **Respuestas:** `200 OK` con lista de ubicaciones (`Planta Baja`, `Terraza`, `Patio Central`, etc.).
 
 #### `POST /api/ubicaciones`
@@ -321,11 +338,11 @@ Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
 ### 4.5 Módulo 5: Mesas (`/api/mesas`)
 
 #### `GET /api/mesas`
-- **Seguridad:** Requiere Token (`verificarToken`).
+- **Seguridad:** Requiere Token (`Mesero` o `Administrador`). Cajeros y Cocineros reciben `403 Forbidden`.
 - **Respuestas:** `200 OK` con arreglo de `Mesa[]` con `ubicacionId` poblado.
 
 #### `GET /api/mesas/:id`
-- **Seguridad:** Requiere Token (`verificarToken`).
+- **Seguridad:** Requiere Token (`Mesero` o `Administrador`). Cajeros y Cocineros reciben `403 Forbidden`.
 - **Respuestas:** `200 OK` o `404 Not Found`.
 
 #### `POST /api/mesas`
@@ -413,7 +430,7 @@ Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
   - `404 Not Found`: Si no hay ocupación temporal activa o la mesa no existe.
 
 #### `GET /api/mesas/:id/ocupar-temporal`
-- **Seguridad:** Requiere Token.
+- **Seguridad:** Requiere Token (`Mesero` o `Administrador`). Cajeros y Cocineros reciben `403 Forbidden`.
 - **Propósito:** Consultar el estado del bloqueo temporal, tiempo restante e identidad del propietario.
 - **Respuestas:**
   - `200 OK`:
@@ -467,7 +484,12 @@ Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
 - **Respuestas:** `201 Created` con el pedido registrado o `400 Bad Request` (falta de disponibilidad de ingredientes con lista de `faltantes`).
 
 #### `GET /api/pedidos`
-- **Seguridad:** Requiere Token (`verificarToken`).
+- **Seguridad:** Requiere Token (`Administrador`, `Mesero`, `Cocinero`). Cajeros reciben `403 Forbidden` (deben usar `GET /api/pedidos/pendientes-cobro`).
+- **Scoping Automático según Rol:**
+  - `Administrador`: Acceso irrestricto a todos los pedidos y acceso a `reportesCierre=true`.
+  - `Mesero`: El backend inyecta automáticamente `usuario = <authUserId>`. Solo visualiza sus propias órdenes. Si envía `mesero=<otroId>` o `reportesCierre=true`, recibe `403 Forbidden`.
+  - `Cocinero`: El backend restringe la consulta al flujo de producción culinaria (`ABIERTO`, `EN_PREPARACION`, y `ENTREGADO` no recogido). Todos los datos financieros (`total`, `subtotalCierre`, `montoDescuento`, `montoPropina`, `clienteCI`, `clienteNIT`, `cajeroAsignado`, `qrUrl`, `metodoPago`) son omitidos por seguridad. Si envía `reportesCierre=true`, recibe `403 Forbidden`.
+  - `Cajero`: Recibe `403 Forbidden`.
 - **Query Parameters Opcionales:**
   - `hoy=true`: Filtra pedidos creados o actualizados en la fecha actual de Bolivia.
   - `fecha=YYYY-MM-DD`: Filtra pedidos en una fecha calendario específica.
@@ -476,9 +498,15 @@ Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
   - `recogido=true | false`: Filtra según si el pedido ya fue recogido físicamente por el mesero.
   - `incluirRecogidos=true`: Al combinarse con `activo=true`, incluye también pedidos en estado `ENTREGADO` que ya fueron recogidos.
   - `cajero=<ObjectId>`: Filtra pedidos asignados al cajero indicado o sin asignar.
-  - `mesero=<ObjectId>`: Filtra pedidos abiertos por el mesero indicado.
-  - `reportesCierre=true`: **Retorna los reportes de `CierreCaja` de las últimas 48 horas**.
-- **Respuestas:** `200 OK` con arreglo de pedidos con `fechaDiaBolivia` y `fechaHoraBolivia` calculadas.
+  - `mesero=<ObjectId>`: Filtra pedidos abiertos por el mesero indicado (solo Administrador puede filtrar por otros meseros).
+  - `reportesCierre=true`: **Retorna los reportes de `CierreCaja` de las últimas 48 horas** (solo Administrador).
+- **Respuestas:** `200 OK` con arreglo de pedidos con `fechaDiaBolivia` y `fechaHoraBolivia` calculadas, o `403 Forbidden`.
+
+#### `GET /api/pedidos/cocina`
+- **Seguridad:** Requiere Token (`Cocinero`, `Administrador`).
+- **Propósito:** Tablero KDS de Cocina. Retorna exclusivamente las comandas activas en preparación culinaria (`ABIERTO`, `EN_PREPARACION` y `ENTREGADO` pendiente de recogida física por el mesero).
+- **Sanitización Estricta:** Omite automáticamente todos los montos económicos, subtotales, totales, descuentos, propinas, datos fiscales del cliente y asignaciones de caja (`total`, `subtotalCierre`, `montoDescuento`, `montoPropina`, `clienteCI`, `clienteNIT`, `cajeroAsignado`, `qrUrl`, `metodoPago`).
+- **Respuestas:** `200 OK` con arreglo de comandas sanitizadas `PedidoCocinaDTO[]`, `401 Unauthorized` o `403 Forbidden`.
 
 #### `GET /api/pedidos/pendientes-cobro`
 - **Seguridad:** `Cajero`, `Administrador`.
@@ -488,6 +516,7 @@ Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
 
 #### `PUT /api/pedidos/:id`
 - **Seguridad:** `Mesero`, `Administrador`.
+- **Regla de Propiedad:** Si el usuario es `Mesero`, debe ser el propietario que abrió la comanda (`pedido.usuario === authUserId`); de lo contrario el servidor responde `403 Forbidden`. Solo el `Administrador` puede editar pedidos de otros meseros.
 - **Propósito:** Modificación de platos u observaciones antes de que la orden sea cancelada o cobrada.
 - **Request Body Permitido:**
 ```json
@@ -511,7 +540,7 @@ Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
   - Si el pedido está en `CERRADO` o `CANCELADO`, se rechaza con `400 Bad Request`.
   - Si el pedido estaba en `ENTREGADO` y se envían nuevos `detalles`, el backend lo reabre automáticamente a `ABIERTO` para producción en cocina.
   - Emite `cocina:actualizar_tablero` y `mesas:updated`.
-- **Respuestas:** `200 OK` con el pedido actualizado o `400 / 404`.
+- **Respuestas:** `200 OK` con el pedido actualizado, `400 Bad Request`, `403 Forbidden` o `404 Not Found`.
 
 #### `PATCH /api/pedidos/:id/estado`
 - **Seguridad:** `Cocinero`, `Administrador`.
@@ -539,13 +568,15 @@ Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
 
 #### `PATCH /api/pedidos/:id/solicitar-cuenta`
 - **Seguridad:** `Mesero`, `Administrador`.
+- **Regla de Propiedad:** Si el usuario es `Mesero`, debe ser el propietario que abrió la comanda (`pedido.usuario === authUserId`); de lo contrario el servidor responde `403 Forbidden`.
 - **Propósito:** El comensal solicita la pre-cuenta. Cambia la mesa a `'Cuenta Solicitada'` y notifica a caja.
-- **Respuestas:** `200 OK` (emite `caja:nueva_cuenta`, `caja:solicitud_pago` y `mesas:updated` con estado `'Esperando pago'`).
+- **Respuestas:** `200 OK` (emite `caja:nueva_cuenta`, `caja:solicitud_pago` y `mesas:updated` con estado `'Esperando pago'`) o `403 Forbidden`.
 
 #### `PATCH /api/pedidos/:id/cancel`
 - **Seguridad:** `Mesero`, `Administrador`.
+- **Regla de Propiedad:** Si el usuario es `Mesero`, debe ser el propietario que abrió la comanda (`pedido.usuario === authUserId`); de lo contrario el servidor responde `403 Forbidden`.
 - **Propósito:** Anular comanda y liberar la mesa vinculada.
-- **Respuestas:** `200 OK` (emite `mesas:updated` con status `'Disponible'`).
+- **Respuestas:** `200 OK` (emite `mesas:updated` con status `'Disponible'`) o `403 Forbidden`.
 
 ---
 
@@ -573,9 +604,9 @@ Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
   *Eventos emitidos:* `cocina:actualizar_tablero`, `mesas:updated` (status: `'Disponible'`) y `mesas:pago_completado`.
 
 #### `POST /api/pagos/generar-qr/:pedidoId`
-- **Seguridad:** Requiere Token (`verificarToken`).
+- **Seguridad:** Requiere Token (`Cajero` o `Administrador`). Meseros y Cocineros reciben `403 Forbidden`.
 - **Propósito:** Genera la URL del código QR estático con el identificador del pedido y su monto.
-- **Respuestas:** `200 OK` con `{ "qrUrl": "https://api.qrserver.com/...", "total": 120.00 }`.
+- **Respuestas:** `200 OK` con `{ "qrUrl": "https://api.qrserver.com/...", "total": 120.00 }` o `403 Forbidden`.
 
 #### `POST /api/pagos/notificar-qr/:pedidoId`
 - **Seguridad:** Pública (simulación externa de webhook bancario o pasarela móvil).
@@ -600,8 +631,8 @@ Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
 ### 4.8 Módulo 8: Inventario y Recetas (`/api/inventario`)
 
 #### `GET /api/inventario/ingredientes` y `GET /api/inventario/estado`
-- **Seguridad:** Requiere Token (`verificarToken`).
-- **Respuestas:** `200 OK` con lista de `Ingrediente[]`.
+- **Seguridad:** Requiere Token (`Cocinero` o `Administrador`). Meseros y Cajeros reciben `403 Forbidden`.
+- **Respuestas:** `200 OK` con lista de `Ingrediente[]` o `403 Forbidden`.
 
 #### `POST /api/inventario/ingredientes`
 - **Seguridad:** Solo `Administrador`.
@@ -625,8 +656,8 @@ Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
 - **Respuestas:** `200 OK` (emite `inventario:actualizado`).
 
 #### `GET /api/inventario/recetas`
-- **Seguridad:** Requiere Token (`verificarToken`).
-- **Respuestas:** `200 OK` con lista de escandallos poblados con plato e ingredientes.
+- **Seguridad:** Requiere Token (`Cocinero` o `Administrador`). Meseros y Cajeros reciben `403 Forbidden`.
+- **Respuestas:** `200 OK` con lista de escandallos poblados con plato e ingredientes o `403 Forbidden`.
 
 #### `POST /api/inventario/recetas`
 - **Seguridad:** Solo `Administrador`.

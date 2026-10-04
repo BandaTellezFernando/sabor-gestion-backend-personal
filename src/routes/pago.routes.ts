@@ -12,7 +12,12 @@ import { permitirRoles } from '../middlewares/rol.middleware'
 const router = Router()
 
 // 1. Ruta para cuando el cliente quiere pagar con QR estático (Opcional si mantienes el anterior)
-router.post('/generar-qr/:pedidoId', verificarToken, generarPagoQR)
+router.post(
+  '/generar-qr/:pedidoId',
+  verificarToken,
+  permitirRoles('Cajero', 'Administrador'),
+  generarPagoQR
+)
 
 // 2. Ruta principal que conecta con tu botón naranja de "Confirmar Pago"
 router.post(

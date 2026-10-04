@@ -8,7 +8,8 @@ import {
   actualizarPedido,
   obtenerPedidosPendientesCobro,
   solicitarCuentaPedido,
-  marcarPedidoRecogido
+  marcarPedidoRecogido,
+  obtenerPedidosCocina
 } from '../controllers/pedido.controller'
 import { verificarToken } from '../middlewares/auth.middleware'
 import { permitirRoles } from '../middlewares/rol.middleware'
@@ -18,8 +19,21 @@ const router = Router()
 // Crear un nuevo pedido (Mesero, Administrador)
 router.post('/', verificarToken, permitirRoles('Mesero', 'Administrador'), crearPedido)
 
-// Listar todos los pedidos (Todos los empleados autenticados)
-router.get('/', verificarToken, obtenerPedidos)
+// Listar pedidos según rol (Administrador: supervisión; Mesero: propios; Cocinero: comanda operativa)
+router.get(
+  '/',
+  verificarToken,
+  permitirRoles('Administrador', 'Mesero', 'Cocinero'),
+  obtenerPedidos
+)
+
+// Obtener pedidos operativos para Cocina (Cocinero, Administrador)
+router.get(
+  '/cocina',
+  verificarToken,
+  permitirRoles('Cocinero', 'Administrador'),
+  obtenerPedidosCocina
+)
 
 // Obtener pedidos pendientes de cobro para Cajero (Cajero, Administrador)
 router.get(

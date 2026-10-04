@@ -16,7 +16,7 @@ const router = Router()
 // Ruta pública para inicio de sesión de empleados
 router.post('/login', loginUsuario)
 
-router.get('/', verificarToken, obtenerUsuarios)
+router.get('/', verificarToken, soloAdmins, obtenerUsuarios)
 router.post('/', verificarToken, soloAdmins, crearUsuario)
 router.put('/:id', verificarToken, soloAdmins, actualizarUsuario)
 router.patch(

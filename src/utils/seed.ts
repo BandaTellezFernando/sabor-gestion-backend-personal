@@ -11,23 +11,29 @@ dotenv.config()
 const seed = async () => {
   try {
     if (process.env.NODE_ENV === 'production') {
-      throw new Error('Seed no permitido en producción. Operación destructiva abortada.')
+      throw new Error(
+        'Seed no permitido en producción. Operación destructiva abortada.'
+      )
     }
 
     const mongoURI = process.env.MONGO_URI
-    if (!mongoURI) throw new Error('La variable de entorno MONGO_URI no está definida.')
+
+    if (!mongoURI) {
+      throw new Error('La variable de entorno MONGO_URI no está definida.')
+    }
 
     await mongoose.connect(mongoURI)
     console.log('🟢 Conectado a la Base de Datos para seeding...')
 
-    // Limpiar colecciones
+    // ── Limpiar colecciones ────────────────────────────────
     await Usuario.deleteMany({})
     await Categoria.deleteMany({})
     await Plato.deleteMany({})
     await Mesa.deleteMany({})
+
     console.log('🧹 Colecciones limpias')
 
-    // ── Crear Categorías ────────────────────────────────────
+    // ── Crear Categorías ───────────────────────────────────
     const categoriasData = [
       { nombre: 'Entradas' },
       { nombre: 'Sopas' },
@@ -35,25 +41,32 @@ const seed = async () => {
       { nombre: 'Postres' },
       { nombre: 'Bebidas' }
     ]
+
     const categorias = await Categoria.insertMany(categoriasData)
+
     console.log('✅ 5 categorías creadas')
 
-    // ── Crear Usuario Administrador ────────────────────────
-    const passwordHash = await bcrypt.hash('admin123', 10)
-    const admin = await Usuario.create({
+    // ── Crear Usuario Administrador ─────────────────────────
+    const adminPass = await bcrypt.hash('admin123', 10)
+
+    await Usuario.create({
       nombre: 'Admin',
       apellido: 'Sabor',
       ci: '12345678',
       email: 'admin@sabor.com',
-      password: passwordHash,
+      password: adminPass,
       rol: 'Administrador',
       estado: true,
       verificado: true
     })
-    console.log('✅ Usuario Admin creado: admin@sabor.com / admin123')
+
+    console.log(
+      '✅ Usuario Admin creado: admin@sabor.com / admin123'
+    )
 
     // ── Crear Usuario Mesero ────────────────────────────────
     const meseroPass = await bcrypt.hash('mesero123', 10)
+
     await Usuario.create({
       nombre: 'Juan',
       apellido: 'Mesero',
@@ -64,17 +77,58 @@ const seed = async () => {
       estado: true,
       verificado: true
     })
-    console.log('✅ Usuario Mesero creado: mesero@sabor.com / mesero123')
 
-    // ── Crear Platos de Ejemplo ────────────────────────────
+    console.log(
+      '✅ Usuario Mesero creado: mesero@sabor.com / mesero123'
+    )
+
+    // ── Crear Usuario Cocinero ──────────────────────────────
+    const cocineroPass = await bcrypt.hash('cocinero123', 10)
+
+    await Usuario.create({
+      nombre: 'Pedro',
+      apellido: 'Cocinero',
+      ci: '11223344',
+      email: 'cocinero@sabor.com',
+      password: cocineroPass,
+      rol: 'Cocinero',
+      estado: true,
+      verificado: true
+    })
+
+    console.log(
+      '✅ Usuario Cocinero creado: cocinero@sabor.com / cocinero123'
+    )
+
+    // ── Crear Usuario Cajero ────────────────────────────────
+    const cajeroPass = await bcrypt.hash('cajero123', 10)
+
+    await Usuario.create({
+      nombre: 'Carlos',
+      apellido: 'Cajero',
+      ci: '44332211',
+      email: 'cajero@sabor.com',
+      password: cajeroPass,
+      rol: 'Cajero',
+      estado: true,
+      verificado: true
+    })
+
+    console.log(
+      '✅ Usuario Cajero creado: cajero@sabor.com / cajero123'
+    )
+
+    // ── Crear Platos de Ejemplo ─────────────────────────────
     const segundosId = categorias[2]._id
+
     const platosData = [
       {
         nombre: 'Lomo a lo Pobre',
         descripcion: 'Carne de res jugosa con papas y huevo',
         precio: 85,
         categoria: segundosId,
-        imagenUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500',
+        imagenUrl:
+          'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500',
         disponible: true
       },
       {
@@ -82,15 +136,19 @@ const seed = async () => {
         descripcion: 'Milanesa cubierta con queso y salsa de tomate',
         precio: 75,
         categoria: segundosId,
-        imagenUrl: 'https://images.unsplash.com/photo-1598103442097-8b74394b95c6?w=500',
+        imagenUrl:
+          'https://images.unsplash.com/photo-1598103442097-8b74394b95c6?w=500',
         disponible: true
       }
     ]
+
     await Plato.insertMany(platosData)
+
     console.log('✅ 2 platos de ejemplo creados')
 
     // ── Crear Mesas ─────────────────────────────────────────
     const mesasData = []
+
     for (let i = 1; i <= 8; i++) {
       mesasData.push({
         numero: String(i),
@@ -98,13 +156,19 @@ const seed = async () => {
         estado: 'Libre'
       })
     }
+
     await Mesa.insertMany(mesasData)
+
     console.log('✅ 8 mesas creadas')
 
+    // ── Resumen final ───────────────────────────────────────
     console.log('\n🌱 🎉 Seeding completado exitosamente\n')
+
     console.log('📋 CREDENCIALES DE PRUEBA:')
-    console.log('   Admin: admin@sabor.com / admin123')
-    console.log('   Mesero: mesero@sabor.com / mesero123')
+    console.log('   Admin:    admin@sabor.com / admin123')
+    console.log('   Mesero:   mesero@sabor.com / mesero123')
+    console.log('   Cocinero: cocinero@sabor.com / cocinero123')
+    console.log('   Cajero:   cajero@sabor.com / cajero123')
     console.log('')
 
     process.exit(0)
@@ -114,4 +178,4 @@ const seed = async () => {
   }
 }
 
-seed() // Ejecuta el proceso
+seed()

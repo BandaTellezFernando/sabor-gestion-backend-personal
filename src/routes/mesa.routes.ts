@@ -16,8 +16,8 @@ import { soloAdmins, permitirRoles } from '../middlewares/rol.middleware'
 const router = Router()
 
 router.post('/', verificarToken, soloAdmins, crearMesa)
-router.get('/', verificarToken, obtenerMesas)
-router.get('/:id', verificarToken, obtenerMesaPorId)
+router.get('/', verificarToken, permitirRoles('Mesero', 'Administrador'), obtenerMesas)
+router.get('/:id', verificarToken, permitirRoles('Mesero', 'Administrador'), obtenerMesaPorId)
 // Actualizar campos generales de la mesa (solo admin)
 router.put('/:id', verificarToken, soloAdmins, actualizarMesa)
 // Actualizar solo el estado (p. ej. mesero cambia a 'Ocupada' / 'Disponible')
@@ -44,6 +44,7 @@ router.delete(
 router.get(
   '/:id/ocupar-temporal',
   verificarToken,
+  permitirRoles('Mesero', 'Administrador'),
   consultarOcupacionTemporal
 )
 

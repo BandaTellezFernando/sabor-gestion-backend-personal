@@ -145,7 +145,7 @@ paths:
       tags:
         - Usuarios
       summary: Listar todos los usuarios
-      description: Retorna la lista de empleados registrados con contraseñas excluidas. Requiere usuario autenticado.
+      description: Retorna la lista de empleados registrados con contraseñas excluidas. Requiere rol Administrador.
       operationId: obtenerUsuarios
       security:
         - bearerAuth: []
@@ -160,6 +160,12 @@ paths:
                   $ref: '#/components/schemas/UsuarioNormalizado'
         '401':
           description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Administrador)
           content:
             application/json:
               schema:
@@ -784,7 +790,7 @@ paths:
       tags:
         - Mesas
       summary: Listar todas las mesas
-      description: Obtiene las mesas del restaurante con su ubicación poblada y estado mapeado (Disponible, Ocupada, Esperando pago). Admite filtrado por ubicación. Requiere autenticación.
+      description: Obtiene las mesas del restaurante con su ubicación poblada y estado mapeado (Disponible, Ocupada, Esperando pago). Admite filtrado por ubicación. Requiere rol Mesero o Administrador.
       operationId: obtenerMesas
       security:
         - bearerAuth: []
@@ -807,6 +813,12 @@ paths:
                   $ref: '#/components/schemas/MesaDTO'
         '401':
           description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Mesero o Administrador)
           content:
             application/json:
               schema:
@@ -875,7 +887,7 @@ paths:
       tags:
         - Mesas
       summary: Obtener detalle de una mesa
-      description: Obtiene los datos detallados de una mesa por su ID. Requiere autenticación.
+      description: Obtiene los datos detallados de una mesa por su ID. Requiere rol Mesero o Administrador.
       operationId: obtenerMesaPorId
       security:
         - bearerAuth: []
@@ -896,6 +908,12 @@ paths:
                 $ref: '#/components/schemas/MesaDTO'
         '401':
           description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Mesero o Administrador)
           content:
             application/json:
               schema:
@@ -1201,7 +1219,7 @@ paths:
       tags:
         - Mesas
       summary: Consultar estado de ocupación temporal de una mesa
-      description: Retorna información sobre si la mesa cuenta con una ocupación temporal activa, los minutos restantes de validez y si el usuario autenticado es el propietario de la misma.
+      description: Retorna información sobre si la mesa cuenta con una ocupación temporal activa, los minutos restantes de validez y si el usuario autenticado es el propietario de la misma. Requiere rol Mesero o Administrador.
       operationId: consultarOcupacionTemporal
       security:
         - bearerAuth: []
@@ -1232,6 +1250,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Mesero o Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
         '404':
           description: Mesa no encontrada
           content:
@@ -1249,7 +1273,7 @@ paths:
       tags:
         - Ubicaciones
       summary: Listar ubicaciones físicas
-      description: Obtiene la lista de todas las ubicaciones o áreas registradas (ej. Salón Principal, Terraza, Patio). Requiere usuario autenticado.
+      description: Obtiene la lista de todas las ubicaciones o áreas registradas (ej. Salón Principal, Terraza, Patio). Requiere rol Mesero o Administrador.
       operationId: obtenerUbicaciones
       security:
         - bearerAuth: []
@@ -1264,6 +1288,12 @@ paths:
                   $ref: '#/components/schemas/Ubicacion'
         '401':
           description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Mesero o Administrador)
           content:
             application/json:
               schema:
@@ -1433,7 +1463,7 @@ paths:
       tags:
         - Ingredientes
       summary: Consultar estado general de inventario
-      description: Obtiene todos los ingredientes con su unidad de medida y disponibilidad booleana actual. Requiere autenticación.
+      description: Obtiene todos los ingredientes con su unidad de medida y disponibilidad booleana actual. Requiere rol Cocinero o Administrador.
       operationId: obtenerEstadoInventario
       security:
         - bearerAuth: []
@@ -1452,6 +1482,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Cocinero o Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
         '500':
           description: Error al obtener el estado del inventario
           content:
@@ -1463,7 +1499,7 @@ paths:
       tags:
         - Ingredientes
       summary: Listar ingredientes del inventario
-      description: Lista todos los ingredientes registrados en el inventario. Requiere autenticación.
+      description: Lista todos los ingredientes registrados en el inventario. Requiere rol Cocinero o Administrador.
       operationId: listarIngredientes
       security:
         - bearerAuth: []
@@ -1478,6 +1514,12 @@ paths:
                   $ref: '#/components/schemas/Ingrediente'
         '401':
           description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Cocinero o Administrador)
           content:
             application/json:
               schema:
@@ -1641,7 +1683,7 @@ paths:
       tags:
         - Recetas
       summary: Listar recetas / escandallos
-      description: Obtiene todas las recetas registradas en el sistema junto con los ingredientes asociados a cada plato. Requiere autenticación.
+      description: Obtiene todas las recetas registradas en el sistema junto con los ingredientes asociados a cada plato. Requiere rol Cocinero o Administrador.
       operationId: obtenerRecetas
       security:
         - bearerAuth: []
@@ -1656,6 +1698,12 @@ paths:
                   $ref: '#/components/schemas/Receta'
         '401':
           description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Cocinero o Administrador)
           content:
             application/json:
               schema:
@@ -1778,7 +1826,7 @@ paths:
       tags:
         - Pedidos
       summary: Listar pedidos con filtros
-      description: 'Obtiene los pedidos del restaurante. Admite filtrado por hoy, fecha, mesa, activo, cajero, mesero, o reportesCierre=true para arqueos de 48h. Requiere autenticación (personal operativo: Mesero, Cajero, Cocinero, Administrador).'
+      description: 'Obtiene los pedidos del restaurante con alcance automático según el rol del usuario autenticado: Administrador (acceso total y consulta de arqueos con reportesCierre=true), Mesero (restringido a sus propios pedidos creados; 403 si intenta consultar pedidos de otro mesero o reportesCierre=true), Cocinero (restringido a pedidos activos en preparación culinaria, sanitizado sin montos financieros ni datos de facturación; 403 si intenta reportesCierre=true). Rol Cajero denegado con 403 (debe utilizar /api/pedidos/pendientes-cobro). Requiere rol Administrador, Mesero o Cocinero.'
       operationId: obtenerPedidos
       security:
         - bearerAuth: []
@@ -1857,6 +1905,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (rol Cajero denegado, mesero consultando pedidos ajenos o no-admin solicitando reportes de cierre)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
         '500':
           description: Error al obtener pedidos
           content:
@@ -1914,6 +1968,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MensajeErrorResponse'
+  /api/pedidos/cocina:
+    get:
+      tags:
+        - Pedidos
+      summary: Listar comandas activas para pantalla de Cocina (KDS)
+      description: Obtiene la lista de pedidos activos relevantes para Cocina (estados ABIERTO, EN_PREPARACION, y ENTREGADO no recogido), omitiendo datos sensibles de facturación y montos financieros. Requiere rol Cocinero o Administrador.
+      operationId: obtenerPedidosCocina
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lista de pedidos activos sanitizados para cocina
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PedidoCocinaDTO'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Cocinero o Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error al obtener pedidos para cocina
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
   /api/pedidos/pendientes-cobro:
     get:
       tags:
@@ -1963,7 +2053,7 @@ paths:
       tags:
         - Pedidos
       summary: Actualizar contenido de un pedido
-      description: Actualiza platos (detalles), descuentos, propinas o datos del comensal. El backend recalcula los subtotales e importes con los precios oficiales de Plato obtenidos vía PlatoRepository y almacena el snapshot histórico; no confía en montos provistos por el cliente. Los campos 'total', 'subtotalCierre' y 'metodoPago' son ignorados por el backend (autoridad financiera exclusiva), mientras que cualquier intento de enviar 'estado' es explícitamente rechazado con 400. Si el pedido estaba en ENTREGADO y se añaden platos, se reabre a ABIERTO y la mesa se reactiva como Ocupada. Requiere rol Mesero o Administrador.
+      description: Actualiza platos (detalles), descuentos, propinas o datos del comensal. El backend recalcula los subtotales e importes con los precios oficiales de Plato obtenidos vía PlatoRepository y almacena el snapshot histórico; no confía en montos provistos por el cliente. Los campos 'total', 'subtotalCierre' y 'metodoPago' son ignorados por el backend (autoridad financiera exclusiva), mientras que cualquier intento de enviar 'estado' es explícitamente rechazado con 400. Si el pedido estaba en ENTREGADO y se añaden platos, se reabre a ABIERTO y la mesa se reactiva como Ocupada. Requiere rol Administrador o ser el Mesero que registró el pedido.
       operationId: actualizarPedido
       security:
         - bearerAuth: []
@@ -2001,7 +2091,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/MensajeErrorResponse'
         '403':
-          description: Acceso denegado (requiere rol Mesero o Administrador)
+          description: Acceso denegado (solo el mesero responsable del pedido o un Administrador pueden modificarlo)
           content:
             application/json:
               schema:
@@ -2083,7 +2173,7 @@ paths:
       tags:
         - Pedidos
       summary: Solicitar cuenta de un pedido
-      description: Solicita la cuenta de la orden, cambiando el estado de la mesa a "Cuenta Solicitada" (notificando estado de WebSocket "Esperando pago" a los clientes) y notificando a caja en tiempo real. Requiere rol Mesero o Administrador.
+      description: Solicita la cuenta de la orden, cambiando el estado de la mesa a "Cuenta Solicitada" (notificando estado de WebSocket "Esperando pago" a los clientes) y notificando a caja en tiempo real. Requiere rol Administrador o ser el Mesero que registró el pedido.
       operationId: solicitarCuentaPedido
       security:
         - bearerAuth: []
@@ -2115,7 +2205,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/MensajeErrorResponse'
         '403':
-          description: Acceso denegado (requiere rol Mesero o Administrador)
+          description: Acceso denegado (solo el mesero responsable del pedido o un Administrador pueden solicitar la cuenta)
           content:
             application/json:
               schema:
@@ -2197,7 +2287,7 @@ paths:
       tags:
         - Pedidos
       summary: Cancelar pedido y liberar mesa
-      description: Cancela un pedido cambiando su estado a CANCELADO y libera la mesa poniéndola en "Libre" (emitiendo statusSocket "Disponible" en WebSocket). Requiere rol Mesero o Administrador.
+      description: Cancela un pedido cambiando su estado a CANCELADO y libera la mesa poniéndola en "Libre" (emitiendo statusSocket "Disponible" en WebSocket). Requiere rol Administrador o ser el Mesero que registró el pedido.
       operationId: cancelarPedido
       security:
         - bearerAuth: []
@@ -2235,7 +2325,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/MensajeErrorResponse'
         '403':
-          description: Acceso denegado (requiere rol Mesero o Administrador)
+          description: Acceso denegado (solo el mesero responsable del pedido o un Administrador pueden cancelar el pedido)
           content:
             application/json:
               schema:
@@ -2257,7 +2347,7 @@ paths:
       tags:
         - Pagos
       summary: Generar QR estático de pago
-      description: Genera un código QR con ID del pedido y monto para cobro estático. Requiere autenticación.
+      description: Genera un código QR con ID del pedido y monto para cobro estático. Requiere rol Cajero o Administrador.
       operationId: generarPagoQR
       security:
         - bearerAuth: []
@@ -2278,6 +2368,12 @@ paths:
                 $ref: '#/components/schemas/GenerarPagoQRResponse'
         '401':
           description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Cajero o Administrador)
           content:
             application/json:
               schema:
@@ -3577,6 +3673,59 @@ components:
         fechaHoraBolivia:
           type: string
           example: 27/09/2026 14:30:00
+    PedidoCocinaDTO:
+      type: object
+      description: DTO de comanda sanitizado para Cocina (KDS). Excluye totales, montos, descuentos, propinas y datos fiscales de facturación.
+      properties:
+        _id:
+          type: string
+          example: '000000000000000000000070'
+        codigo:
+          type: string
+          example: PED-0001
+        fechaDiaBolivia:
+          type: string
+          example: '2026-09-27'
+        fechaHoraBolivia:
+          type: string
+          example: 27/09/2026 14:30:00
+        fechaHora:
+          type: string
+          format: date-time
+        estado:
+          type: string
+          enum:
+            - ABIERTO
+            - EN_PREPARACION
+            - ENTREGADO
+          example: ABIERTO
+        mesa:
+          oneOf:
+            - type: string
+              example: '000000000000000000000030'
+            - $ref: '#/components/schemas/MesaDTO'
+        usuario:
+          oneOf:
+            - type: string
+              example: '000000000000000000000001'
+            - $ref: '#/components/schemas/UsuarioNormalizado'
+        detalles:
+          type: array
+          items:
+            $ref: '#/components/schemas/DetallePedido'
+        clienteNombre:
+          type: string
+          example: Juan Pérez
+        recogido:
+          type: boolean
+          example: false
+        recogidoAt:
+          type: string
+          format: date-time
+        recogidoPor:
+          type: string
+        fechaRecogidaBolivia:
+          type: string
     SolicitarCuentaResponse:
       type: object
       properties:

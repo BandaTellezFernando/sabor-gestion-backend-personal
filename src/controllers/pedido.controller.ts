@@ -48,9 +48,13 @@ export const crearPedido = async (req: CustomRequest, res: Response): Promise<vo
   }
 }
 
-export const obtenerPedidos = async (req: Request, res: Response): Promise<void> => {
+export const obtenerPedidos = async (req: CustomRequest, res: Response): Promise<void> => {
   try {
-    const datos = await pedidoService.obtenerPedidos(req.query)
+    const datos = await pedidoService.obtenerPedidos(
+      req.query,
+      req.usuario?.id,
+      req.usuario?.rol
+    )
     res.status(200).json(datos)
   } catch (error) {
     if (error instanceof PedidoServiceError) {
@@ -62,10 +66,14 @@ export const obtenerPedidos = async (req: Request, res: Response): Promise<void>
   }
 }
 
-export const cancelarPedido = async (req: Request, res: Response): Promise<void> => {
+export const cancelarPedido = async (req: CustomRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params
-    const resultado = await pedidoService.cancelarPedido(String(id))
+    const resultado = await pedidoService.cancelarPedido(
+      String(id),
+      req.usuario?.id,
+      req.usuario?.rol
+    )
 
     // Avisar por WebSocket que la mesa vuelve a estar disponible (verde)
     if (resultado.mesaLiberada) {
@@ -147,10 +155,15 @@ export const actualizarEstadoPedido = async (req: Request, res: Response): Promi
   }
 }
 
-export const actualizarPedido = async (req: Request, res: Response): Promise<void> => {
+export const actualizarPedido = async (req: CustomRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params
-    const resultado = await pedidoService.actualizarPedido(String(id), req.body)
+    const resultado = await pedidoService.actualizarPedido(
+      String(id),
+      req.body,
+      req.usuario?.id,
+      req.usuario?.rol
+    )
 
     if (resultado.mesaReactivada) {
       try {
@@ -209,11 +222,18 @@ export const obtenerPedidosPendientesCobro = async (
   }
 }
 
-export const solicitarCuentaPedido = async (req: Request, res: Response): Promise<void> => {
+export const solicitarCuentaPedido = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
   try {
     const { id } = req.params
     const { payload, mesaActualizada, cajeroAsignado } =
-      await pedidoService.solicitarCuentaPedido(String(id))
+      await pedidoService.solicitarCuentaPedido(
+        String(id),
+        req.usuario?.id,
+        req.usuario?.rol
+      )
 
     try {
       const io = getIO()
@@ -299,5 +319,22 @@ export const marcarPedidoRecogido = async (
     res.status(500).json({
       mensaje: 'Error al marcar pedido como recogido'
     })
+  }
+}
+
+export const obtenerPedidosCocina = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const pedidos = await pedidoService.obtenerPedidosCocina()
+    res.status(200).json(pedidos)
+  } catch (error) {
+    if (error instanceof PedidoServiceError) {
+      res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
+      return
+    }
+    console.error('Error al obtener los pedidos de cocina:', error)
+    res.status(500).json({ mensaje: 'Error al obtener los pedidos de cocina' })
   }
 }

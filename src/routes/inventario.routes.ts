@@ -11,15 +11,25 @@ import {
 } from '../controllers/inventario.controller'
 // Middlewares de seguridad
 import { verificarToken } from '../middlewares/auth.middleware'
-import { soloAdmins } from '../middlewares/rol.middleware'
+import { soloAdmins, permitirRoles } from '../middlewares/rol.middleware'
 
 const router = Router()
 
 // ─── RUTAS PARA INGREDIENTES ─────────────────────────────────────────────────
 
-// GET: Todos los usuarios con sesión iniciada pueden ver los ingredientes y su disponibilidad
-router.get('/estado', verificarToken, obtenerEstadoInventario)
-router.get('/ingredientes', verificarToken, obtenerEstadoInventario)
+// GET: Cocineros y Administradores pueden ver los ingredientes y su disponibilidad
+router.get(
+  '/estado',
+  verificarToken,
+  permitirRoles('Cocinero', 'Administrador'),
+  obtenerEstadoInventario
+)
+router.get(
+  '/ingredientes',
+  verificarToken,
+  permitirRoles('Cocinero', 'Administrador'),
+  obtenerEstadoInventario
+)
 
 // POST: Solo el Administrador puede crear ingredientes
 router.post('/ingredientes', verificarToken, soloAdmins, crearIngrediente)
@@ -31,7 +41,12 @@ router.delete('/ingredientes/:id', verificarToken, soloAdmins, eliminarIngredien
 // ─── RUTAS PARA RECETAS (ESCANDALLOS) ────────────────────────────────────────
 
 // GET: Cocineros y Admins pueden ver la lista de recetas
-router.get('/recetas', verificarToken, obtenerRecetas)
+router.get(
+  '/recetas',
+  verificarToken,
+  permitirRoles('Cocinero', 'Administrador'),
+  obtenerRecetas
+)
 
 // POST: Crear o actualizar una receta (Solo admins)
 router.post('/recetas', verificarToken, soloAdmins, guardarReceta)

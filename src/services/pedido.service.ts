@@ -157,6 +157,37 @@ export class PedidoService {
   }
 
   /**
+   * Formatea un pedido excluyendo información financiera/de facturación para la vista operativa de cocina
+   */
+  static formatearPedidoCocina(pedido: any): any {
+    const raw = typeof pedido?.toObject === 'function' ? pedido.toObject() : pedido || {}
+    const fechaHoraBolivia =
+      raw.fechaHoraBolivia ||
+      (raw.createdAt ? formatearFechaBolivia(raw.createdAt) : undefined)
+
+    return {
+      _id: raw._id,
+      codigo: raw.codigo,
+      estado: raw.estado,
+      mesa: raw.mesa,
+      usuario: raw.usuario,
+      detalles: (raw.detalles || []).map((d: any) => ({
+        _id: d._id,
+        plato: d.plato,
+        nombrePlato: d.nombrePlato || d.plato?.nombre || 'Plato',
+        cantidad: d.cantidad,
+        observacion: d.observacion
+      })),
+      recogido: raw.recogido || false,
+      recogidoPor: raw.recogidoPor,
+      fechaRecogida: raw.fechaRecogida,
+      createdAt: raw.createdAt,
+      updatedAt: raw.updatedAt,
+      fechaHoraBolivia
+    }
+  }
+
+  /**
    * Procesa cada detalle de pedido obteniendo el precio real y nombre desde PlatoRepository,
    * calculando subtotal = precioReal * cantidad y validando la disponibilidad de recetas e ingredientes.
    */
@@ -327,8 +358,13 @@ export class PedidoService {
 
   /**
    * Obtiene pedidos aplicando filtros de búsqueda o reportes de cierre según los query params
+   * y el rol/titularidad del usuario autenticado
    */
-  async obtenerPedidos(query: Record<string, any>): Promise<any[]> {
+  async obtenerPedidos(
+    query: Record<string, any>,
+    usuarioAuthId?: string,
+    usuarioRol?: string
+  ): Promise<any[]> {
     const {
       hoy,
       fecha,
@@ -341,8 +377,19 @@ export class PedidoService {
       incluirRecogidos
     } = query
 
-    // Reportes de Cierre de las últimas 48 horas
+    const esAdmin =
+      usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
+    const esMesero = usuarioRol === 'Mesero'
+    const esCocinero = usuarioRol === 'Cocinero'
+
+    // Reportes de Cierre de las últimas 48 horas (Solo Administradores)
     if (reportesCierre === 'true') {
+      if (usuarioRol && !esAdmin) {
+        throw new PedidoServiceError(
+          403,
+          'Acceso denegado: solo Administradores pueden consultar reportes de cierre.'
+        )
+      }
       const limite = obtenerFechaBolivia()
       limite.setHours(limite.getHours() - 48)
       const cierres = await this.pedidoRepo.buscarReportesCierre(limite)
@@ -362,6 +409,31 @@ export class PedidoService {
     const filtro: any = {}
     const andClauses: any[] = []
 
+    // Reglas de alcance por Rol:
+    if (esMesero) {
+      // Mesero: solo puede consultar sus propios pedidos
+      if (mesero && usuarioAuthId && mesero.toString() !== usuarioAuthId.toString()) {
+        throw new PedidoServiceError(
+          403,
+          'Acceso denegado: no puedes consultar pedidos asignados a otro mesero.'
+        )
+      }
+      if (usuarioAuthId) {
+        filtro.usuario = usuarioAuthId
+      }
+    } else if (esCocinero) {
+      // Cocinero: siempre restringido al flujo culinario activo (sin pedidos cerrados o cancelados)
+      andClauses.push({
+        $or: [
+          { estado: { $in: [ESTADOS_PEDIDO.ABIERTO, ESTADOS_PEDIDO.EN_PREPARACION] } },
+          { estado: ESTADOS_PEDIDO.ENTREGADO, recogido: { $ne: true } }
+        ]
+      })
+    } else if (mesero) {
+      // Admin u otros: si envía filtro por mesero
+      filtro.usuario = mesero
+    }
+
     if (hoy === 'true') {
       const inicioHoy = new Date()
       inicioHoy.setHours(0, 0, 0, 0)
@@ -378,39 +450,40 @@ export class PedidoService {
       filtro.mesa = mesa
     }
 
-    if (activo === 'true') {
-      if (recogido === 'true') {
-        filtro.estado = {
-          $in: [
-            ESTADOS_PEDIDO.ABIERTO,
-            ESTADOS_PEDIDO.EN_PREPARACION,
-            ESTADOS_PEDIDO.ENTREGADO
-          ]
-        }
-        filtro.recogido = true
-      } else if (incluirRecogidos === 'true') {
-        filtro.estado = {
-          $in: [
-            ESTADOS_PEDIDO.ABIERTO,
-            ESTADOS_PEDIDO.EN_PREPARACION,
-            ESTADOS_PEDIDO.ENTREGADO
-          ]
+    if (!esCocinero) {
+      if (activo === 'true') {
+        if (recogido === 'true') {
+          filtro.estado = {
+            $in: [
+              ESTADOS_PEDIDO.ABIERTO,
+              ESTADOS_PEDIDO.EN_PREPARACION,
+              ESTADOS_PEDIDO.ENTREGADO
+            ]
+          }
+          filtro.recogido = true
+        } else if (incluirRecogidos === 'true') {
+          filtro.estado = {
+            $in: [
+              ESTADOS_PEDIDO.ABIERTO,
+              ESTADOS_PEDIDO.EN_PREPARACION,
+              ESTADOS_PEDIDO.ENTREGADO
+            ]
+          }
+        } else {
+          // Vista de pedidos activos no recogidos
+          andClauses.push({
+            $or: [
+              { estado: { $in: [ESTADOS_PEDIDO.ABIERTO, ESTADOS_PEDIDO.EN_PREPARACION] } },
+              { estado: ESTADOS_PEDIDO.ENTREGADO, recogido: { $ne: true } }
+            ]
+          })
         }
       } else {
-        // Vista operativa de Cocina: los pedidos ENTREGADO que ya fueron recogidos
-        // NO se muestran en la columna LISTO
-        andClauses.push({
-          $or: [
-            { estado: { $in: [ESTADOS_PEDIDO.ABIERTO, ESTADOS_PEDIDO.EN_PREPARACION] } },
-            { estado: ESTADOS_PEDIDO.ENTREGADO, recogido: { $ne: true } }
-          ]
-        })
-      }
-    } else {
-      if (recogido === 'true') {
-        filtro.recogido = true
-      } else if (recogido === 'false') {
-        filtro.recogido = { $ne: true }
+        if (recogido === 'true') {
+          filtro.recogido = true
+        } else if (recogido === 'false') {
+          filtro.recogido = { $ne: true }
+        }
       }
     }
 
@@ -424,26 +497,55 @@ export class PedidoService {
       })
     }
 
-    if (mesero) {
-      filtro.usuario = mesero
-    }
-
     if (andClauses.length > 0) {
       filtro.$and = andClauses
     }
 
     const pedidos = await this.pedidoRepo.buscarConFiltros(filtro)
+    if (esCocinero) {
+      return pedidos.map((pedido) => PedidoService.formatearPedidoCocina(pedido))
+    }
     return pedidos.map((pedido) => PedidoService.agregarFechaBoliviaPedido(pedido))
+  }
+
+  /**
+   * Obtiene exclusivamente los pedidos operativos para el tablero de cocina (Cocinero, Admin)
+   */
+  async obtenerPedidosCocina(): Promise<any[]> {
+    const filtro = {
+      $or: [
+        { estado: { $in: [ESTADOS_PEDIDO.ABIERTO, ESTADOS_PEDIDO.EN_PREPARACION] } },
+        { estado: ESTADOS_PEDIDO.ENTREGADO, recogido: { $ne: true } }
+      ]
+    }
+    const pedidos = await this.pedidoRepo.buscarConFiltros(filtro)
+    return pedidos.map((pedido) => PedidoService.formatearPedidoCocina(pedido))
   }
 
   /**
    * Cancela un pedido y libera la mesa
    */
-  async cancelarPedido(id: string): Promise<ResultadoCancelarPedido> {
+  async cancelarPedido(
+    id: string,
+    usuarioAuthId?: string,
+    usuarioRol?: string
+  ): Promise<ResultadoCancelarPedido> {
     const pedido = await this.pedidoRepo.buscarPorId(id)
 
     if (!pedido) {
       throw new PedidoServiceError(404, 'Pedido no encontrado')
+    }
+
+    // Regla de titularidad: Mesero responsable o Administrador
+    const meseroResponsableId = pedido.usuario ? pedido.usuario.toString() : ''
+    const esResponsable = !usuarioAuthId || meseroResponsableId === usuarioAuthId
+    const esAdmin = usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
+
+    if (!esResponsable && !esAdmin) {
+      throw new PedidoServiceError(
+        403,
+        'Acceso denegado: solo el mesero responsable del pedido o un Administrador pueden cancelar este pedido.'
+      )
     }
 
     if (
@@ -553,7 +655,12 @@ export class PedidoService {
    * Actualiza el contenido de un pedido existente (platos, totales, descuentos, propinas).
    * Reabre a 'ABIERTO' si estaba en 'ENTREGADO' y se agregan detalles.
    */
-  async actualizarPedido(id: string, body: any): Promise<ResultadoActualizarPedido> {
+  async actualizarPedido(
+    id: string,
+    body: any,
+    usuarioAuthId?: string,
+    usuarioRol?: string
+  ): Promise<ResultadoActualizarPedido> {
     const {
       total,
       detalles,
@@ -570,6 +677,18 @@ export class PedidoService {
     const pedidoAnterior = await this.pedidoRepo.buscarPorId(id)
     if (!pedidoAnterior) {
       throw new PedidoServiceError(404, 'Pedido no encontrado')
+    }
+
+    // Regla de titularidad: Mesero responsable o Administrador
+    const meseroResponsableId = pedidoAnterior.usuario ? pedidoAnterior.usuario.toString() : ''
+    const esResponsable = !usuarioAuthId || meseroResponsableId === usuarioAuthId
+    const esAdmin = usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
+
+    if (!esResponsable && !esAdmin) {
+      throw new PedidoServiceError(
+        403,
+        'Acceso denegado: solo el mesero responsable del pedido o un Administrador pueden modificar este pedido.'
+      )
     }
 
     // 🛡️ Regla de inmutabilidad: Pedidos CERRADO o CANCELADO no admiten modificaciones
@@ -706,11 +825,27 @@ export class PedidoService {
   /**
    * Solicita cuenta de un pedido y cambia el estado de la mesa a 'Cuenta Solicitada'
    */
-  async solicitarCuentaPedido(id: string): Promise<ResultadoSolicitarCuenta> {
+  async solicitarCuentaPedido(
+    id: string,
+    usuarioAuthId?: string,
+    usuarioRol?: string
+  ): Promise<ResultadoSolicitarCuenta> {
     const pedido = await this.pedidoRepo.buscarPorId(id)
 
     if (!pedido) {
       throw new PedidoServiceError(404, 'Pedido no encontrado')
+    }
+
+    // Regla de titularidad: Mesero responsable o Administrador
+    const meseroResponsableId = pedido.usuario ? pedido.usuario.toString() : ''
+    const esResponsable = !usuarioAuthId || meseroResponsableId === usuarioAuthId
+    const esAdmin = usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
+
+    if (!esResponsable && !esAdmin) {
+      throw new PedidoServiceError(
+        403,
+        'Acceso denegado: solo el mesero responsable del pedido o un Administrador pueden solicitar la cuenta.'
+      )
     }
 
     if (!pedido.mesa) {

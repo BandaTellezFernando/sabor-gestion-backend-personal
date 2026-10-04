@@ -7,12 +7,12 @@ import {
   eliminarUbicacion
 } from '../controllers/ubicacion.controller'
 import { verificarToken } from '../middlewares/auth.middleware'
-import { soloAdmins } from '../middlewares/rol.middleware'
+import { soloAdmins, permitirRoles } from '../middlewares/rol.middleware'
 
 const router = Router()
 
-// Listar ubicaciones (cualquier usuario autenticado)
-router.get('/', verificarToken, obtenerUbicaciones)
+// Listar ubicaciones (Mesero, Administrador)
+router.get('/', verificarToken, permitirRoles('Mesero', 'Administrador'), obtenerUbicaciones)
 
 // Crear ubicacion (solo admin)
 router.post('/', verificarToken, soloAdmins, crearUbicacion)
