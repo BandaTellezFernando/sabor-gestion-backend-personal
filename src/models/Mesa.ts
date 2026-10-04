@@ -7,7 +7,6 @@ export interface IMesa extends Document {
   ubicacion: string
   ubicacionId?: mongoose.Types.ObjectId // Agregado para tipado
   estado: string
-  tipo?: string
   createdAt: Date // Agregado por el timestamps: true
   updatedAt: Date // Agregado por el timestamps: true
 }
@@ -22,8 +21,7 @@ const MesaSchema = new Schema(
       type: String,
       enum: ['Libre', 'Ocupada', 'Cuenta Solicitada'],
       default: 'Libre'
-    },
-    tipo: { type: String, enum: ['normal', 'vip'], default: 'normal' }
+    }
   },
   {
     timestamps: true,

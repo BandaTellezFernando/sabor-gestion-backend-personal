@@ -295,11 +295,6 @@ export class PagoService {
     const finalClienteNombre = clienteNombre || ped.clienteNombre || 'Consumidor Final'
     const finalClienteCI = clienteCI || ped.clienteCI || ped.clienteNIT || 'S/N'
 
-    const esMesaVIP =
-      mesaDoc?.tipo === 'vip' ||
-      (ped.mesa as any)?.tipo === 'vip' ||
-      (ped.mesa as any)?.type === 'vip'
-
     const items: ItemFactura[] = (ped.detalles || ped.items || []).map((item: any) => {
       const nombre = item.nombre || item.plato?.nombre || 'Plato'
       const cantidad = item.cantidad || 1
@@ -325,8 +320,7 @@ export class PagoService {
       totalFinal,
       metodoPago: ped.metodoPago || 'Efectivo',
       fecha,
-      items,
-      esMesaVIP
+      items
     }
 
     const htmlDelRecibo = generarPlantillaFacturaHTML(datosFactura)

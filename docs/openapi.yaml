@@ -821,7 +821,7 @@ paths:
       tags:
         - Mesas
       summary: Crear mesa o lote de mesas
-      description: Crea una mesa o un lote de mesas. Requiere rol Administrador. Acepta nomenclatura bilingüe (name/numero, capacity/capacidad, location/ubicacion, type/tipo, status/estado).
+      description: Crea una mesa o un lote de mesas. Requiere rol Administrador. Acepta nomenclatura bilingüe (name/numero, capacity/capacidad, location/ubicacion, status/estado).
       operationId: crearMesa
       security:
         - bearerAuth: []
@@ -916,7 +916,7 @@ paths:
       tags:
         - Mesas
       summary: Actualizar campos generales de una mesa
-      description: Actualiza nombre, capacidad, tipo o ubicación de una mesa. Requiere rol de Administrador. Valida regla de formato de nombre de mesa.
+      description: Actualiza nombre, capacidad o ubicación de una mesa. Requiere rol de Administrador. Valida regla de formato de nombre de mesa.
       operationId: actualizarMesa
       security:
         - bearerAuth: []
@@ -2624,12 +2624,6 @@ components:
           type: string
           example: Disponible
           description: Mapeo para visualización en frontend y eventos WebSocket (Disponible, Ocupada, Esperando pago)
-        type:
-          type: string
-          enum:
-            - normal
-            - vip
-          example: normal
         createdAt:
           type: string
           format: date-time
@@ -2657,18 +2651,6 @@ components:
         ubicacion:
           type: string
           example: Interior
-        type:
-          type: string
-          enum:
-            - normal
-            - vip
-          example: normal
-        tipo:
-          type: string
-          enum:
-            - normal
-            - vip
-          example: normal
         status:
           type: string
           example: Libre
@@ -2701,18 +2683,6 @@ components:
         ubicacion:
           type: string
           example: Terraza
-        type:
-          type: string
-          enum:
-            - normal
-            - vip
-          example: vip
-        tipo:
-          type: string
-          enum:
-            - normal
-            - vip
-          example: vip
         status:
           type: string
           example: Libre

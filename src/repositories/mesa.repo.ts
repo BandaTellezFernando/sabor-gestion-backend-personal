@@ -22,7 +22,6 @@ export interface MesaCrearDatos {
   numero: string
   capacidad: number
   estado: string
-  tipo: string
   location?: string
 }
 
@@ -31,7 +30,6 @@ export interface MesaActualizarDatos {
   numero?: string
   capacidad?: number
   estado?: string
-  tipo?: string
   location?: string
 }
 
@@ -82,8 +80,7 @@ export class MesaRepository {
     const base: Partial<IMesa> = {
       numero: datos.numero,
       capacidad: datos.capacidad,
-      estado: datos.estado,
-      tipo: datos.tipo
+      estado: datos.estado
     }
 
     if (datos.location !== undefined) {
@@ -111,8 +108,7 @@ export class MesaRepository {
       const base: Partial<IMesa> = {
         numero: item.numero,
         capacidad: item.capacidad,
-        estado: item.estado,
-        tipo: item.tipo
+        estado: item.estado
       }
 
       if (item.location) {
@@ -145,7 +141,6 @@ export class MesaRepository {
     if (datos.numero !== undefined) update.numero = datos.numero
     if (datos.capacidad !== undefined) update.capacidad = datos.capacidad
     if (datos.estado !== undefined) update.estado = datos.estado
-    if (datos.tipo !== undefined) update.tipo = datos.tipo
 
     if (datos.location !== undefined) {
       if (mongoose.Types.ObjectId.isValid(datos.location)) {

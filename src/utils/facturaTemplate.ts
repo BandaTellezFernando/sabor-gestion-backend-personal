@@ -20,7 +20,6 @@ export interface DatosFactura {
   metodoPago?: string
   fecha?: string
   items: ItemFactura[]
-  esMesaVIP?: boolean
 }
 
 /**
@@ -40,8 +39,7 @@ export function generarPlantillaFacturaHTML(datos: DatosFactura): string {
     totalFinal,
     metodoPago = 'Efectivo',
     fecha = new Date().toLocaleString('es-BO'),
-    items,
-    esMesaVIP = false
+    items
   } = datos
 
   // 1. Armamos las filas de la tabla de consumo dinámicamente
@@ -63,18 +61,6 @@ export function generarPlantillaFacturaHTML(datos: DatosFactura): string {
         </tr>
       `
   })
-
-  // Cargo VIP
-  if (esMesaVIP) {
-    itemsHtml += `
-        <tr style="background-color: #fffbeb;">
-          <td style="padding: 6px 0; border-bottom: 1px solid #fce7f3; color: #b45309;">1</td>
-          <td style="padding: 6px 0; border-bottom: 1px solid #fce7f3; color: #b45309; font-weight: bold;">Cargo Mesa VIP</td>
-          <td style="padding: 6px 0; border-bottom: 1px solid #fce7f3; text-align: right; color: #b45309;">100.00</td>
-          <td style="padding: 6px 0; border-bottom: 1px solid #fce7f3; text-align: right; color: #b45309;">100.00</td>
-        </tr>
-      `
-  }
 
   // 2. Diseño del Ticket estilo "Impresora"
   return `

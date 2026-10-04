@@ -27,8 +27,6 @@ export interface MesaPayloadDTO {
   capacidad?: number
   status?: string
   estado?: string
-  type?: string
-  tipo?: string
   location?: string
   ubicacion?: string
 }
@@ -43,7 +41,6 @@ export interface MesaResponseDTO {
   location: string
   locationId: string | null
   status: string
-  type: string
   createdAt: Date
   updatedAt: Date
 }
@@ -164,7 +161,6 @@ export class MesaService {
             ? String(ubicacionRef)
             : null,
       status: this.estadoBackendToFrontend(m.estado),
-      type: m.tipo || 'normal',
       createdAt: m.createdAt,
       updatedAt: m.updatedAt
     }
@@ -203,7 +199,6 @@ export class MesaService {
         numero: p.name || p.numero || '',
         capacidad: p.capacity || p.capacidad || 0,
         estado: this.estadoFrontendToBackend(p.status || p.estado) || 'Libre',
-        tipo: p.type || p.tipo || 'normal',
         location: p.location || p.ubicacion
       }))
 
@@ -215,7 +210,6 @@ export class MesaService {
       numero: body.name || body.numero || '',
       capacidad: body.capacity || body.capacidad || 0,
       estado: this.estadoFrontendToBackend(body.status || body.estado) || 'Libre',
-      tipo: body.type || body.tipo || 'normal',
       location: body.location || body.ubicacion
     }
 
@@ -275,11 +269,6 @@ export class MesaService {
         )
       }
       datosActualizar.estado = backendStatus
-    }
-
-    if (body.type !== undefined) datosActualizar.tipo = body.type
-    if (body.tipo !== undefined && datosActualizar.tipo === undefined) {
-      datosActualizar.tipo = body.tipo
     }
 
     try {
