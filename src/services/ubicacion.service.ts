@@ -1,9 +1,9 @@
-// src/services/ubicacion.service.ts
 import {
   UbicacionRepository,
   ubicacionRepository,
   IUbicacion
 } from '../repositories/ubicacion.repo'
+import { MesaRepository, mesaRepository } from '../repositories/mesa.repo'
 
 export class UbicacionServiceError extends Error {
   constructor(
@@ -29,9 +29,14 @@ export interface UbicacionResponseDTO {
 
 export class UbicacionService {
   private ubicacionRepo: UbicacionRepository
+  private mesaRepo: MesaRepository
 
-  constructor(ubicacionRepo?: UbicacionRepository) {
+  constructor(
+    ubicacionRepo?: UbicacionRepository,
+    mesaRepo?: MesaRepository
+  ) {
     this.ubicacionRepo = ubicacionRepo || ubicacionRepository
+    this.mesaRepo = mesaRepo || mesaRepository
   }
 
   private escapeRegex(s: string): string {
@@ -130,9 +135,22 @@ export class UbicacionService {
   }
 
   /**
-   * Elimina una ubicación por su ID
+   * Elimina una ubicación por su ID validando dependencias estrictas por ubicacionId
    */
   async eliminarUbicacion(id: string): Promise<void> {
+    const ubicacion = await this.ubicacionRepo.buscarPorId(id)
+    if (!ubicacion) {
+      throw new UbicacionServiceError(404, 'Ubicación no encontrada')
+    }
+
+    const mesasAsociadas = await this.mesaRepo.contarPorUbicacionId(id)
+    if (mesasAsociadas > 0) {
+      throw new UbicacionServiceError(
+        400,
+        'No se puede eliminar la ubicación porque tiene mesas asociadas.'
+      )
+    }
+
     const eliminada = await this.ubicacionRepo.eliminar(id)
     if (!eliminada) {
       throw new UbicacionServiceError(404, 'Ubicación no encontrada')

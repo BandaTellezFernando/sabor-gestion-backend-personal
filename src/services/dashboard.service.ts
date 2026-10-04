@@ -9,10 +9,7 @@ import {
   PlatoPopularDTO,
   CategoriaPopularDTO,
   OrdenRecienteDTO,
-  VentasHoyRaw,
-  PlatoPopularRaw,
-  CategoriaPopularRaw,
-  OrdenRecienteRaw
+  VentasHoyRaw
 } from '../types/dashboard.types'
 
 /**
@@ -121,7 +118,7 @@ export class DashboardService {
     // 6. Formatear Órdenes recientes
     const ordenesFormateadas: OrdenRecienteDTO[] = ordenesRecientes.map((o) => ({
       id: o.codigo,
-      mesa: o.mesa?.numero || 'Barra/Llevar',
+      mesa: o.mesa?.numero || 'Sin mesa asignada',
       hora: o.fechaHora.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       estado: this.traducirEstado(o.estado),
       total: o.total

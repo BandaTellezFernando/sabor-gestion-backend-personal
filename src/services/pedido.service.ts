@@ -357,6 +357,78 @@ export class PedidoService {
   }
 
   /**
+   * Obtiene un pedido específico por su ID respetando RBAC y scoping de titularidad
+   */
+  async obtenerPedidoPorId(
+    id: string,
+    usuarioAuthId?: string,
+    usuarioRol?: string
+  ): Promise<any> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new PedidoServiceError(400, 'ID de pedido inválido')
+    }
+
+    const pedido = await this.pedidoRepo.buscarPorIdCompleto(id)
+    if (!pedido) {
+      throw new PedidoServiceError(404, 'Pedido no encontrado')
+    }
+
+    const esAdmin = usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
+    const esMesero = usuarioRol === 'Mesero'
+    const esCocinero = usuarioRol === 'Cocinero'
+    const esCajero = usuarioRol === 'Cajero'
+
+    if (esMesero) {
+      const meseroId =
+        (pedido.usuario as any)?._id?.toString() || pedido.usuario?.toString()
+      if (usuarioAuthId && meseroId !== usuarioAuthId.toString()) {
+        throw new PedidoServiceError(
+          403,
+          'Acceso denegado: no puedes consultar pedidos asignados a otro mesero.'
+        )
+      }
+    } else if (esCocinero) {
+      const enFlujoCocina =
+        pedido.estado === ESTADOS_PEDIDO.ABIERTO ||
+        pedido.estado === ESTADOS_PEDIDO.EN_PREPARACION ||
+        (pedido.estado === ESTADOS_PEDIDO.ENTREGADO && !pedido.recogido)
+
+      if (!enFlujoCocina) {
+        throw new PedidoServiceError(
+          403,
+          'Acceso denegado: el pedido no se encuentra en el flujo culinario activo.'
+        )
+      }
+      return PedidoService.formatearPedidoCocina(pedido)
+    } else if (esCajero) {
+      // Alcance Cajero: Pedidos con cuenta solicitada, asignados a este cajero, o en proceso de cobro
+      const mesaEstado = (pedido.mesa as any)?.estado
+      const cajeroAsignadoId =
+        (pedido.cajeroAsignado as any)?._id?.toString() ||
+        pedido.cajeroAsignado?.toString()
+
+      const tieneCuentaSolicitada = mesaEstado === 'Cuenta Solicitada'
+      const esCajeroAsignado = Boolean(
+        usuarioAuthId && cajeroAsignadoId === usuarioAuthId.toString()
+      )
+      const esCobroPendiente =
+        pedido.estado !== ESTADOS_PEDIDO.CANCELADO &&
+        (tieneCuentaSolicitada || esCajeroAsignado || pedido.estado === ESTADOS_PEDIDO.ENTREGADO)
+
+      if (!esCobroPendiente && !esCajeroAsignado) {
+        throw new PedidoServiceError(
+          403,
+          'Acceso denegado: el pedido no está en proceso de cobro ni asignado a este cajero.'
+        )
+      }
+    } else if (!esAdmin) {
+      throw new PedidoServiceError(403, 'Acceso denegado: rol no autorizado.')
+    }
+
+    return PedidoService.agregarFechaBoliviaPedido(pedido)
+  }
+
+  /**
    * Obtiene pedidos aplicando filtros de búsqueda o reportes de cierre según los query params
    * y el rol/titularidad del usuario autenticado
    */
@@ -395,7 +467,8 @@ export class PedidoService {
       const cierres = await this.pedidoRepo.buscarReportesCierre(limite)
       return cierres.map((cierre: any) => {
         const cierrePlano = typeof cierre.toObject === 'function' ? cierre.toObject() : cierre
-        const { fechaCierreBolivia, fechaCierre, __v, ...restoCierre } = cierrePlano
+        const { fechaCierreBolivia, fechaCierre, ...restoCierre } = cierrePlano
+        delete restoCierre.__v
 
         return {
           ...restoCierre,

@@ -2,9 +2,9 @@
 import {
   IngredienteRepository,
   ingredienteRepository,
-  IIngrediente,
   IngredienteActualizarDatos
 } from '../repositories/ingrediente.repo'
+import { RecetaRepository, recetaRepository } from '../repositories/receta.repo'
 
 export class IngredienteServiceError extends Error {
   constructor(
@@ -35,9 +35,14 @@ export interface IngredienteResponseDTO {
 
 export class IngredienteService {
   private ingredienteRepo: IngredienteRepository
+  private recetaRepo: RecetaRepository
 
-  constructor(ingredienteRepo?: IngredienteRepository) {
+  constructor(
+    ingredienteRepo?: IngredienteRepository,
+    recetaRepo?: RecetaRepository
+  ) {
     this.ingredienteRepo = ingredienteRepo || ingredienteRepository
+    this.recetaRepo = recetaRepo || recetaRepository
   }
 
   private toDTO(i: any): IngredienteResponseDTO {
@@ -93,6 +98,14 @@ export class IngredienteService {
       )
     }
 
+    const duplicado = await this.ingredienteRepo.buscarPorNombre(nombre)
+    if (duplicado) {
+      throw new IngredienteServiceError(
+        400,
+        'Ya existe un ingrediente con ese nombre.'
+      )
+    }
+
     const disponible = body.disponible !== undefined ? Boolean(body.disponible) : true
 
     const nuevoIngrediente = await this.ingredienteRepo.crear({
@@ -116,7 +129,24 @@ export class IngredienteService {
     }
 
     const update: IngredienteActualizarDatos = {}
-    if (body.nombre !== undefined) update.nombre = String(body.nombre).trim()
+    if (body.nombre !== undefined) {
+      const nombreNormalizado = String(body.nombre).trim()
+      if (!nombreNormalizado) {
+        throw new IngredienteServiceError(
+          400,
+          'El nombre del ingrediente no puede estar vacío.'
+        )
+      }
+      const duplicado = await this.ingredienteRepo.buscarPorNombre(nombreNormalizado)
+      const duplicadoId = duplicado ? (duplicado._id ? duplicado._id.toString() : (duplicado as any).id) : null
+      if (duplicado && duplicadoId !== id) {
+        throw new IngredienteServiceError(
+          400,
+          'Ya existe otro ingrediente con ese nombre.'
+        )
+      }
+      update.nombre = nombreNormalizado
+    }
     if (body.unidadMedida !== undefined) update.unidadMedida = String(body.unidadMedida).trim()
     if (body.disponible !== undefined) update.disponible = Boolean(body.disponible)
 
@@ -132,6 +162,14 @@ export class IngredienteService {
    * Elimina un ingrediente por su identificador único
    */
   async eliminarIngrediente(id: string): Promise<void> {
+    const recetasCount = await this.recetaRepo.contarPorIngredienteId(id)
+    if (recetasCount > 0) {
+      throw new IngredienteServiceError(
+        400,
+        'No se puede eliminar el ingrediente porque está asociado a una o más recetas.'
+      )
+    }
+
     const eliminado = await this.ingredienteRepo.eliminar(id)
     if (!eliminado) {
       throw new IngredienteServiceError(404, 'Ingrediente no encontrado')

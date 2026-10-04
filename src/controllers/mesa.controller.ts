@@ -66,7 +66,9 @@ export const actualizarMesa = async (req: Request, res: Response): Promise<void>
 
     try {
       getIO().emit('mesas:updated', mesaActualizada)
-    } catch (e) {}
+    } catch (e) {
+      console.warn('Error al emitir mesas:updated en actualizarMesa:', e)
+    }
 
     res.status(200).json(mesaActualizada)
   } catch (error: any) {
@@ -94,7 +96,9 @@ export const actualizarEstadoMesa = async (req: CustomRequest, res: Response): P
 
     try {
       getIO().emit('mesas:updated', mesaActualizada)
-    } catch (e) {}
+    } catch (e) {
+      console.warn('Error al emitir mesas:updated en actualizarEstadoMesa:', e)
+    }
 
     res.status(200).json(mesaActualizada)
   } catch (error: any) {
@@ -189,7 +193,9 @@ export const eliminarMesa = async (req: Request, res: Response): Promise<void> =
 
     try {
       getIO().emit('mesas:deleted', mesaEliminada)
-    } catch (e) {}
+    } catch (e) {
+      console.warn('Error al emitir mesas:deleted en eliminarMesa:', e)
+    }
 
     res.status(200).json({ mensaje: 'Mesa eliminada', mesa: mesaEliminada })
   } catch (error: any) {

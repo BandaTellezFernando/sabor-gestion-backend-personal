@@ -31,6 +31,13 @@ export class IngredienteRepository {
   }
 
   /**
+   * Busca un ingrediente por nombre usando collation case-insensitive
+   */
+  async buscarPorNombre(nombre: string): Promise<IIngrediente | null> {
+    return await Ingrediente.findOne({ nombre }).collation({ locale: 'es', strength: 2 })
+  }
+
+  /**
    * Crea y guarda un nuevo ingrediente en MongoDB
    */
   async crear(datos: IngredienteCrearDatos): Promise<IIngrediente> {

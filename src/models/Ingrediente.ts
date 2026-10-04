@@ -25,4 +25,9 @@ const IngredienteSchema = new Schema(
   }
 )
 
+IngredienteSchema.index(
+  { nombre: 1 },
+  { unique: true, collation: { locale: 'es', strength: 2 } }
+)
+
 export default mongoose.model<IIngrediente>('Ingrediente', IngredienteSchema)

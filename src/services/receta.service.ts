@@ -3,7 +3,6 @@ import { Types } from 'mongoose'
 import {
   RecetaRepository,
   recetaRepository,
-  IReceta,
   IRecetaIngredienteInput
 } from '../repositories/receta.repo'
 import { PlatoRepository, platoRepository } from '../repositories/plato.repo'

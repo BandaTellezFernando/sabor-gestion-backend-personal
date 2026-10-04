@@ -1,5 +1,5 @@
 // src/repositories/pedido.repo.ts
-import mongoose, { Types, ClientSession } from 'mongoose'
+import { Types, ClientSession } from 'mongoose'
 import Pedido, { IPedido } from '../models/Pedido'
 import CierreCaja from '../models/CierreCaja'
 import { ESTADOS_PEDIDO } from '../utils/constants'
@@ -60,6 +60,34 @@ export class PedidoRepository {
       .populate('usuario', 'nombre apellido apellidos')
       .populate('recogidoPor', 'nombre apellido apellidos')
       .populate('detalles.plato', 'nombre precio')
+  }
+
+  /**
+   * Busca un pedido por ID con populate completo general
+   */
+  async buscarPorIdCompleto(id: string | Types.ObjectId): Promise<IPedido | null> {
+    return await Pedido.findById(id)
+      .populate('mesa', 'numero estado')
+      .populate('usuario', 'nombre apellido apellidos')
+      .populate('recogidoPor', 'nombre apellido apellidos')
+      .populate('cajeroAsignado', 'nombre apellido')
+      .populate('detalles.plato', 'nombre precio')
+  }
+
+  /**
+   * Cuenta los pedidos activos vinculados a una mesa
+   */
+  async contarPedidosActivosPorMesa(mesaId: string | Types.ObjectId): Promise<number> {
+    return await Pedido.countDocuments({
+      mesa: mesaId,
+      estado: {
+        $in: [
+          ESTADOS_PEDIDO.ABIERTO,
+          ESTADOS_PEDIDO.EN_PREPARACION,
+          ESTADOS_PEDIDO.ENTREGADO
+        ]
+      }
+    })
   }
 
   /**

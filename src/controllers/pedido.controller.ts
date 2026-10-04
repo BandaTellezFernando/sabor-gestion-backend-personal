@@ -2,12 +2,12 @@
 import { Request, Response } from 'express'
 import { CustomRequest } from '../middlewares/auth.middleware'
 import { getIO } from '../socket/socket'
-import { ESTADOS_MESA } from '../utils/constants'
 import {
   PedidoService,
   pedidoService,
   PedidoServiceError
 } from '../services/pedido.service'
+import { mesaService } from '../services/mesa.service'
 
 export const crearPedido = async (req: CustomRequest, res: Response): Promise<void> => {
   try {
@@ -23,13 +23,16 @@ export const crearPedido = async (req: CustomRequest, res: Response): Promise<vo
 
       // Notificar a todos los meseros que la mesa ahora está ocupada (se pone roja)
       if (resultado.mesaActualizada) {
-        io.emit('mesas:updated', {
-          id: resultado.mesaActualizada._id.toString(),
-          status: ESTADOS_MESA.OCUPADA,
-          name: resultado.mesaActualizada.numero
-        })
+        try {
+          const mesaDTO = await mesaService.obtenerMesaPorId(
+            resultado.mesaActualizada._id.toString()
+          )
+          io.emit('mesas:updated', mesaDTO)
+        } catch (mesaErr) {
+          console.warn('Error al obtener mesa para mesas:updated:', mesaErr)
+        }
       }
-    } catch (socketError) {
+    } catch {
       console.warn('Pedido guardado, pero falló la notificación en tiempo real')
     }
 
@@ -66,6 +69,25 @@ export const obtenerPedidos = async (req: CustomRequest, res: Response): Promise
   }
 }
 
+export const obtenerPedidoPorId = async (req: CustomRequest, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params
+    const pedido = await pedidoService.obtenerPedidoPorId(
+      String(id),
+      req.usuario?.id,
+      req.usuario?.rol
+    )
+    res.status(200).json(pedido)
+  } catch (error) {
+    if (error instanceof PedidoServiceError) {
+      res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
+      return
+    }
+    console.error('Error al obtener el pedido:', error)
+    res.status(500).json({ mensaje: 'Error al obtener el pedido' })
+  }
+}
+
 export const cancelarPedido = async (req: CustomRequest, res: Response): Promise<void> => {
   try {
     const { id } = req.params
@@ -78,12 +100,12 @@ export const cancelarPedido = async (req: CustomRequest, res: Response): Promise
     // Avisar por WebSocket que la mesa vuelve a estar disponible (verde)
     if (resultado.mesaLiberada) {
       try {
-        getIO().emit('mesas:updated', {
-          id: resultado.mesaLiberada._id.toString(),
-          status: resultado.statusSocket
-        })
+        const mesaDTO = await mesaService.obtenerMesaPorId(
+          resultado.mesaLiberada._id.toString()
+        )
+        getIO().emit('mesas:updated', mesaDTO)
       } catch (socketError) {
-        console.warn('Fallo al emitir actualización de mesa por socket')
+        console.warn('Fallo al emitir actualización de mesa por socket:', socketError)
       }
     }
 
@@ -135,7 +157,7 @@ export const actualizarEstadoPedido = async (req: Request, res: Response): Promi
             : '?'
         })
       }
-    } catch (socketError) {
+    } catch {
       console.warn('Estado actualizado, pero falló la emisión del socket')
     }
 
@@ -167,17 +189,20 @@ export const actualizarPedido = async (req: CustomRequest, res: Response): Promi
 
     if (resultado.mesaReactivada) {
       try {
-        getIO().emit('mesas:updated', {
-          id: resultado.mesaReactivada._id.toString(),
-          status: ESTADOS_MESA.OCUPADA,
-          name: (resultado.pedidoDoc.mesa as any)?.numero || 'Mesa'
-        })
-      } catch (e) {}
+        const mesaDTO = await mesaService.obtenerMesaPorId(
+          resultado.mesaReactivada._id.toString()
+        )
+        getIO().emit('mesas:updated', mesaDTO)
+      } catch (e) {
+        console.warn('Error al emitir mesas:updated en actualizarPedido:', e)
+      }
     }
 
     try {
       getIO().emit('cocina:actualizar_tablero', resultado.pedidoDoc)
-    } catch (e) {}
+    } catch (e) {
+      console.warn('Error al emitir cocina:actualizar_tablero en actualizarPedido:', e)
+    }
 
     if (resultado.cajeroAsignado) {
       const payloadCaja = PedidoService.formatearPayloadCaja(resultado.pedidoDoc)
@@ -186,7 +211,9 @@ export const actualizarPedido = async (req: CustomRequest, res: Response): Promi
         const cajeroTarget = resultado.cajeroAsignado.toString()
         io.to(`user:${cajeroTarget}`).emit('caja:nueva_cuenta', payloadCaja)
         io.to(`user:${cajeroTarget}`).emit('caja:solicitud_pago', payloadCaja)
-      } catch (e) {}
+      } catch (e) {
+        console.warn('Error al emitir eventos de caja en actualizarPedido:', e)
+      }
     }
 
     res.status(200).json(resultado.pedidoActualizado)
@@ -245,13 +272,14 @@ export const solicitarCuentaPedido = async (
         io.to('room:caja').emit('caja:nueva_cuenta', payload)
         io.to('room:caja').emit('caja:solicitud_pago', payload)
       }
-      io.emit('mesas:updated', {
-        id: mesaActualizada._id.toString(),
-        status: 'Esperando pago',
-        name: mesaActualizada.numero
-      })
+      try {
+        const mesaDTO = await mesaService.obtenerMesaPorId(mesaActualizada._id.toString())
+        io.emit('mesas:updated', mesaDTO)
+      } catch (mesaErr) {
+        console.warn('Error al obtener mesa para mesas:updated en solicitarCuenta:', mesaErr)
+      }
     } catch (socketError) {
-      console.warn('Cuenta solicitada, pero falló la notificación en tiempo real')
+      console.warn('Cuenta solicitada, pero falló la notificación en tiempo real:', socketError)
     }
 
     res.status(200).json({

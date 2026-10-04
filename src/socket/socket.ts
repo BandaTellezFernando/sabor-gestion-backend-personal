@@ -2,6 +2,7 @@ import { Server as SocketIOServer, Socket, DefaultEventsMap } from 'socket.io'
 import { Server as HTTPServer } from 'http'
 import jwt from 'jsonwebtoken'
 import { UsuarioTokenPayload } from '../middlewares/auth.middleware'
+import { ALLOWED_ORIGINS } from '../utils/constants'
 
 export interface UsuarioSocketPayload extends UsuarioTokenPayload {
   iat?: number
@@ -52,7 +53,7 @@ export const autenticarSocket = (socket: CustomSocket, next: (err?: Error) => vo
     socket.data.usuario = decoded
 
     return next()
-  } catch (err) {
+  } catch {
     console.log(`⚡ Socket rechazado (token inválido) id=${socket.id}`)
     return next(new Error('Unauthorized'))
   }
@@ -66,11 +67,7 @@ export const initSocket = (httpServer: HTTPServer) => {
     CustomSocketData
   >(httpServer, {
     cors: {
-      origin: [
-        'http://localhost:5173',
-        'http://localhost:5174',
-        'https://quirquinita.onrender.com'
-      ],
+      origin: [...ALLOWED_ORIGINS],
       methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
       credentials: true
     }

@@ -22,6 +22,9 @@ export interface ProcesarPagoDTO {
   subtotalCierre?: number
   cajeroAsignado?: string | Types.ObjectId | null
   cajeroId?: string | Types.ObjectId | null
+  clienteNombre?: string
+  clienteCI?: string
+  clienteNIT?: string
 }
 
 /**
@@ -67,6 +70,9 @@ export interface ComprobantePago {
   totalPagado: number
   metodoPago: string
   cajeroAsignado?: Types.ObjectId | string | null
+  clienteNombre?: string
+  clienteCI?: string
+  clienteNIT?: string
   fechaBolivia: string
   fecha: Date
 }

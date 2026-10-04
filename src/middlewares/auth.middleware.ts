@@ -44,7 +44,7 @@ export const verificarToken = (
 
     // 5. ¡Pase adelante! (Va al siguiente middleware o controlador)
     next()
-  } catch (error) {
+  } catch {
     console.log(` [MIDDLEWARE] Bloqueado: Token falso o expirado.`)
     return res.status(401).json({ mensaje: 'Token inválido o expirado.' })
   }

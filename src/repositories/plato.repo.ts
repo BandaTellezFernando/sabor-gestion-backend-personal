@@ -55,6 +55,13 @@ export class PlatoRepository {
   async actualizarDisponibilidad(id: string, disponible: boolean): Promise<IPlato | null> {
     return await Plato.findByIdAndUpdate(id, { disponible }, { returnDocument: 'after' })
   }
+
+  /**
+   * Cuenta cuántos platos están asociados a una categoría específica
+   */
+  async contarPorCategoriaId(categoriaId: string): Promise<number> {
+    return await Plato.countDocuments({ categoria: categoriaId })
+  }
 }
 
 export const platoRepository = new PlatoRepository()

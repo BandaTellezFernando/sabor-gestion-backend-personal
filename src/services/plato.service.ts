@@ -1,6 +1,7 @@
 // src/services/plato.service.ts
 import { Types } from 'mongoose'
-import { PlatoRepository, IPlato } from '../repositories/plato.repo'
+import { PlatoRepository } from '../repositories/plato.repo'
+import { RecetaRepository, recetaRepository } from '../repositories/receta.repo'
 import { eliminarDeCloudinary } from '../configs/cloudinary'
 
 export class PlatoServiceError extends Error {
@@ -29,9 +30,14 @@ export interface PlatoResponseDTO {
 
 export class PlatoService {
   private platoRepo: PlatoRepository
+  private recetaRepo: RecetaRepository
 
-  constructor(platoRepo?: PlatoRepository) {
+  constructor(
+    platoRepo?: PlatoRepository,
+    recetaRepo?: RecetaRepository
+  ) {
     this.platoRepo = platoRepo || new PlatoRepository()
+    this.recetaRepo = recetaRepo || recetaRepository
   }
 
   private toDTO(p: any): PlatoResponseDTO {
@@ -186,6 +192,9 @@ export class PlatoService {
         console.error('Error al eliminar imagen de Cloudinary:', err)
       }
     }
+
+    // Eliminar receta asociada (cascada)
+    await this.recetaRepo.eliminarPorPlatoId(id)
 
     await this.platoRepo.eliminar(id)
   }

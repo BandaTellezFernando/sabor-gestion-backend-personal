@@ -4,7 +4,6 @@ import jwt from 'jsonwebtoken'
 import {
   UsuarioRepository,
   usuarioRepository,
-  UsuarioCrearDatos,
   UsuarioActualizarDatos
 } from '../repositories/usuarios.repo'
 import {

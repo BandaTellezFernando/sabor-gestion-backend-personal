@@ -2,7 +2,7 @@
 import express, { Application, Request, Response } from 'express'
 import cors from 'cors'
 import morgan from 'morgan'
-import path from 'path' // <-- Por si necesitas servir imágenes
+import { ALLOWED_ORIGINS } from './utils/constants'
 
 import usuarioRoutes from './routes/usuario.routes'
 import categoriaRoutes from './routes/categoria.routes'
@@ -22,11 +22,7 @@ app.use(morgan('dev'))
 // Localización: src/app.ts
 app.use(
   cors({
-    origin: [
-      'http://localhost:5173',
-      'https://quirquinita.onrender.com', // <-- Reemplaza la URL vieja por esta
-      'https://tis-pied.vercel.app'
-    ],
+    origin: [...ALLOWED_ORIGINS],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true

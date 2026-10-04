@@ -1,5 +1,5 @@
 // src/services/mesaOcupacion.service.ts
-import mongoose, { Types } from 'mongoose'
+import mongoose from 'mongoose'
 import {
   MesaOcupacionRepository,
   mesaOcupacionRepository,
@@ -109,7 +109,7 @@ export class MesaOcupacionService {
         creadaEn,
         expiraEn
       })
-    } catch (err: any) {
+    } catch {
       // Si la inserción falló por índice único o condición de carrera, revertimos la mesa a Libre
       await this.mesaRepo.actualizarEstado(mesaId, ESTADOS_MESA.LIBRE)
       throw new MesaOcupacionServiceError(409, 'La mesa ya está ocupada.')
@@ -305,7 +305,9 @@ export class MesaOcupacionService {
           if (mesaLiberada) {
             try {
               getIO().emit('mesas:updated', mesaService.mapMesa(mesaLiberada))
-            } catch (e) {}
+            } catch (e) {
+              console.warn('Socket error al emitir mesas:updated en limpieza:', e)
+            }
           }
         }
       }

@@ -14,3 +14,13 @@ export const ESTADOS_PEDIDO = {
   CANCELADO: 'CANCELADO',
   CERRADO: 'CERRADO'
 } as const
+
+export const METODOS_PAGO = ['Efectivo', 'Tarjeta', 'QR'] as const
+export type MetodoPago = (typeof METODOS_PAGO)[number]
+
+export const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'https://quirquinita.onrender.com',
+  'https://tis-pied.vercel.app'
+] as const

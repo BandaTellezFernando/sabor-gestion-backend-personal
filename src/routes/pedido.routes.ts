@@ -4,6 +4,7 @@ import {
   cancelarPedido,
   crearPedido,
   obtenerPedidos,
+  obtenerPedidoPorId,
   actualizarEstadoPedido,
   actualizarPedido,
   obtenerPedidosPendientesCobro,
@@ -41,6 +42,14 @@ router.get(
   verificarToken,
   permitirRoles('Cajero', 'Administrador'),
   obtenerPedidosPendientesCobro
+)
+
+// Obtener un pedido específico por ID (Administrador, Mesero, Cocinero, Cajero según RBAC)
+router.get(
+  '/:id',
+  verificarToken,
+  permitirRoles('Administrador', 'Mesero', 'Cocinero', 'Cajero'),
+  obtenerPedidoPorId
 )
 
 // Solicitar cuenta de un pedido (Mesero, Administrador)

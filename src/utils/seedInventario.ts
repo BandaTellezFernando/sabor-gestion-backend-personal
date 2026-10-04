@@ -7,7 +7,11 @@ import Receta from '../models/Receta'
 
 dotenv.config()
 
-const seedInventario = async () => {
+export const seedInventario = async () => {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('Operación abortada: seedInventario no está permitido en entorno de producción.')
+  }
+
   try {
     const mongoURI = process.env.MONGO_URI
     if (!mongoURI) throw new Error('La variable de entorno MONGO_URI no está definida.')
@@ -98,4 +102,6 @@ const seedInventario = async () => {
   }
 }
 
-seedInventario()
+if (require.main === module) {
+  seedInventario()
+}

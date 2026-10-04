@@ -4,6 +4,7 @@ import { CustomRequest } from '../middlewares/auth.middleware'
 import { getIO } from '../socket/socket'
 import { obtenerFechaBolivia } from '../utils/fechaBolivia'
 import { pagoService, PagoServiceError } from '../services/pago.service'
+import { mesaService } from '../services/mesa.service'
 
 /**
  * 1. Generador de QR estático con ID y total del pedido
@@ -36,7 +37,13 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
       montoDescuento,
       montoPropina,
       subtotalCierre,
-      cajeroAsignado
+      cajeroAsignado,
+      clienteNombre,
+      clienteCI,
+      clienteNIT,
+      nombreCliente,
+      ci,
+      nit
     } = req.body
 
     const cajeroId = (req as any).usuario?.id
@@ -50,7 +57,10 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
       montoPropina,
       subtotalCierre,
       cajeroAsignado,
-      cajeroId
+      cajeroId,
+      clienteNombre: clienteNombre !== undefined ? clienteNombre : nombreCliente,
+      clienteCI: clienteCI !== undefined ? clienteCI : ci,
+      clienteNIT: clienteNIT !== undefined ? clienteNIT : nit
     })
 
     // Eventos WebSocket (fuera de la transacción — no son operaciones de BD críticas)
@@ -64,11 +74,13 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
         ).toString()
         const mesaNombre = resultado.mesaLiberada?.numero || 'Mesa'
 
-        io.emit('mesas:updated', {
-          id: mesaIdStr,
-          status: resultado.statusSocketMesa,
-          name: mesaNombre
-        })
+        try {
+          const mesaDTO = await mesaService.obtenerMesaPorId(mesaIdStr)
+          io.emit('mesas:updated', mesaDTO)
+        } catch (mesaErr) {
+          console.warn('Error al obtener mesa poblada para mesas:updated:', mesaErr)
+        }
+
         io.emit('mesas:pago_completado', {
           mesaId: mesaIdStr,
           mesaNombre: mesaNombre,

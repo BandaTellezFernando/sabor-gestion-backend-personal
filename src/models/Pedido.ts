@@ -1,6 +1,7 @@
 // src/models/Pedido.ts
 import mongoose, { Schema, Document } from 'mongoose'
 import { obtenerFechaBolivia } from '../utils/fechaBolivia'
+import { METODOS_PAGO } from '../utils/constants'
 
 // 1. Interfaz y Esquema para el Detalle
 export interface IDetallePedido {
@@ -77,7 +78,7 @@ const PedidoSchema = new Schema(
     // Información del pago final (Texto plano para simulación)
     metodoPago: {
       type: String,
-      enum: ['Efectivo', 'Tarjeta', 'Transferencia', 'QR', 'Otro'],
+      enum: METODOS_PAGO,
       required: false
     },
     montoDescuento: { type: Number, default: 0, min: 0 },

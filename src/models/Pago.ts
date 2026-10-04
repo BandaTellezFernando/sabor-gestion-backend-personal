@@ -1,6 +1,7 @@
 // src/models/Pago.ts
 import mongoose, { Schema, Document } from 'mongoose'
 import { obtenerFechaBolivia, formatearFechaBolivia } from '../utils/fechaBolivia'
+import { METODOS_PAGO } from '../utils/constants'
 
 export interface IPago extends Document {
   codigoPago: string
@@ -54,7 +55,7 @@ const PagoSchema = new Schema(
     // 💳 Método de pago
     metodoPago: {
       type: String,
-      enum: ['Efectivo', 'QR', 'Tarjeta'],
+      enum: METODOS_PAGO,
       default: null // Inicia nulo porque el cliente decide cómo pagar después de pedir la cuenta
     },
 

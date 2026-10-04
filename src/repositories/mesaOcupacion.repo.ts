@@ -1,5 +1,5 @@
 // src/repositories/mesaOcupacion.repo.ts
-import mongoose, { Types, ClientSession } from 'mongoose'
+import { Types, ClientSession } from 'mongoose'
 import MesaOcupacionTemporal, { IMesaOcupacionTemporal } from '../models/MesaOcupacionTemporal'
 
 export { IMesaOcupacionTemporal } from '../models/MesaOcupacionTemporal'

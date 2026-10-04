@@ -1,8 +1,9 @@
 // src/services/pago.service.ts
-import mongoose, { Types } from 'mongoose'
+import mongoose from 'mongoose'
 import { PagoRepository, pagoRepository } from '../repositories/pago.repo'
 import { PedidoRepository, pedidoRepository } from '../repositories/pedido.repo'
 import { MesaRepository, mesaRepository } from '../repositories/mesa.repo'
+import { METODOS_PAGO } from '../utils/constants'
 import { enviarCorreo } from './email.service'
 import {
   generarPlantillaFacturaHTML,
@@ -79,7 +80,10 @@ export class PagoService {
       montoDescuento: bodyMontoDescuento,
       montoPropina: bodyMontoPropina,
       cajeroAsignado: bodyCajeroAsignado,
-      cajeroId: authCajeroId
+      cajeroId: authCajeroId,
+      clienteNombre,
+      clienteCI,
+      clienteNIT
     } = dto
 
     // ─── 1. VALIDACIONES PREVIAS (Fuera de la transacción) ──────────────────────
@@ -99,7 +103,7 @@ export class PagoService {
     }
 
     const metodoPagoNormalizado = String(metodoPago || '').trim()
-    const metodosValidos = ['Efectivo', 'Tarjeta', 'QR']
+    const metodosValidos = [...METODOS_PAGO]
     const metodoPagoValido =
       metodosValidos.find((m) => m.toLowerCase() === metodoPagoNormalizado.toLowerCase()) ||
       'Efectivo'
@@ -159,6 +163,9 @@ export class PagoService {
       ped.montoDescuento = montoDescuento
       ped.montoPropina = montoPropina
       ped.subtotalCierre = subtotal
+      if (clienteNombre !== undefined) ped.clienteNombre = String(clienteNombre).trim()
+      if (clienteCI !== undefined) ped.clienteCI = String(clienteCI).trim()
+      if (clienteNIT !== undefined) ped.clienteNIT = String(clienteNIT).trim()
       if (cajeroId) {
         ped.cajeroAsignado = cajeroId
       }
@@ -228,6 +235,9 @@ export class PagoService {
       totalPagado: totalFinal,
       metodoPago: ped.metodoPago,
       cajeroAsignado: ped.cajeroAsignado,
+      clienteNombre: ped.clienteNombre || 'Consumidor Final',
+      clienteCI: ped.clienteCI || '',
+      clienteNIT: ped.clienteNIT || '',
       fechaBolivia: formatearFechaBolivia(fechaComprobante),
       fecha: fechaComprobante
     }

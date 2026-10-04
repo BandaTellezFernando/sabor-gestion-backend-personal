@@ -195,6 +195,13 @@ export class MesaRepository {
   async eliminar(id: string): Promise<MesaPobladaDoc | null> {
     return (await Mesa.findByIdAndDelete(id)) as MesaPobladaDoc | null
   }
+
+  /**
+   * Cuenta las mesas asignadas a una ubicación por su clave foránea ubicacionId
+   */
+  async contarPorUbicacionId(ubicacionId: string | mongoose.Types.ObjectId): Promise<number> {
+    return await Mesa.countDocuments({ ubicacionId })
+  }
 }
 
 export const mesaRepository = new MesaRepository()

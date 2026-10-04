@@ -111,14 +111,6 @@ export class MesaService {
       return { valido: false, mensaje: 'El nombre debe incluir la palabra "mesa".' }
     }
 
-    const ubicaciones = ['interior', 'patio', 'terraza']
-    if (!ubicaciones.some((ub) => nom.includes(ub))) {
-      return {
-        valido: false,
-        mensaje: 'El nombre debe incluir una ubicación válida (interior, patio, terraza).'
-      }
-    }
-
     const numeros = nom.match(/\d+/g)
     if (numeros) {
       for (const numStr of numeros) {
@@ -402,12 +394,26 @@ export class MesaService {
   }
 
   /**
-   * Elimina una mesa de la base de datos
+   * Elimina una mesa de la base de datos protegiendo contra mesas con pedidos activos
    */
   async eliminarMesa(id: string): Promise<MesaResponseDTO> {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       throw new MesaServiceError(400, 'ID de mesa inválido')
     }
+
+    const mesa = await this.mesaRepo.buscarPorId(id)
+    if (!mesa) {
+      throw new MesaServiceError(404, 'Mesa no encontrada')
+    }
+
+    const pedidosActivos = await this.pedidoRepo.contarPedidosActivosPorMesa(id)
+    if (pedidosActivos > 0) {
+      throw new MesaServiceError(
+        400,
+        'No se puede eliminar la mesa porque está en uso y tiene pedidos activos vinculados.'
+      )
+    }
+
     const eliminado = await this.mesaRepo.eliminar(id)
     if (!eliminado) {
       throw new MesaServiceError(404, 'Mesa no encontrada')

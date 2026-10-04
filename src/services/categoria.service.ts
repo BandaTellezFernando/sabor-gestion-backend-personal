@@ -1,5 +1,6 @@
 // src/services/categoria.service.ts
-import { CategoriaRepository, ICategoria } from '../repositories/categoria.repo'
+import { CategoriaRepository } from '../repositories/categoria.repo'
+import { PlatoRepository, platoRepository } from '../repositories/plato.repo'
 
 export class CategoriaServiceError extends Error {
   constructor(
@@ -21,9 +22,14 @@ export interface CategoriaResponseDTO {
 
 export class CategoriaService {
   private categoriaRepo: CategoriaRepository
+  private platoRepo: PlatoRepository
 
-  constructor(categoriaRepo?: CategoriaRepository) {
+  constructor(
+    categoriaRepo?: CategoriaRepository,
+    platoRepo?: PlatoRepository
+  ) {
     this.categoriaRepo = categoriaRepo || new CategoriaRepository()
+    this.platoRepo = platoRepo || platoRepository
   }
 
   private toDTO(c: any): CategoriaResponseDTO {
@@ -143,6 +149,14 @@ export class CategoriaService {
    * Elimina una categoría por su identificador
    */
   async eliminarCategoria(id: string): Promise<void> {
+    const platosAsociados = await this.platoRepo.contarPorCategoriaId(id)
+    if (platosAsociados > 0) {
+      throw new CategoriaServiceError(
+        400,
+        'No se puede eliminar la categoría porque tiene platos asociados.'
+      )
+    }
+
     const categoriaEliminada = await this.categoriaRepo.eliminar(id)
 
     if (!categoriaEliminada) {

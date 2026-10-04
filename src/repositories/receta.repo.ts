@@ -1,5 +1,5 @@
 // src/repositories/receta.repo.ts
-import Receta, { IReceta, IRecetaIngrediente } from '../models/Receta'
+import Receta, { IReceta } from '../models/Receta'
 import { Types } from 'mongoose'
 
 export { IReceta, IRecetaIngrediente } from '../models/Receta'
@@ -70,10 +70,24 @@ export class RecetaRepository {
   }
 
   /**
+   * Cuenta cuántas recetas utilizan un ingrediente específico
+   */
+  async contarPorIngredienteId(ingredienteId: string): Promise<number> {
+    return await Receta.countDocuments({ 'ingredientes.ingrediente': ingredienteId })
+  }
+
+  /**
    * Elimina una receta por su identificador único
    */
   async eliminar(id: string): Promise<IReceta | null> {
     return await Receta.findByIdAndDelete(id)
+  }
+
+  /**
+   * Elimina la receta asociada a un plato específico (cascada)
+   */
+  async eliminarPorPlatoId(platoId: string): Promise<IReceta | null> {
+    return await Receta.findOneAndDelete({ plato: platoId })
   }
 }
 
