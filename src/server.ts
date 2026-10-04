@@ -3,6 +3,7 @@ import { connectDB } from './configs/db.js'
 import dotenv from 'dotenv'
 import { createServer } from 'http'
 import { initSocket } from './socket/socket'
+import { mesaOcupacionService } from './services/mesaOcupacion.service'
 
 dotenv.config()
 
@@ -13,6 +14,9 @@ const httpServer = createServer(app)
 initSocket(httpServer)
 
 connectDB().then(() => {
+  // Iniciar limpieza periódica de ocupaciones temporales expiradas
+  mesaOcupacionService.iniciarLimpiezaAutomatica()
+
   httpServer.listen(PORT, () => {
     console.log(`🚀 Servidor ejecutándose en http://localhost:${PORT}`)
     console.log(`🩺 Health check: http://localhost:${PORT}/api/health`)

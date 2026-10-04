@@ -363,6 +363,75 @@ Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
 - **Seguridad:** Solo `Administrador`.
 - **Respuestas:** `200 OK` (emite `mesas:deleted`) o `404 Not Found`.
 
+#### `POST /api/mesas/:id/ocupar-temporal`
+- **Seguridad:** Requiere Token (`Mesero` o `Administrador`). Cajeros y Cocineros reciben `403 Forbidden`.
+- **Propósito:** Adquirir un bloqueo atómico temporal de 10 minutos sobre una mesa en estado `Libre` al abrir la carta/comanda, evitando colisiones entre meseros.
+- **Headers:** `Authorization: Bearer <TOKEN>`
+- **Request Body:** Vacío `{}`.
+- **Comportamiento:**
+  - Si la mesa está `Libre`: Cambia atómicamente a `Ocupada`, crea el registro temporal con expiración a los 10 minutos asignado al usuario, emite `mesas:updated` y responde `201 Created`.
+  - Si la mesa ya está ocupada por otro usuario o tiene comanda activa: Responde `409 Conflict` con `{ "mensaje": "...", "ocupadoPorOtro": true, "expiraEn": "..." }`.
+- **Respuestas:**
+  - `201 Created`:
+    ```json
+    {
+      "mensaje": "Mesa ocupada temporalmente por 10 minutos",
+      "ocupacion": {
+        "id": "60c72b2f9b1d8b2bad509871",
+        "mesaId": "60c72b2f9b1d8b2bad509872",
+        "usuarioId": "60c72b2f9b1d8b2bad509873",
+        "expiraEn": "2026-10-04T12:10:00.000Z",
+        "minutosRestantes": 10
+      },
+      "mesa": { "id": "...", "name": "Mesa 1", "status": "Ocupada", ... }
+    }
+    ```
+  - `409 Conflict`:
+    ```json
+    {
+      "mensaje": "La mesa ya se encuentra ocupada por otro mesero o tiene un pedido activo",
+      "ocupadoPorOtro": true,
+      "expiraEn": "2026-10-04T12:10:00.000Z"
+    }
+    ```
+  - `400 Bad Request`: ID malformado.
+  - `404 Not Found`: Mesa inexistente.
+
+#### `DELETE /api/mesas/:id/ocupar-temporal`
+- **Seguridad:** Requiere Token (`Mesero` o `Administrador`). Solo el usuario que bloqueó la mesa o un `Administrador` pueden cancelarla.
+- **Propósito:** Liberar voluntariamente la mesa cuando el mesero cancela la apertura de comanda antes de confirmar el pedido.
+- **Regla:** Si la mesa ya tiene un pedido activo (`ABIERTO`, `EN_PREPARACION`, etc.), la cancelación temporal es rechazada con `400 Bad Request` para proteger la comanda en curso.
+- **Respuestas:**
+  - `200 OK`:
+    ```json
+    {
+      "mensaje": "Ocupación temporal cancelada exitosamente",
+      "mesa": { "id": "...", "name": "Mesa 1", "status": "Disponible", ... }
+    }
+    ```
+  - `403 Forbidden`: Si otro mesero intenta cancelar el bloqueo ajeno.
+  - `404 Not Found`: Si no hay ocupación temporal activa o la mesa no existe.
+
+#### `GET /api/mesas/:id/ocupar-temporal`
+- **Seguridad:** Requiere Token.
+- **Propósito:** Consultar el estado del bloqueo temporal, tiempo restante e identidad del propietario.
+- **Respuestas:**
+  - `200 OK`:
+    ```json
+    {
+      "activa": true,
+      "esPropietario": true,
+      "ocupacion": {
+        "id": "...",
+        "mesaId": "...",
+        "usuarioId": "...",
+        "expiraEn": "2026-10-04T12:10:00.000Z",
+        "minutosRestantes": 8
+      },
+      "mesa": { ... }
+    }
+    ```
+
 ---
 
 ### 4.6 Módulo 6: Pedidos (`/api/pedidos`)
@@ -841,9 +910,14 @@ export interface Receta {
 ### Flujo 1: Salón y Comensal (Mesero)
 1. **Paso 1:** Mesero inicia sesión (`POST /api/usuarios/login`) y obtiene su token con rol `Mesero`.
 2. **Paso 2:** Consulta mesas (`GET /api/mesas`) para identificar mesas en estado `Libre` (verde).
-3. **Paso 3:** Consulta catálogo (`GET /api/platos`) y toma el pedido del comensal.
-4. **Paso 4:** Envía la comanda con `POST /api/pedidos`.
-   - *Resultado:* Mesa cambia automáticamente a `Ocupada` (rojo). Se emite `cocina:nuevo_pedido`.
+3. **Paso 3:** Al seleccionar una mesa `Libre`, el frontend solicita su ocupación temporal inmediata (`POST /api/mesas/:id/ocupar-temporal`).
+   - **Caso Éxito (`201 Created`):** La mesa pasa atómicamente a `Ocupada` (rojo) para todos los clientes (emite `mesas:updated`), y se inicia una cuenta regresiva de 10 minutos. El frontend abre la carta/comanda para tomar la orden.
+   - **Caso Conflicto (`409 Conflict`):** Si otro mesero tomó la mesa milisegundos antes o existe comanda activa, la UI muestra una advertencia ("Mesa tomada por otro mesero") e impide abrir la comanda.
+   - **Caso Cancelación:** Si el mesero decide salir sin tomar orden, invoca `DELETE /api/mesas/:id/ocupar-temporal`, liberando la mesa inmediatamente a `Libre` (`mesas:updated`).
+4. **Paso 4:** El mesero selecciona platos y observaciones, enviando la comanda definitiva con `POST /api/pedidos`.
+   - *Resultado:* El pedido se crea (`ABIERTO`), la mesa permanece `Ocupada`, la ocupación temporal se consume/elimina automáticamente, y se emiten `cocina:nuevo_pedido` y `mesas:updated`.
+   - *Resiliencia ante errores:* Si falla la validación de stock de ingredientes o reglas de negocio al enviar el pedido, la ocupación temporal permanece intacta para que el mesero pueda corregir la comanda sin perder la mesa.
+   - *Expiración automática:* Si transcurren 10 minutos sin enviar pedido ni cancelar, el limpiador en segundo plano del backend revierte la mesa a `Libre` y emite `mesas:updated`.
 
 ### Flujo 2: Cocina y Preparación (Cocinero)
 1. **Paso 1:** Cocinero con sesión activa escucha el evento Socket `cocina:nuevo_pedido` y consulta `GET /api/pedidos?activo=true`.

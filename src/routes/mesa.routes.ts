@@ -5,7 +5,10 @@ import {
   actualizarEstadoMesa,
   obtenerMesaPorId,
   actualizarMesa,
-  eliminarMesa
+  eliminarMesa,
+  ocuparMesaTemporal,
+  cancelarOcupacionTemporal,
+  consultarOcupacionTemporal
 } from '../controllers/mesa.controller'
 import { verificarToken } from '../middlewares/auth.middleware'
 import { soloAdmins, permitirRoles } from '../middlewares/rol.middleware'
@@ -24,6 +27,26 @@ router.patch(
   permitirRoles('Mesero', 'Administrador'),
   actualizarEstadoMesa
 )
+
+// Ocupación temporal de mesa (flujo comanda 10 minutos)
+router.post(
+  '/:id/ocupar-temporal',
+  verificarToken,
+  permitirRoles('Mesero', 'Administrador'),
+  ocuparMesaTemporal
+)
+router.delete(
+  '/:id/ocupar-temporal',
+  verificarToken,
+  permitirRoles('Mesero', 'Administrador'),
+  cancelarOcupacionTemporal
+)
+router.get(
+  '/:id/ocupar-temporal',
+  verificarToken,
+  consultarOcupacionTemporal
+)
+
 // Eliminar mesa (solo admin)
 router.delete('/:id', verificarToken, soloAdmins, eliminarMesa)
 

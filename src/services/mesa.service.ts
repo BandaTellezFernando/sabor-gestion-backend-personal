@@ -8,6 +8,14 @@ import {
   MesaCrearDatos,
   MesaActualizarDatos
 } from '../repositories/mesa.repo'
+import {
+  MesaOcupacionRepository,
+  mesaOcupacionRepository
+} from '../repositories/mesaOcupacion.repo'
+import {
+  PedidoRepository,
+  pedidoRepository
+} from '../repositories/pedido.repo'
 
 export class MesaServiceError extends Error {
   constructor(
@@ -47,9 +55,17 @@ export interface MesaResponseDTO {
 
 export class MesaService {
   private mesaRepo: MesaRepository
+  private mesaOcupacionRepo: MesaOcupacionRepository
+  private pedidoRepo: PedidoRepository
 
-  constructor(mesaRepo?: MesaRepository) {
+  constructor(
+    mesaRepo?: MesaRepository,
+    mesaOcupacionRepo?: MesaOcupacionRepository,
+    pedidoRepo?: PedidoRepository
+  ) {
     this.mesaRepo = mesaRepo || mesaRepository
+    this.mesaOcupacionRepo = mesaOcupacionRepo || mesaOcupacionRepository
+    this.pedidoRepo = pedidoRepo || pedidoRepository
   }
 
   /**
@@ -269,6 +285,22 @@ export class MesaService {
         )
       }
       datosActualizar.estado = backendStatus
+
+      if (mongoose.Types.ObjectId.isValid(id)) {
+        const ocupacion = await this.mesaOcupacionRepo.buscarPorMesaId(id)
+        if (ocupacion && ocupacion.expiraEn > new Date()) {
+          const pedidoActivo = await this.pedidoRepo.buscarPedidoActivoPorMesa(id)
+          if (!pedidoActivo && backendStatus === 'Cuenta Solicitada') {
+            throw new MesaServiceError(
+              400,
+              'No se puede cambiar el estado a Cuenta Solicitada: la mesa tiene una ocupación temporal activa sin pedido.'
+            )
+          }
+          if (backendStatus === 'Libre') {
+            await this.mesaOcupacionRepo.eliminarPorMesaId(id)
+          }
+        }
+      }
     }
 
     try {
@@ -290,7 +322,12 @@ export class MesaService {
   /**
    * Actualiza únicamente el estado de una mesa
    */
-  async actualizarEstadoMesa(id: string, estado: any): Promise<MesaResponseDTO> {
+  async actualizarEstadoMesa(
+    id: string,
+    estado: any,
+    usuarioAuthId?: string,
+    usuarioRol?: string
+  ): Promise<MesaResponseDTO> {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       throw new MesaServiceError(400, 'ID de mesa inválido')
     }
@@ -315,6 +352,36 @@ export class MesaService {
         400,
         'Estado de mesa no válido. Estados aceptados: Libre, Ocupada, Cuenta Solicitada (o Disponible, Esperando pago)'
       )
+    }
+
+    // Si la mesa se encuentra ocupada temporalmente por otro usuario, impedir manipulación no autorizada
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      const ocupacion = await this.mesaOcupacionRepo.buscarPorMesaId(id)
+      if (ocupacion && ocupacion.expiraEn > new Date()) {
+        const esDuenio = usuarioAuthId ? ocupacion.usuarioId.toString() === usuarioAuthId : false
+        const esAdmin = usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
+        if (usuarioAuthId && !esDuenio && !esAdmin) {
+          throw new MesaServiceError(
+            409,
+            'La mesa se encuentra ocupada temporalmente por otro usuario.'
+          )
+        }
+
+        // Mientras exista una ocupación temporal sin Pedido, no debe ser posible saltarse el flujo
+        // cambiando manualmente la mesa a "Cuenta Solicitada" ni a otro estado que no corresponda
+        const pedidoActivo = await this.pedidoRepo.buscarPedidoActivoPorMesa(id)
+        if (!pedidoActivo && backendStatus === 'Cuenta Solicitada') {
+          throw new MesaServiceError(
+            400,
+            'No se puede cambiar el estado a Cuenta Solicitada: la mesa tiene una ocupación temporal activa sin pedido.'
+          )
+        }
+
+        // Si el dueño o administrador libera la mesa explícitamente, remover la ocupación temporal
+        if (backendStatus === 'Libre') {
+          await this.mesaOcupacionRepo.eliminarPorMesaId(id)
+        }
+      }
     }
 
     try {

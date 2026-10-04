@@ -175,6 +175,21 @@ export class MesaRepository {
   }
 
   /**
+   * Actualiza atómicamente el estado de una mesa a 'Ocupada' ÚNICAMENTE si actualmente está 'Libre'.
+   * Previene condiciones de carrera concurrentes a nivel de base de datos.
+   */
+  async ocuparMesaSiLibre(
+    id: string,
+    session?: ClientSession
+  ): Promise<MesaPobladaDoc | null> {
+    return (await Mesa.findOneAndUpdate(
+      { _id: id, estado: 'Libre' },
+      { estado: 'Ocupada' },
+      { returnDocument: 'after', session, runValidators: true }
+    ).populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
+  }
+
+  /**
    * Elimina una mesa por su identificador único.
    */
   async eliminar(id: string): Promise<MesaPobladaDoc | null> {

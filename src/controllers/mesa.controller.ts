@@ -1,6 +1,11 @@
 // src/controllers/mesa.controller.ts
 import { Request, Response } from 'express'
+import { CustomRequest } from '../middlewares/auth.middleware'
 import { mesaService, MesaServiceError } from '../services/mesa.service'
+import {
+  mesaOcupacionService,
+  MesaOcupacionServiceError
+} from '../services/mesaOcupacion.service'
 import { getIO } from '../socket/socket'
 
 export const crearMesa = async (req: Request, res: Response): Promise<void> => {
@@ -74,11 +79,18 @@ export const actualizarMesa = async (req: Request, res: Response): Promise<void>
   }
 }
 
-export const actualizarEstadoMesa = async (req: Request, res: Response): Promise<void> => {
+export const actualizarEstadoMesa = async (req: CustomRequest, res: Response): Promise<void> => {
   try {
     const id = String(req.params.id)
     const { estado } = req.body
-    const mesaActualizada = await mesaService.actualizarEstadoMesa(id, estado)
+    const usuarioAuthId = req.usuario?.id
+    const usuarioRol = req.usuario?.rol
+    const mesaActualizada = await mesaService.actualizarEstadoMesa(
+      id,
+      estado,
+      usuarioAuthId,
+      usuarioRol
+    )
 
     try {
       getIO().emit('mesas:updated', mesaActualizada)
@@ -92,6 +104,81 @@ export const actualizarEstadoMesa = async (req: Request, res: Response): Promise
     }
     console.error('Error al actualizar estado:', error)
     res.status(500).json({ mensaje: 'Error al actualizar estado' })
+  }
+}
+
+export const ocuparMesaTemporal = async (req: CustomRequest, res: Response): Promise<void> => {
+  try {
+    const id = String(req.params.id)
+    const usuarioId = req.usuario?.id
+    if (!usuarioId) {
+      res.status(401).json({ mensaje: 'Usuario no autenticado' })
+      return
+    }
+
+    const resultado = await mesaOcupacionService.ocuparMesaTemporal(id, usuarioId)
+    res.status(201).json(resultado)
+  } catch (error: any) {
+    if (error instanceof MesaOcupacionServiceError) {
+      res.status(error.statusCode).json({ mensaje: error.message })
+      return
+    }
+    console.error('Error al ocupar mesa temporalmente:', error)
+    res.status(500).json({ mensaje: 'Error al ocupar mesa temporalmente' })
+  }
+}
+
+export const cancelarOcupacionTemporal = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const id = String(req.params.id)
+    const usuarioId = req.usuario?.id
+    const usuarioRol = req.usuario?.rol || ''
+    if (!usuarioId) {
+      res.status(401).json({ mensaje: 'Usuario no autenticado' })
+      return
+    }
+
+    const resultado = await mesaOcupacionService.cancelarOcupacionTemporal(
+      id,
+      usuarioId,
+      usuarioRol
+    )
+    res.status(200).json(resultado)
+  } catch (error: any) {
+    if (error instanceof MesaOcupacionServiceError) {
+      res.status(error.statusCode).json({ mensaje: error.message })
+      return
+    }
+    console.error('Error al cancelar ocupación temporal:', error)
+    res.status(500).json({ mensaje: 'Error al cancelar ocupación temporal' })
+  }
+}
+
+export const consultarOcupacionTemporal = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const id = String(req.params.id)
+    const usuarioId = req.usuario?.id
+    const usuarioRol = req.usuario?.rol
+
+    const resultado = await mesaOcupacionService.consultarOcupacionTemporal(
+      id,
+      usuarioId,
+      usuarioRol
+    )
+    res.status(200).json(resultado)
+  } catch (error: any) {
+    if (error instanceof MesaOcupacionServiceError) {
+      res.status(error.statusCode).json({ mensaje: error.message })
+      return
+    }
+    console.error('Error al consultar ocupación temporal:', error)
+    res.status(500).json({ mensaje: 'Error al consultar ocupación temporal' })
   }
 }
 

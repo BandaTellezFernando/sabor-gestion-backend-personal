@@ -170,6 +170,26 @@ export class PedidoRepository {
       session ? { session } : {}
     ).lean()
   }
+
+  /**
+   * Busca un pedido activo en curso para una mesa (ABIERTO, EN_PREPARACION, ENTREGADO).
+   * Determina si la mesa debe permanecer ocupada por una comanda real.
+   */
+  async buscarPedidoActivoPorMesa(
+    mesaId: string | Types.ObjectId,
+    session?: ClientSession
+  ): Promise<IPedido | null> {
+    return await Pedido.findOne({
+      mesa: mesaId,
+      estado: {
+        $in: [
+          ESTADOS_PEDIDO.ABIERTO,
+          ESTADOS_PEDIDO.EN_PREPARACION,
+          ESTADOS_PEDIDO.ENTREGADO
+        ]
+      }
+    }).session(session || null)
+  }
 }
 
 export const pedidoRepository = new PedidoRepository()

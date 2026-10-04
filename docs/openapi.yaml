@@ -1072,8 +1072,174 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MensajeErrorResponse'
+        '409':
+          description: Conflicto - La mesa tiene una ocupación temporal activa perteneciente a otro usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConflictoOcupacionResponse'
         '500':
           description: Error al actualizar estado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+  /api/mesas/{id}/ocupar-temporal:
+    post:
+      tags:
+        - Mesas
+      summary: Ocupar mesa temporalmente (10 minutos)
+      description: Bloquea atómicamente una mesa en estado 'Libre' pasándola a 'Ocupada' y creando una reserva temporal de 10 minutos asignada al usuario autenticado (Mesero o Administrador). Previene que otros meseros abran comandas en simultáneo sobre la misma mesa.
+      operationId: ocuparMesaTemporal
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador de la mesa
+          schema:
+            type: string
+          example: '{{mesaId}}'
+      responses:
+        '201':
+          description: Mesa ocupada temporalmente con éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OcuparMesaTemporalResponse'
+        '400':
+          description: ID de mesa inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (requiere rol Mesero o Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Mesa no encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '409':
+          description: Conflicto - La mesa ya se encuentra ocupada por otro usuario o tiene pedidos activos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConflictoOcupacionResponse'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+    delete:
+      tags:
+        - Mesas
+      summary: Cancelar ocupación temporal de mesa
+      description: Cancela la ocupación temporal y libera la mesa a 'Libre', emitiendo el evento Socket.IO 'mesas:updated'. Solo puede ser ejecutado por el usuario dueño de la ocupación o un Administrador. Si la mesa ya tiene un pedido activo o no estaba ocupada temporalmente, se rechaza la operación.
+      operationId: cancelarOcupacionTemporal
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador de la mesa
+          schema:
+            type: string
+          example: '{{mesaId}}'
+      responses:
+        '200':
+          description: Ocupación temporal cancelada exitosamente y mesa liberada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelarOcupacionTemporalResponse'
+        '400':
+          description: ID inválido o mesa con pedido activo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (solo el usuario ocupante o Administrador pueden cancelar)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Mesa o bloqueo temporal no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error interno del servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+    get:
+      tags:
+        - Mesas
+      summary: Consultar estado de ocupación temporal de una mesa
+      description: Retorna información sobre si la mesa cuenta con una ocupación temporal activa, los minutos restantes de validez y si el usuario autenticado es el propietario de la misma.
+      operationId: consultarOcupacionTemporal
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador de la mesa
+          schema:
+            type: string
+          example: '{{mesaId}}'
+      responses:
+        '200':
+          description: Información de la ocupación temporal consultada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsultarOcupacionTemporalResponse'
+        '400':
+          description: ID inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado o token inválido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Mesa no encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error interno del servidor
           content:
             application/json:
               schema:
@@ -2718,6 +2884,71 @@ components:
           example: Mesa eliminada
         mesa:
           $ref: '#/components/schemas/MesaDTO'
+    MesaOcupacionTemporalDTO:
+      type: object
+      properties:
+        id:
+          type: string
+          example: '60c72b2f9b1d8b2bad509871'
+        mesaId:
+          type: string
+          example: '60c72b2f9b1d8b2bad509872'
+        usuarioId:
+          type: string
+          example: '60c72b2f9b1d8b2bad509873'
+        expiraEn:
+          type: string
+          format: date-time
+          example: '2026-10-04T12:10:00.000Z'
+        minutosRestantes:
+          type: integer
+          example: 10
+    OcuparMesaTemporalResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: Mesa ocupada temporalmente por 10 minutos
+        ocupacion:
+          $ref: '#/components/schemas/MesaOcupacionTemporalDTO'
+        mesa:
+          $ref: '#/components/schemas/MesaDTO'
+    ConsultarOcupacionTemporalResponse:
+      type: object
+      properties:
+        activa:
+          type: boolean
+          example: true
+        esPropietario:
+          type: boolean
+          example: true
+        ocupacion:
+          nullable: true
+          $ref: '#/components/schemas/MesaOcupacionTemporalDTO'
+        mesa:
+          $ref: '#/components/schemas/MesaDTO'
+    CancelarOcupacionTemporalResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: Ocupación temporal cancelada exitosamente
+        mesa:
+          $ref: '#/components/schemas/MesaDTO'
+    ConflictoOcupacionResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: La mesa ya se encuentra ocupada por otro mesero o tiene un pedido activo
+        ocupadoPorOtro:
+          type: boolean
+          example: true
+        expiraEn:
+          type: string
+          format: date-time
+          nullable: true
+          example: '2026-10-04T12:10:00.000Z'
     Ubicacion:
       type: object
       properties:

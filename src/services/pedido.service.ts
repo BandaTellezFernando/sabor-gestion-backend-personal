@@ -7,6 +7,10 @@ import {
   IPedido
 } from '../repositories/pedido.repo'
 import { MesaRepository, mesaRepository } from '../repositories/mesa.repo'
+import {
+  MesaOcupacionRepository,
+  mesaOcupacionRepository
+} from '../repositories/mesaOcupacion.repo'
 import { PlatoRepository, platoRepository } from '../repositories/plato.repo'
 import { ESTADOS_MESA, ESTADOS_PEDIDO } from '../utils/constants'
 import {
@@ -70,7 +74,8 @@ export class PedidoService {
   constructor(
     private pedidoRepo: PedidoRepository = pedidoRepository,
     private mesaRepo: MesaRepository = mesaRepository,
-    private platoRepo: PlatoRepository = platoRepository
+    private platoRepo: PlatoRepository = platoRepository,
+    private mesaOcupacionRepo: MesaOcupacionRepository = mesaOcupacionRepository
   ) {}
 
   /**
@@ -239,6 +244,17 @@ export class PedidoService {
       if (!mesaExiste) {
         throw new PedidoServiceError(404, 'Mesa no encontrada')
       }
+
+      // Validar si la mesa tiene ocupación temporal activa perteneciente a otro usuario
+      const ocupacion = await this.mesaOcupacionRepo.buscarPorMesaId(mesaId)
+      if (ocupacion && ocupacion.expiraEn > new Date()) {
+        if (usuarioAuthId && ocupacion.usuarioId.toString() !== usuarioAuthId.toString()) {
+          throw new PedidoServiceError(
+            409,
+            'La mesa está ocupada temporalmente por otro mesero.'
+          )
+        }
+      }
     }
 
     // 2. Procesar detalles con precios reales de Plato, calcular subtotales y validar recetas/ingredientes
@@ -282,10 +298,15 @@ export class PedidoService {
       fechaHora
     })
 
-    // 6. Poblar datos para vista de cocina
+    // 6. Eliminar la ocupación temporal si existía para esta mesa (convertida a comanda real)
+    if (mesaIdString) {
+      await this.mesaOcupacionRepo.eliminarPorMesaId(mesaIdString)
+    }
+
+    // 7. Poblar datos para vista de cocina
     const pedidoPoblado = await this.pedidoRepo.buscarPorIdPoblado(nuevoPedidoDoc._id)
 
-    // 7. AUTOMATIZACIÓN: Cambiar estado de la mesa a 'Ocupada'
+    // 8. AUTOMATIZACIÓN: Cambiar estado de la mesa a 'Ocupada'
     let mesaActualizada: any = null
     if (mesaIdString) {
       mesaActualizada = await this.mesaRepo.actualizarEstado(
