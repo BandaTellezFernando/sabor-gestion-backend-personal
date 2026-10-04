@@ -7,7 +7,8 @@ import {
   actualizarEstadoPedido,
   actualizarPedido,
   obtenerPedidosPendientesCobro,
-  solicitarCuentaPedido
+  solicitarCuentaPedido,
+  marcarPedidoRecogido
 } from '../controllers/pedido.controller'
 import { verificarToken } from '../middlewares/auth.middleware'
 import { permitirRoles } from '../middlewares/rol.middleware'
@@ -34,6 +35,14 @@ router.patch(
   verificarToken,
   permitirRoles('Mesero', 'Administrador'),
   solicitarCuentaPedido
+)
+
+// Marcar pedido como recogido por el mesero (Mesero, Administrador)
+router.patch(
+  '/:id/recoger',
+  verificarToken,
+  permitirRoles('Mesero', 'Administrador'),
+  marcarPedidoRecogido
 )
 
 // Actualizar contenido de un pedido existente (Mesero, Administrador)

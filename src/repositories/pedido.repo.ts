@@ -48,6 +48,7 @@ export class PedidoRepository {
       .populate('detalles.plato', 'nombre precio')
       .populate('mesa', 'numero')
       .populate('usuario', 'nombre apellido apellidos')
+      .populate('recogidoPor', 'nombre apellido apellidos')
   }
 
   /**
@@ -57,6 +58,7 @@ export class PedidoRepository {
     return await Pedido.findById(id)
       .populate('mesa', 'numero estado')
       .populate('usuario', 'nombre apellido apellidos')
+      .populate('recogidoPor', 'nombre apellido apellidos')
       .populate('detalles.plato', 'nombre precio')
   }
 
@@ -68,12 +70,39 @@ export class PedidoRepository {
       .populate('mesa', 'numero')
       .populate('usuario', 'nombre apellido apellidos')
       .populate('cajeroAsignado', 'nombre apellido')
+      .populate('recogidoPor', 'nombre apellido apellidos')
       .populate({
         path: 'detalles.plato',
         select: 'nombre precio',
         populate: { path: 'categoria', select: 'nombre' }
       })
       .sort({ createdAt: -1 })
+  }
+
+  /**
+   * Marca un pedido como recogido físicamente por el mesero
+   */
+  async marcarComoRecogido(
+    id: string | Types.ObjectId,
+    usuarioId: string | Types.ObjectId,
+    fechaRecogida: Date,
+    session?: ClientSession
+  ): Promise<IPedido | null> {
+    return await Pedido.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          recogido: true,
+          recogidoPor: usuarioId,
+          fechaRecogida
+        }
+      },
+      { returnDocument: 'after', session }
+    )
+      .populate('mesa', 'numero')
+      .populate('usuario', 'nombre apellido apellidos')
+      .populate('recogidoPor', 'nombre apellido apellidos')
+      .populate('detalles.plato', 'nombre precio')
   }
 
   /**

@@ -160,7 +160,7 @@ El backend define cuatro (4) roles jerárquicos y operativos. No existen roles a
 | Rol Oficial | Propósito Operativo | Acciones Permitidas en Backend |
 |:---|:---|:---|
 | **Administrador** | Gestión integral y gerencial | Acceso absoluto a todos los módulos: alta, baja, modificación y eliminación de usuarios, categorías, platos, mesas, ubicaciones, ingredientes, recetas; consulta de cierres de caja y analíticas del dashboard; anulación de pedidos. |
-| **Mesero** | Atención en salón y toma de órdenes | Consulta de catálogo y categorías; visualización de mesas y ubicaciones; apertura de nuevos pedidos (`POST /api/pedidos`); edición de platos y observaciones en pedidos abiertos (`PUT /api/pedidos/:id`); solicitud formal de cuenta (`PATCH /api/pedidos/:id/solicitar-cuenta`); actualización de estado operativo de mesas (`PATCH /api/mesas/:id/estado`). |
+| **Mesero** | Atención en salón y toma de órdenes | Consulta de catálogo y categorías; visualización de mesas y ubicaciones; apertura de nuevos pedidos (`POST /api/pedidos`); edición de platos y observaciones en pedidos abiertos (`PUT /api/pedidos/:id`); marcar pedido como recogido (`PATCH /api/pedidos/:id/recoger`); solicitud formal de cuenta (`PATCH /api/pedidos/:id/solicitar-cuenta`); actualización de estado operativo de mesas (`PATCH /api/mesas/:id/estado`). |
 | **Cajero** | Facturación, cobros y arqueo | Consulta de pedidos pendientes de cobro (`GET /api/pedidos/pendientes-cobro`); procesamiento definitivo de pagos (`POST /api/pagos/:pedidoId/procesar`); generación y envío de comprobantes por correo; consulta de mesas y pedidos; cambio de su propio estado activo/inactivo para cierre de turno y registro de `CierreCaja`. |
 | **Cocinero** | Producción culinaria y comandas | Visualización de pedidos en cocina; actualización de estados de comanda (`PATCH /api/pedidos/:id/estado` para transiciones `ABIERTO` -> `EN_PREPARACION` -> `ENTREGADO`); consulta de inventario de ingredientes y recetarios/escandallos. |
 
@@ -179,9 +179,9 @@ Si un usuario autenticado intenta ejecutar un endpoint que no le corresponde (po
 Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
 
 ### 4.0 Alcance del Contrato y Conteo de Operaciones HTTP
-- **Rutas URI Únicas (Paths):** El backend define exactamente **31 rutas URI**.
-- **Operaciones HTTP Reales (Método + Ruta):** El backend implementa exactamente **47 operaciones HTTP activas**.
-- **Alcance Documental:** Las 47 operaciones documentadas a continuación corresponden a la **totalidad de operaciones activas del backend** (no se trata de un subconjunto). Toda la superficie funcional del servidor está completamente cubierta.
+- **Rutas URI Únicas (Paths):** El backend define exactamente **32 rutas URI**.
+- **Operaciones HTTP Reales (Método + Ruta):** El backend implementa exactamente **48 operaciones HTTP activas**.
+- **Alcance Documental:** Las 48 operaciones documentadas a continuación corresponden a la **totalidad de operaciones activas del backend** (no se trata de un subconjunto). Toda la superficie funcional del servidor está completamente cubierta.
 
 ---
 
@@ -472,7 +472,9 @@ Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
   - `hoy=true`: Filtra pedidos creados o actualizados en la fecha actual de Bolivia.
   - `fecha=YYYY-MM-DD`: Filtra pedidos en una fecha calendario específica.
   - `mesa=<ObjectId>`: Filtra pedidos asociados a una mesa concreta.
-  - `activo=true`: Filtra órdenes en curso (`ABIERTO`, `EN_PREPARACION`, `ENTREGADO`).
+  - `activo=true`: Filtra órdenes en curso (`ABIERTO`, `EN_PREPARACION`, `ENTREGADO`). Excluye automáticamente pedidos en `ENTREGADO` que ya fueron recogidos por el mesero (mantiene el tablero operativo de cocina limpio).
+  - `recogido=true | false`: Filtra según si el pedido ya fue recogido físicamente por el mesero.
+  - `incluirRecogidos=true`: Al combinarse con `activo=true`, incluye también pedidos en estado `ENTREGADO` que ya fueron recogidos.
   - `cajero=<ObjectId>`: Filtra pedidos asignados al cajero indicado o sin asignar.
   - `mesero=<ObjectId>`: Filtra pedidos abiertos por el mesero indicado.
   - `reportesCierre=true`: **Retorna los reportes de `CierreCaja` de las últimas 48 horas**.
@@ -517,6 +519,23 @@ Referencia de especificación formal OpenAPI: `docs/openapi.yaml`.
 - **Request Body:** `{ "estado": "EN_PREPARACION" }` o `{ "estado": "ENTREGADO" }`.
 - **Regla:** Valida máquina de estados. Al pasar a `ENTREGADO`, emite `mesas:alerta_listo` a la sala `room:meseros`.
 - **Respuestas:** `200 OK` con `{ "mensaje": "Pedido movido a ...", "pedido": { ... } }`.
+
+#### `PATCH /api/pedidos/:id/recoger`
+- **Seguridad:** `Mesero`, `Administrador`.
+- **Propósito:** Registrar que el mesero responsable (o un Administrador) recogió físicamente la comanda preparada del pase de cocina.
+- **Reglas de Negocio:**
+  - El pedido debe estar en estado `ENTREGADO` (`400 Bad Request` si está en `ABIERTO`, `EN_PREPARACION`, `CANCELADO` o `CERRADO`).
+  - Solo puede ser invocado por el mesero que creó el pedido (`pedido.usuario`) o por un usuario con rol `Administrador` (`403 Forbidden` si otro usuario intenta recogerlo).
+  - Si el pedido ya fue marcado como recogido previamente, retorna `409 Conflict`.
+  - **NO altera el estado del pedido:** `pedido.estado` se mantiene en `ENTREGADO`.
+  - Persiste `recogido: true`, `recogidoPor: ObjectId`, `fechaRecogida: Date` y retorna `fechaRecogidaBolivia`.
+  - Emite en tiempo real los eventos Socket.IO `cocina:pedido_recogido` y `cocina:actualizar_tablero` para que la pantalla de cocina retire la tarjeta de la columna "Listo" sin recargar la página.
+- **Respuestas:**
+  - `200 OK` con `{ "mensaje": "Pedido marcado como recogido por el mesero", "recogido": true, "recogidoPor": "...", "fechaRecogida": "...", "fechaRecogidaBolivia": "...", "pedido": { ... } }`.
+  - `400 Bad Request` si no está en estado `ENTREGADO` o el ID es inválido.
+  - `403 Forbidden` si el mesero autenticado no es el responsable del pedido.
+  - `404 Not Found` si el pedido no existe.
+  - `409 Conflict` si ya fue marcado como recogido previamente.
 
 #### `PATCH /api/pedidos/:id/solicitar-cuenta`
 - **Seguridad:** `Mesero`, `Administrador`.
@@ -919,12 +938,18 @@ export interface Receta {
    - *Resiliencia ante errores:* Si falla la validación de stock de ingredientes o reglas de negocio al enviar el pedido, la ocupación temporal permanece intacta para que el mesero pueda corregir la comanda sin perder la mesa.
    - *Expiración automática:* Si transcurren 10 minutos sin enviar pedido ni cancelar, el limpiador en segundo plano del backend revierte la mesa a `Libre` y emite `mesas:updated`.
 
-### Flujo 2: Cocina y Preparación (Cocinero)
+### Flujo 2: Cocina, Preparación y Recogida (Cocinero y Mesero)
 1. **Paso 1:** Cocinero con sesión activa escucha el evento Socket `cocina:nuevo_pedido` y consulta `GET /api/pedidos?activo=true`.
 2. **Paso 2:** Inicia preparación invocando `PATCH /api/pedidos/:id/estado` con `{ "estado": "EN_PREPARACION" }`.
    - *Resultado:* Se actualiza el tablero de cocina para todos los clientes (`cocina:actualizar_tablero`).
 3. **Paso 3:** Al finalizar la cocción, invoca `PATCH /api/pedidos/:id/estado` con `{ "estado": "ENTREGADO" }`.
-   - *Resultado:* Backend emite `mesas:alerta_listo` a la sala `room:meseros`. Los meseros reciben la alerta con el número de mesa.
+   - *Resultado:* Backend emite `mesas:alerta_listo` a la sala `room:meseros`. La orden permanece en la columna "Listo" del tablero de Cocina esperando que el mesero la retire.
+4. **Paso 4 (Recogida física por el mesero):** El mesero responsable recibe la notificación, acude a la barra de cocina a recoger los platos y presiona "Recoger Pedido" en su comanda (`PATCH /api/pedidos/:id/recoger`).
+   - *Resultado:*
+     - El pedido registra `recogido: true`, `recogidoPor` y `fechaRecogida` (con `fechaRecogidaBolivia`).
+     - El estado del pedido se mantiene intacto (`ENTREGADO`).
+     - Se emite en tiempo real `cocina:pedido_recogido` y `cocina:actualizar_tablero`.
+     - La tarjeta desaparece automáticamente de la vista activa de Cocina (`GET /api/pedidos?activo=true` la excluye), manteniendo limpio el tablero sin requerir recargar la página.
 
 ### Flujo 3: Cobro y Facturación en Caja (Mesero y Cajero)
 1. **Paso 1:** El cliente solicita la cuenta. El Mesero presiona "Pedir Cuenta", invocando `PATCH /api/pedidos/:id/solicitar-cuenta`.
@@ -974,7 +999,8 @@ Al autenticar el socket, el servidor examina `decoded.rol` y suscribe la conexi�
 | Evento | Dirección / Destino | Disparador / Causa | Estructura del Payload |
 |:---|:---|:---|:---|
 | **`cocina:nuevo_pedido`** | Broadcast (Todos) | Creación exitosa de comanda (`POST /api/pedidos`). | `Pedido` completo poblado con mesa y detalles de platos. |
-| **`cocina:actualizar_tablero`** | Broadcast (Todos) | Cambio de estado de comanda (`PATCH /pedidos/:id/estado`), actualización de detalles (`PUT`) o pago completado (`/procesar`). | Documento `Pedido` actualizado. |
+| **`cocina:actualizar_tablero`** | Broadcast (Todos) | Cambio de estado de comanda (`PATCH /pedidos/:id/estado`), actualización de detalles (`PUT`), pedido recogido (`PATCH /pedidos/:id/recoger`) o pago completado (`/procesar`). | Documento `Pedido` actualizado. |
+| **`cocina:pedido_recogido`** | Broadcast (Todos) | Mesero marca la recogida de la comanda en cocina (`PATCH /api/pedidos/:id/recoger`). | `{ "pedidoId": "...", "codigo": "PED-0001", "mesaId": "...", "mesaNombre": "Mesa 1", "recogido": true, "recogidoPor": "...", "fechaRecogida": "..." }` |
 | **`mesas:alerta_listo`** | Exclusivo a `room:meseros` | La comanda pasa al estado `ENTREGADO` por cocina. | `{ "pedidoId": "...", "mesaId": "...", "mesaNombre": "Mesa 3" }` |
 | **`mesas:created`** | Broadcast (Todos) | Alta de mesa (`POST /api/mesas`). | Documento `Mesa` creado. |
 | **`mesas:updated`** | Broadcast (Todos) | Cambio de estado o edición de mesa, cancelación de pedido o solicitud de cuenta. | `{ "id": "...", "status": "Ocupada", "name": "Mesa 1" }` |
@@ -1031,6 +1057,7 @@ Al autenticar el socket, el servidor examina `decoded.rol` y suscribe la conexi�
 5. **NO asumir que los IDs son enteros autoincrementales:** Todos los recursos utilizan strings de 24 caracteres hexadecimales propios de MongoDB `ObjectId`.
 6. **NO asumir que existe un endpoint `GET /api/pedidos/:id`:** Para consultar pedidos, el cliente debe filtrar sobre `GET /api/pedidos` o consultar `GET /api/pedidos/pendientes-cobro`.
 7. **NO enviar campos no documentados ni métodos de pago no admitidos:** El formulario de cobro debe limitarse a `'Efectivo'`, `'Tarjeta'` y `'QR'`.
+8. **NO asumir que la recogida del pedido por el mesero es un estado nuevo:** El estado del pedido se mantiene en `ENTREGADO`. La recogida se registra mediante `PATCH /api/pedidos/:id/recoger`, la cual establece el flag booleano `recogido: true` y retira la orden del tablero activo de cocina sin alterar la máquina de estados del pedido.
 
 ---
 
@@ -1041,13 +1068,13 @@ Al autenticar el socket, el servidor examina `decoded.rol` y suscribe la conexi�
 - [ ] **Implementar Flujo de Login:** Enviar `email` y `password` a `POST /api/usuarios/login` y capturar el token JWT.
 - [ ] **Manejar JWT y Persistencia:** Adjuntar cabecera `Authorization: Bearer <token>` en todas las peticiones con interceptor HTTP (Axios / Fetch).
 - [ ] **Manejar Roles y Rutas Protegidas:** Ocultar o proteger vistas en el cliente según el rol (`Administrador`, `Mesero`, `Cajero`, `Cocinero`).
-- [ ] **Implementar Consumo de Endpoints REST:** Integrar las 47 operaciones HTTP respetando DTOs y parámetros oficiales.
+- [ ] **Implementar Consumo de Endpoints REST:** Integrar las 48 operaciones HTTP respetando DTOs y parámetros oficiales.
 - [ ] **Implementar Máquina de Estados:** Validar transiciones de pedidos y mesas en UI antes de disparar las peticiones.
 - [ ] **Restringir Opciones de Pago:** Ofrecer únicamente `'Efectivo'`, `'Tarjeta'` y `'QR'` en el formulario de cobro en caja.
 - [ ] **Conectar Socket.IO con Handshake Autenticado:** Pasar el token en `auth: { token }` al inicializar la conexión con `NEXT_PUBLIC_SOCKET_URL`.
-- [ ] **Configurar Listeners de WebSockets:** Manejar `cocina:nuevo_pedido`, `mesas:updated`, `mesas:alerta_listo` y `caja:nueva_cuenta`.
+- [ ] **Configurar Listeners de WebSockets:** Manejar `cocina:nuevo_pedido`, `cocina:pedido_recogido`, `cocina:actualizar_tablero`, `mesas:updated`, `mesas:alerta_listo` y `caja:nueva_cuenta`.
 - [ ] **Manejar Errores Globales:** Capturar respuestas 401 para redirección automática y 400 con mensajes de validación de negocio.
-- [ ] **Probar Flujo E2E de Pedido:** Apertura de comanda en salón por Mesero -> Preparación en Cocina -> Alerta de entrega.
+- [ ] **Probar Flujo E2E de Pedido:** Ocupación temporal de mesa -> Apertura de comanda en salón por Mesero -> Preparación en Cocina -> Alerta de entrega -> Recogida física por Mesero (`PATCH /api/pedidos/:id/recoger`).
 - [ ] **Probar Flujo E2E de Pago:** Solicitud de pre-cuenta -> Cobro en Caja -> Emisión de Comprobante -> Mesa liberada.
 
 ---
@@ -1066,7 +1093,7 @@ Al autenticar el socket, el servidor examina `decoded.rol` y suscribe la conexi�
 Durante la auditoría del código real frente a documentación histórica y configuraciones de entorno, se identificaron las siguientes discrepancias que el frontend debe tener presentes:
 
 1. **Conteo de Rutas vs Operaciones HTTP:**
-   - Existen **31 rutas URI (paths)** y **47 operaciones HTTP activas (Método + Ruta)**. Todas las 47 operaciones están documentadas en esta guía y corresponden a la totalidad del backend.
+   - Existen **32 rutas URI (paths)** y **48 operaciones HTTP activas (Método + Ruta)**. Todas las 48 operaciones están documentadas en esta guía y corresponden a la totalidad del backend.
 2. **Métodos de Pago en Pedido vs Pago:**
    - El modelo `Pedido` posee un enum histórico amplio (`['Efectivo', 'Tarjeta', 'Transferencia', 'QR', 'Otro']`), pero el servicio transaccional `pago.service.ts`, el modelo formal `Pago` y OpenAPI aceptan y persisten exclusivamente: `['Efectivo', 'Tarjeta', 'QR']`. El frontend debe limitar su selector de pago exclusivamente a estas 3 opciones.
 3. **Configuración de Orígenes Permitidos (CORS):**

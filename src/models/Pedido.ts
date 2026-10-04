@@ -45,6 +45,10 @@ export interface IPedido extends Document {
   clienteCI?: string
   clienteNIT?: string
   cajeroAsignado?: mongoose.Types.ObjectId
+  // Operativa de recojo por mesero (pedido listo)
+  recogido?: boolean
+  fechaRecogida?: Date
+  recogidoPor?: mongoose.Types.ObjectId
 }
 
 const PedidoSchema = new Schema(
@@ -84,7 +88,12 @@ const PedidoSchema = new Schema(
     clienteNIT: { type: String, required: false },
     cajeroAsignado: { type: Schema.Types.ObjectId, ref: 'Usuario', required: false },
     fechaHora: { type: Date, default: obtenerFechaBolivia },
-    fechaHoraBolivia: { type: String, required: false }
+    fechaHoraBolivia: { type: String, required: false },
+
+    // Operativa de recojo por mesero
+    recogido: { type: Boolean, default: false },
+    fechaRecogida: { type: Date, required: false },
+    recogidoPor: { type: Schema.Types.ObjectId, ref: 'Usuario', required: false }
   },
   {
     timestamps: true,
@@ -95,6 +104,8 @@ const PedidoSchema = new Schema(
 PedidoSchema.index({ fechaDiaBolivia: 1, codigo: 1 }, { unique: true })
 PedidoSchema.index({ fechaDiaBolivia: 1 })
 PedidoSchema.index({ estado: 1 })
+PedidoSchema.index({ estado: 1, recogido: 1 })
+PedidoSchema.index({ recogido: 1 })
 PedidoSchema.index({ createdAt: -1 })
 PedidoSchema.index({ mesa: 1 })
 

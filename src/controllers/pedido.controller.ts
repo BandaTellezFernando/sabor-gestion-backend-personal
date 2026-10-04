@@ -249,3 +249,55 @@ export const solicitarCuentaPedido = async (req: Request, res: Response): Promis
     })
   }
 }
+
+export const marcarPedidoRecogido = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params
+    const usuarioAuthId = req.usuario?.id
+    const usuarioRol = req.usuario?.rol || ''
+    if (!usuarioAuthId) {
+      res.status(401).json({ mensaje: 'Usuario no autenticado' })
+      return
+    }
+
+    const resultado = await pedidoService.marcarPedidoRecogido(
+      String(id),
+      usuarioAuthId,
+      usuarioRol
+    )
+
+    // Emitir eventos Socket.IO para sincronizar Cocina en tiempo real
+    try {
+      const io = getIO()
+      io.emit('cocina:pedido_recogido', {
+        pedidoId: resultado.pedido._id ? resultado.pedido._id.toString() : String(id),
+        codigo: resultado.pedido.codigo,
+        mesaId: resultado.pedido.mesa?._id || resultado.pedido.mesa,
+        mesaNombre: (resultado.pedido.mesa as any)?.numero || 'Mesa',
+        recogido: true,
+        recogidoPor: usuarioAuthId,
+        fechaRecogida: resultado.fechaRecogida
+      })
+      io.emit('cocina:actualizar_tablero', resultado.pedido)
+    } catch (socketError) {
+      console.warn(
+        'Pedido marcado como recogido, pero falló la notificación Socket.IO:',
+        socketError
+      )
+    }
+
+    res.status(200).json(resultado)
+  } catch (error) {
+    if (error instanceof PedidoServiceError) {
+      res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
+      return
+    }
+    console.error('Error al marcar pedido como recogido:', error)
+    res.status(500).json({
+      mensaje: 'Error al marcar pedido como recogido'
+    })
+  }
+}

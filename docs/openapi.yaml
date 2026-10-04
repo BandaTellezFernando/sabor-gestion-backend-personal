@@ -1830,6 +1830,18 @@ paths:
           description: Retorna los reportes de cierre de caja registrados en las últimas 48 horas
           schema:
             type: boolean
+        - name: recogido
+          in: query
+          required: false
+          description: Filtrar por estado de recogida del pedido (true o false)
+          schema:
+            type: boolean
+        - name: incluirRecogidos
+          in: query
+          required: false
+          description: Si es true junto con activo=true, incluye pedidos en estado ENTREGADO que ya fueron recogidos
+          schema:
+            type: boolean
       responses:
         '200':
           description: Lista de pedidos o reportes de cierre
@@ -2116,6 +2128,66 @@ paths:
                 $ref: '#/components/schemas/MensajeErrorResponse'
         '500':
           description: Error al solicitar la cuenta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+  /api/pedidos/{id}/recoger:
+    patch:
+      tags:
+        - Pedidos
+      summary: Marcar pedido como recogido por el mesero
+      description: Registra la recogida física del pedido por el mesero responsable o un Administrador cuando está en estado ENTREGADO. El estado del pedido se mantiene en ENTREGADO. Remueve el pedido del tablero activo de Cocina y emite eventos en tiempo real.
+      operationId: marcarPedidoRecogido
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador del pedido
+          schema:
+            type: string
+          example: '{{pedidoId}}'
+      responses:
+        '200':
+          description: Pedido marcado como recogido exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarcarPedidoRecogidoResponse'
+        '400':
+          description: ID inválido o el pedido no está en estado ENTREGADO
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '401':
+          description: No autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '403':
+          description: Acceso denegado (solo el mesero responsable del pedido o un Administrador)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '404':
+          description: Pedido no encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '409':
+          description: El pedido ya fue marcado como recogido previamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MensajeErrorResponse'
+        '500':
+          description: Error interno al marcar pedido como recogido
           content:
             application/json:
               schema:
@@ -3251,6 +3323,24 @@ components:
         cajeroAsignado:
           type: string
           example: '000000000000000000000001'
+        recogido:
+          type: boolean
+          example: false
+          description: Indica si el pedido ya fue recogido físicamente por el mesero tras salir de cocina
+        fechaRecogida:
+          type: string
+          format: date-time
+          description: Fecha y hora UTC en la que el mesero recogió el pedido
+        fechaRecogidaBolivia:
+          type: string
+          example: 04/10/2026 02:45:00
+          description: Fecha y hora Bolivia formateada (DD/MM/YYYY HH:mm:ss) de recogida
+        recogidoPor:
+          oneOf:
+            - type: string
+              example: '000000000000000000000001'
+            - $ref: '#/components/schemas/UsuarioNormalizado'
+          description: Usuario (Mesero o Administrador) que marcó la recogida del pedido
         createdAt:
           type: string
           format: date-time
@@ -3495,6 +3585,26 @@ components:
           example: Cuenta solicitada correctamente
         solicitud:
           $ref: '#/components/schemas/PayloadCajaDTO'
+    MarcarPedidoRecogidoResponse:
+      type: object
+      properties:
+        mensaje:
+          type: string
+          example: Pedido marcado como recogido por el mesero
+        recogido:
+          type: boolean
+          example: true
+        recogidoPor:
+          type: string
+          example: '000000000000000000000001'
+        fechaRecogida:
+          type: string
+          format: date-time
+        fechaRecogidaBolivia:
+          type: string
+          example: 04/10/2026 02:45:00
+        pedido:
+          $ref: '#/components/schemas/Pedido'
     GenerarPagoQRResponse:
       type: object
       properties:

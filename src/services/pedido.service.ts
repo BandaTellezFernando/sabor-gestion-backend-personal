@@ -92,6 +92,9 @@ export class PedidoService {
       ...restoPedido,
       fechaHoraBolivia:
         fechaHoraBolivia || (fechaHora ? formatearFechaBolivia(fechaHora) : undefined),
+      fechaRecogidaBolivia:
+        restoPedido.fechaRecogidaBolivia ||
+        (restoPedido.fechaRecogida ? formatearFechaBolivia(restoPedido.fechaRecogida) : undefined),
       fechaHora
     }
   }
@@ -326,7 +329,17 @@ export class PedidoService {
    * Obtiene pedidos aplicando filtros de búsqueda o reportes de cierre según los query params
    */
   async obtenerPedidos(query: Record<string, any>): Promise<any[]> {
-    const { hoy, fecha, mesa, activo, cajero, mesero, reportesCierre } = query
+    const {
+      hoy,
+      fecha,
+      mesa,
+      activo,
+      cajero,
+      mesero,
+      reportesCierre,
+      recogido,
+      incluirRecogidos
+    } = query
 
     // Reportes de Cierre de las últimas 48 horas
     if (reportesCierre === 'true') {
@@ -347,11 +360,14 @@ export class PedidoService {
     }
 
     const filtro: any = {}
+    const andClauses: any[] = []
 
     if (hoy === 'true') {
       const inicioHoy = new Date()
       inicioHoy.setHours(0, 0, 0, 0)
-      filtro.$or = [{ createdAt: { $gte: inicioHoy } }, { updatedAt: { $gte: inicioHoy } }]
+      andClauses.push({
+        $or: [{ createdAt: { $gte: inicioHoy } }, { updatedAt: { $gte: inicioHoy } }]
+      })
     } else if (fecha) {
       const inicio = new Date(`${fecha}T00:00:00`)
       const fin = new Date(`${fecha}T23:59:59.999`)
@@ -363,33 +379,57 @@ export class PedidoService {
     }
 
     if (activo === 'true') {
-      filtro.estado = {
-        $in: [
-          ESTADOS_PEDIDO.ABIERTO,
-          ESTADOS_PEDIDO.EN_PREPARACION,
-          ESTADOS_PEDIDO.ENTREGADO
-        ]
+      if (recogido === 'true') {
+        filtro.estado = {
+          $in: [
+            ESTADOS_PEDIDO.ABIERTO,
+            ESTADOS_PEDIDO.EN_PREPARACION,
+            ESTADOS_PEDIDO.ENTREGADO
+          ]
+        }
+        filtro.recogido = true
+      } else if (incluirRecogidos === 'true') {
+        filtro.estado = {
+          $in: [
+            ESTADOS_PEDIDO.ABIERTO,
+            ESTADOS_PEDIDO.EN_PREPARACION,
+            ESTADOS_PEDIDO.ENTREGADO
+          ]
+        }
+      } else {
+        // Vista operativa de Cocina: los pedidos ENTREGADO que ya fueron recogidos
+        // NO se muestran en la columna LISTO
+        andClauses.push({
+          $or: [
+            { estado: { $in: [ESTADOS_PEDIDO.ABIERTO, ESTADOS_PEDIDO.EN_PREPARACION] } },
+            { estado: ESTADOS_PEDIDO.ENTREGADO, recogido: { $ne: true } }
+          ]
+        })
+      }
+    } else {
+      if (recogido === 'true') {
+        filtro.recogido = true
+      } else if (recogido === 'false') {
+        filtro.recogido = { $ne: true }
       }
     }
 
     if (cajero) {
-      const cajeroFiltro = {
+      andClauses.push({
         $or: [
           { cajeroAsignado: cajero },
           { cajeroAsignado: null },
           { cajeroAsignado: { $exists: false } }
         ]
-      }
-      if (filtro.$or) {
-        filtro.$and = [{ $or: filtro.$or }, cajeroFiltro]
-        delete filtro.$or
-      } else {
-        filtro.$or = cajeroFiltro.$or
-      }
+      })
     }
 
     if (mesero) {
       filtro.usuario = mesero
+    }
+
+    if (andClauses.length > 0) {
+      filtro.$and = andClauses
     }
 
     const pedidos = await this.pedidoRepo.buscarConFiltros(filtro)
@@ -706,6 +746,82 @@ export class PedidoService {
       payload,
       mesaActualizada,
       cajeroAsignado: pedidoPoblado?.cajeroAsignado
+    }
+  }
+
+  /**
+   * Marca un pedido en estado ENTREGADO como recogido físicamente por el mesero
+   */
+  async marcarPedidoRecogido(
+    id: string,
+    usuarioAuthId: string,
+    usuarioRol: string
+  ): Promise<{
+    mensaje: string
+    recogido: boolean
+    recogidoPor: string
+    fechaRecogida: Date
+    fechaRecogidaBolivia?: string
+    pedido: any
+  }> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new PedidoServiceError(400, 'ID de pedido inválido')
+    }
+
+    const pedido = await this.pedidoRepo.buscarPorId(id)
+    if (!pedido) {
+      throw new PedidoServiceError(404, 'Pedido no encontrado')
+    }
+
+    // 1. Regla de estado: solo pedidos en estado ENTREGADO pueden ser recogidos
+    if (pedido.estado !== ESTADOS_PEDIDO.ENTREGADO) {
+      throw new PedidoServiceError(
+        400,
+        `No se puede marcar como recogido un pedido en estado "${pedido.estado}". Solo se pueden recoger pedidos en estado "${ESTADOS_PEDIDO.ENTREGADO}".`
+      )
+    }
+
+    // 2. Regla de idempotencia/conflicto: no puede recogerse nuevamente
+    if (pedido.recogido === true) {
+      throw new PedidoServiceError(
+        409,
+        'El pedido ya fue marcado como recogido previamente.'
+      )
+    }
+
+    // 3. Regla de autorización: Mesero responsable o Administrador
+    const meseroResponsableId = pedido.usuario ? pedido.usuario.toString() : ''
+    const esResponsable = meseroResponsableId === usuarioAuthId
+    const esAdmin = usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
+
+    if (!esResponsable && !esAdmin) {
+      throw new PedidoServiceError(
+        403,
+        'Solo el mesero responsable del pedido o un Administrador pueden marcarlo como recogido.'
+      )
+    }
+
+    // 4. Persistir recogida sin alterar la máquina de estados del pedido
+    const fechaRecogida = new Date()
+    const pedidoActualizado = await this.pedidoRepo.marcarComoRecogido(
+      id,
+      usuarioAuthId,
+      fechaRecogida
+    )
+
+    if (!pedidoActualizado) {
+      throw new PedidoServiceError(404, 'Error al actualizar el pedido')
+    }
+
+    const pedidoConFechaBolivia = PedidoService.agregarFechaBoliviaPedido(pedidoActualizado)
+
+    return {
+      mensaje: 'Pedido marcado como recogido exitosamente',
+      recogido: true,
+      recogidoPor: usuarioAuthId,
+      fechaRecogida,
+      fechaRecogidaBolivia: pedidoConFechaBolivia.fechaRecogidaBolivia,
+      pedido: pedidoConFechaBolivia
     }
   }
 }
