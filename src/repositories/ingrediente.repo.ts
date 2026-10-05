@@ -7,12 +7,14 @@ export interface IngredienteCrearDatos {
   nombre: string
   unidadMedida: string
   disponible?: boolean
+  stockActual?: number
 }
 
 export interface IngredienteActualizarDatos {
   nombre?: string
   unidadMedida?: string
   disponible?: boolean
+  stockActual?: number
 }
 
 export class IngredienteRepository {

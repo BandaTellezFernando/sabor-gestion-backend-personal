@@ -17,7 +17,7 @@ import {
   obtenerFechaBolivia,
   formatearFechaBolivia
 } from '../utils/fechaBolivia'
-import { validarDisponibilidadIngredientes } from './inventario.service'
+import { inventarioService } from './inventario.service'
 import { generarSiguienteCodigoPedido } from './contador.service'
 
 // ─── Clase de Error de Dominio ───────────────────────────────────────────────
@@ -108,7 +108,8 @@ export class PedidoService {
     const itemsSubtotal =
       pedido.detalles && pedido.detalles.length > 0
         ? pedido.detalles.reduce(
-            (sum: number, d: any) => sum + Number(d.precioUnitario || 0) * Number(d.cantidad || 1),
+            (sum: number, d: any) =>
+              sum + Number(d.precioUnitario || 0) * Number(d.cantidad || 1),
             0
           )
         : pedido.subtotalCierre || pedido.total || 0
@@ -237,25 +238,7 @@ export class PedidoService {
       })
     }
 
-    // 🛡️ ESCUDO: Validar ingredientes antes de permitir registrar los detalles
-    const itemsParaValidar = detallesCalculados.map((item) => ({
-      platoId: item.plato.toString(),
-      cantidad: item.cantidad,
-      observacion: item.observacion
-    }))
-
-    const validacion = await validarDisponibilidadIngredientes(itemsParaValidar)
-    if (!validacion.success) {
-      throw new PedidoServiceError(
-        400,
-        'No se puede registrar el pedido por restricciones de receta o ingredientes',
-        {
-          errores: validacion.errores,
-          faltantes: validacion.faltantes
-        }
-      )
-    }
-
+    // ESCUDO: validation moved to explicitly where stock deduction happens
     const subtotal = Number(
       detallesCalculados.reduce((sum, item) => sum + item.subtotal, 0).toFixed(2)
     )
@@ -267,6 +250,10 @@ export class PedidoService {
    * Valida existencia de mesa, calcula importes mediante PlatoRepository,
    * valida ingredientes, genera correlativo diario PED-XXXX,
    * crea el pedido en BD y actualiza el estado de la mesa a 'Ocupada'.
+   *
+   * La confirmación de inventario utiliza session.withTransaction().
+   * MongoDB/Mongoose puede reintentar automáticamente la transacción
+   * cuando ocurre un conflicto transitorio de escritura.
    */
   async crearPedido(datos: any, usuarioAuthId?: string): Promise<ResultadoCrearPedido> {
     // 1. Validar existencia de mesa si fue enviada (404 si no existe)
@@ -301,6 +288,7 @@ export class PedidoService {
     if (montoDescuento < 0) {
       throw new PedidoServiceError(400, 'El monto de descuento no puede ser negativo')
     }
+
     if (montoPropina < 0) {
       throw new PedidoServiceError(400, 'El monto de propina no puede ser negativo')
     }
@@ -316,21 +304,97 @@ export class PedidoService {
     const fechaHora = obtenerFechaBolivia()
     const usuarioResponsable = usuarioAuthId || datos.usuario
 
-    const nuevoPedidoDoc = await this.pedidoRepo.crear({
-      ...datos,
-      _id: pedidoId,
-      codigo,
-      fechaDiaBolivia,
-      detalles: detallesCalculados,
-      total: totalCalculado,
-      subtotalCierre: subtotal,
-      montoDescuento,
-      montoPropina,
-      mesa: mesaIdString || undefined,
-      usuario: usuarioResponsable,
-      fechaHoraBolivia: formatearFechaBolivia(fechaHora),
-      fechaHora
-    })
+    const mongoose = require('mongoose')
+let session: any = null
+let nuevoPedidoDoc: IPedido | null = null
+
+try {
+  session = await mongoose.startSession()
+
+  await session.withTransaction(async () => {
+    const itemsParaValidar = detallesCalculados.map((item) => ({
+      platoId: item.plato.toString(),
+      cantidad: item.cantidad,
+      observacion: item.observacion
+    }))
+
+    const validacion =
+      await inventarioService.verificarYDescontarStock(
+        itemsParaValidar,
+        session
+      )
+
+    if (!validacion.success) {
+      throw new PedidoServiceError(
+        400,
+        'No se puede registrar el pedido por restricciones de receta o ingredientes insuficientes',
+        {
+          errores: validacion.errores,
+          faltantes: validacion.faltantes
+        }
+      )
+    }
+
+    nuevoPedidoDoc = await this.pedidoRepo.crear(
+      {
+        ...datos,
+        _id: pedidoId,
+        codigo,
+        fechaDiaBolivia,
+        detalles: detallesCalculados,
+        total: totalCalculado,
+        subtotalCierre: subtotal,
+        montoDescuento,
+        montoPropina,
+        mesa: mesaIdString || undefined,
+        usuario: usuarioResponsable,
+        fechaHoraBolivia: formatearFechaBolivia(fechaHora),
+        fechaHora
+      },
+      session
+    )
+  })
+
+  if (!nuevoPedidoDoc) {
+    throw new PedidoServiceError(
+      500,
+      'La transacción terminó correctamente pero no se pudo obtener el pedido creado.'
+    )
+  }
+} catch (error: any) {
+      if (error instanceof PedidoServiceError) {
+        throw error
+      }
+
+      const mensajeError =
+        error instanceof Error ? error.message : String(error || '')
+
+      /*
+       * Si la infraestructura MongoDB no soporta transacciones,
+       * no podemos garantizar la atomicidad requerida.
+       */
+      if (
+        /Transaction numbers are only allowed/i.test(mensajeError) ||
+        /replica set/i.test(mensajeError) ||
+        /mongos/i.test(mensajeError)
+      ) {
+        throw new PedidoServiceError(
+          500,
+          'El servidor MongoDB no soporta transacciones (requiere Replica Set). No se puede garantizar la atomicidad del inventario.'
+        )
+      }
+
+      console.error('Error transaccional al registrar el pedido:', error)
+
+      throw new PedidoServiceError(
+        500,
+        mensajeError || 'Error interno al registrar la comanda'
+      )
+    } finally {
+      if (session) {
+        await session.endSession()
+      }
+    }
 
     // 6. Eliminar la ocupación temporal si existía para esta mesa (convertida a comanda real)
     if (mesaIdString) {
@@ -338,7 +402,9 @@ export class PedidoService {
     }
 
     // 7. Poblar datos para vista de cocina
-    const pedidoPoblado = await this.pedidoRepo.buscarPorIdPoblado(nuevoPedidoDoc._id)
+    const pedidoPoblado = await this.pedidoRepo.buscarPorIdPoblado(
+  (nuevoPedidoDoc as IPedido)._id
+)
 
     // 8. AUTOMATIZACIÓN: Cambiar estado de la mesa a 'Ocupada'
     let mesaActualizada: any = null
@@ -381,6 +447,7 @@ export class PedidoService {
     if (esMesero) {
       const meseroId =
         (pedido.usuario as any)?._id?.toString() || pedido.usuario?.toString()
+
       if (usuarioAuthId && meseroId !== usuarioAuthId.toString()) {
         throw new PedidoServiceError(
           403,
@@ -399,6 +466,7 @@ export class PedidoService {
           'Acceso denegado: el pedido no se encuentra en el flujo culinario activo.'
         )
       }
+
       return PedidoService.formatearPedidoCocina(pedido)
     } else if (esCajero) {
       // Alcance Cajero: Pedidos con cuenta solicitada, asignados a este cajero, o en proceso de cobro
@@ -411,9 +479,12 @@ export class PedidoService {
       const esCajeroAsignado = Boolean(
         usuarioAuthId && cajeroAsignadoId === usuarioAuthId.toString()
       )
+
       const esCobroPendiente =
         pedido.estado !== ESTADOS_PEDIDO.CANCELADO &&
-        (tieneCuentaSolicitada || esCajeroAsignado || pedido.estado === ESTADOS_PEDIDO.ENTREGADO)
+        (tieneCuentaSolicitada ||
+          esCajeroAsignado ||
+          pedido.estado === ESTADOS_PEDIDO.ENTREGADO)
 
       if (!esCobroPendiente && !esCajeroAsignado) {
         throw new PedidoServiceError(
@@ -451,6 +522,7 @@ export class PedidoService {
 
     const esAdmin =
       usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
+
     const esMesero = usuarioRol === 'Mesero'
     const esCocinero = usuarioRol === 'Cocinero'
 
@@ -462,18 +534,25 @@ export class PedidoService {
           'Acceso denegado: solo Administradores pueden consultar reportes de cierre.'
         )
       }
+
       const limite = obtenerFechaBolivia()
       limite.setHours(limite.getHours() - 48)
+
       const cierres = await this.pedidoRepo.buscarReportesCierre(limite)
+
       return cierres.map((cierre: any) => {
-        const cierrePlano = typeof cierre.toObject === 'function' ? cierre.toObject() : cierre
+        const cierrePlano =
+          typeof cierre.toObject === 'function' ? cierre.toObject() : cierre
+
         const { fechaCierreBolivia, fechaCierre, ...restoCierre } = cierrePlano
+
         delete restoCierre.__v
 
         return {
           ...restoCierre,
           fechaCierreBolivia:
-            fechaCierreBolivia || (fechaCierre ? formatearFechaBolivia(fechaCierre) : undefined),
+            fechaCierreBolivia ||
+            (fechaCierre ? formatearFechaBolivia(fechaCierre) : undefined),
           fechaCierre
         }
       })
@@ -485,12 +564,17 @@ export class PedidoService {
     // Reglas de alcance por Rol:
     if (esMesero) {
       // Mesero: solo puede consultar sus propios pedidos
-      if (mesero && usuarioAuthId && mesero.toString() !== usuarioAuthId.toString()) {
+      if (
+        mesero &&
+        usuarioAuthId &&
+        mesero.toString() !== usuarioAuthId.toString()
+      ) {
         throw new PedidoServiceError(
           403,
           'Acceso denegado: no puedes consultar pedidos asignados a otro mesero.'
         )
       }
+
       if (usuarioAuthId) {
         filtro.usuario = usuarioAuthId
       }
@@ -498,8 +582,15 @@ export class PedidoService {
       // Cocinero: siempre restringido al flujo culinario activo (sin pedidos cerrados o cancelados)
       andClauses.push({
         $or: [
-          { estado: { $in: [ESTADOS_PEDIDO.ABIERTO, ESTADOS_PEDIDO.EN_PREPARACION] } },
-          { estado: ESTADOS_PEDIDO.ENTREGADO, recogido: { $ne: true } }
+          {
+            estado: {
+              $in: [ESTADOS_PEDIDO.ABIERTO, ESTADOS_PEDIDO.EN_PREPARACION]
+            }
+          },
+          {
+            estado: ESTADOS_PEDIDO.ENTREGADO,
+            recogido: { $ne: true }
+          }
         ]
       })
     } else if (mesero) {
@@ -510,12 +601,17 @@ export class PedidoService {
     if (hoy === 'true') {
       const inicioHoy = new Date()
       inicioHoy.setHours(0, 0, 0, 0)
+
       andClauses.push({
-        $or: [{ createdAt: { $gte: inicioHoy } }, { updatedAt: { $gte: inicioHoy } }]
+        $or: [
+          { createdAt: { $gte: inicioHoy } },
+          { updatedAt: { $gte: inicioHoy } }
+        ]
       })
     } else if (fecha) {
       const inicio = new Date(`${fecha}T00:00:00`)
       const fin = new Date(`${fecha}T23:59:59.999`)
+
       filtro.createdAt = { $gte: inicio, $lte: fin }
     }
 
@@ -533,6 +629,7 @@ export class PedidoService {
               ESTADOS_PEDIDO.ENTREGADO
             ]
           }
+
           filtro.recogido = true
         } else if (incluirRecogidos === 'true') {
           filtro.estado = {
@@ -546,8 +643,18 @@ export class PedidoService {
           // Vista de pedidos activos no recogidos
           andClauses.push({
             $or: [
-              { estado: { $in: [ESTADOS_PEDIDO.ABIERTO, ESTADOS_PEDIDO.EN_PREPARACION] } },
-              { estado: ESTADOS_PEDIDO.ENTREGADO, recogido: { $ne: true } }
+              {
+                estado: {
+                  $in: [
+                    ESTADOS_PEDIDO.ABIERTO,
+                    ESTADOS_PEDIDO.EN_PREPARACION
+                  ]
+                }
+              },
+              {
+                estado: ESTADOS_PEDIDO.ENTREGADO,
+                recogido: { $ne: true }
+              }
             ]
           })
         }
@@ -575,10 +682,16 @@ export class PedidoService {
     }
 
     const pedidos = await this.pedidoRepo.buscarConFiltros(filtro)
+
     if (esCocinero) {
-      return pedidos.map((pedido) => PedidoService.formatearPedidoCocina(pedido))
+      return pedidos.map((pedido) =>
+        PedidoService.formatearPedidoCocina(pedido)
+      )
     }
-    return pedidos.map((pedido) => PedidoService.agregarFechaBoliviaPedido(pedido))
+
+    return pedidos.map((pedido) =>
+      PedidoService.agregarFechaBoliviaPedido(pedido)
+    )
   }
 
   /**
@@ -587,12 +700,23 @@ export class PedidoService {
   async obtenerPedidosCocina(): Promise<any[]> {
     const filtro = {
       $or: [
-        { estado: { $in: [ESTADOS_PEDIDO.ABIERTO, ESTADOS_PEDIDO.EN_PREPARACION] } },
-        { estado: ESTADOS_PEDIDO.ENTREGADO, recogido: { $ne: true } }
+        {
+          estado: {
+            $in: [ESTADOS_PEDIDO.ABIERTO, ESTADOS_PEDIDO.EN_PREPARACION]
+          }
+        },
+        {
+          estado: ESTADOS_PEDIDO.ENTREGADO,
+          recogido: { $ne: true }
+        }
       ]
     }
+
     const pedidos = await this.pedidoRepo.buscarConFiltros(filtro)
-    return pedidos.map((pedido) => PedidoService.formatearPedidoCocina(pedido))
+
+    return pedidos.map((pedido) =>
+      PedidoService.formatearPedidoCocina(pedido)
+    )
   }
 
   /**
@@ -610,9 +734,15 @@ export class PedidoService {
     }
 
     // Regla de titularidad: Mesero responsable o Administrador
-    const meseroResponsableId = pedido.usuario ? pedido.usuario.toString() : ''
-    const esResponsable = !usuarioAuthId || meseroResponsableId === usuarioAuthId
-    const esAdmin = usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
+    const meseroResponsableId = pedido.usuario
+      ? pedido.usuario.toString()
+      : ''
+
+    const esResponsable =
+      !usuarioAuthId || meseroResponsableId === usuarioAuthId
+
+    const esAdmin =
+      usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
 
     if (!esResponsable && !esAdmin) {
       throw new PedidoServiceError(
@@ -661,15 +791,19 @@ export class PedidoService {
     nuevoEstado: string
   ): Promise<ResultadoActualizarEstado> {
     const estadosValidos = Object.values(ESTADOS_PEDIDO) as string[]
+
     if (!estadosValidos.includes(nuevoEstado)) {
       throw new PedidoServiceError(
         400,
-        `Estado no válido: "${nuevoEstado}". Estados permitidos: ${estadosValidos.join(', ')}`
+        `Estado no válido: "${nuevoEstado}". Estados permitidos: ${estadosValidos.join(
+          ', '
+        )}`
       )
     }
 
     // 1. Obtener estado ANTERIOR del pedido
     const pedidoAnterior = await this.pedidoRepo.buscarPorId(pedidoId)
+
     if (!pedidoAnterior) {
       throw new PedidoServiceError(404, 'Pedido no encontrado')
     }
@@ -681,14 +815,21 @@ export class PedidoService {
     // CANCELADO -> (terminal, no permite transiciones)
     // CERRADO -> (terminal, no permite transiciones)
     const transicionesPermitidas: Record<string, string[]> = {
-      [ESTADOS_PEDIDO.ABIERTO]: [ESTADOS_PEDIDO.ABIERTO, ESTADOS_PEDIDO.EN_PREPARACION],
-      [ESTADOS_PEDIDO.EN_PREPARACION]: [ESTADOS_PEDIDO.EN_PREPARACION, ESTADOS_PEDIDO.ENTREGADO],
+      [ESTADOS_PEDIDO.ABIERTO]: [
+        ESTADOS_PEDIDO.ABIERTO,
+        ESTADOS_PEDIDO.EN_PREPARACION
+      ],
+      [ESTADOS_PEDIDO.EN_PREPARACION]: [
+        ESTADOS_PEDIDO.EN_PREPARACION,
+        ESTADOS_PEDIDO.ENTREGADO
+      ],
       [ESTADOS_PEDIDO.ENTREGADO]: [ESTADOS_PEDIDO.ENTREGADO],
       [ESTADOS_PEDIDO.CANCELADO]: [],
       [ESTADOS_PEDIDO.CERRADO]: []
     }
 
     const permitidos = transicionesPermitidas[pedidoAnterior.estado] || []
+
     if (!permitidos.includes(nuevoEstado)) {
       throw new PedidoServiceError(
         400,
@@ -697,10 +838,14 @@ export class PedidoService {
     }
 
     const yaEstabaListo =
-      pedidoAnterior.estado === ESTADOS_PEDIDO.ENTREGADO || pedidoAnterior.estado === 'Listos'
+      pedidoAnterior.estado === ESTADOS_PEDIDO.ENTREGADO ||
+      pedidoAnterior.estado === 'Listos'
 
     // 2. Actualizar estado en BD mediante el repositorio
-    const pedidoActualizado = await this.pedidoRepo.actualizarEstado(pedidoId, nuevoEstado)
+    const pedidoActualizado = await this.pedidoRepo.actualizarEstado(
+      pedidoId,
+      nuevoEstado
+    )
 
     if (!pedidoActualizado) {
       throw new PedidoServiceError(404, 'Pedido no encontrado')
@@ -709,7 +854,9 @@ export class PedidoService {
     // 3. Determinar si el nuevo estado activa la alerta "¡Listo!"
     const esNuevoEstadoListo =
       nuevoEstado === ESTADOS_PEDIDO.ENTREGADO || nuevoEstado === 'Listos'
-    const disparaAlertaListo = esNuevoEstadoListo && !yaEstabaListo
+
+    const disparaAlertaListo =
+      esNuevoEstadoListo && !yaEstabaListo
 
     return { pedidoActualizado, disparaAlertaListo }
   }
@@ -721,7 +868,10 @@ export class PedidoService {
     pedidoId: string,
     nuevoEstado: string
   ): Promise<ResultadoActualizarEstado> {
-    return await pedidoService.actualizarEstadoService(pedidoId, nuevoEstado)
+    return await pedidoService.actualizarEstadoService(
+      pedidoId,
+      nuevoEstado
+    )
   }
 
   /**
@@ -748,14 +898,21 @@ export class PedidoService {
     } = body
 
     const pedidoAnterior = await this.pedidoRepo.buscarPorId(id)
+
     if (!pedidoAnterior) {
       throw new PedidoServiceError(404, 'Pedido no encontrado')
     }
 
     // Regla de titularidad: Mesero responsable o Administrador
-    const meseroResponsableId = pedidoAnterior.usuario ? pedidoAnterior.usuario.toString() : ''
-    const esResponsable = !usuarioAuthId || meseroResponsableId === usuarioAuthId
-    const esAdmin = usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
+    const meseroResponsableId = pedidoAnterior.usuario
+      ? pedidoAnterior.usuario.toString()
+      : ''
+
+    const esResponsable =
+      !usuarioAuthId || meseroResponsableId === usuarioAuthId
+
+    const esAdmin =
+      usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
 
     if (!esResponsable && !esAdmin) {
       throw new PedidoServiceError(
@@ -783,24 +940,50 @@ export class PedidoService {
       )
     }
 
-    if (montoDescuento !== undefined && Number(montoDescuento) < 0) {
-      throw new PedidoServiceError(400, 'El monto de descuento no puede ser negativo')
+    if (
+      montoDescuento !== undefined &&
+      Number(montoDescuento) < 0
+    ) {
+      throw new PedidoServiceError(
+        400,
+        'El monto de descuento no puede ser negativo'
+      )
     }
-    if (montoPropina !== undefined && Number(montoPropina) < 0) {
-      throw new PedidoServiceError(400, 'El monto de propina no puede ser negativo')
+
+    if (
+      montoPropina !== undefined &&
+      Number(montoPropina) < 0
+    ) {
+      throw new PedidoServiceError(
+        400,
+        'El monto de propina no puede ser negativo'
+      )
     }
+
     if (total !== undefined && Number(total) < 0) {
-      throw new PedidoServiceError(400, 'El total no puede ser negativo')
+      throw new PedidoServiceError(
+        400,
+        'El total no puede ser negativo'
+      )
     }
-    if (subtotalCierre !== undefined && Number(subtotalCierre) < 0) {
-      throw new PedidoServiceError(400, 'El subtotal no puede ser negativo')
+
+    if (
+      subtotalCierre !== undefined &&
+      Number(subtotalCierre) < 0
+    ) {
+      throw new PedidoServiceError(
+        400,
+        'El subtotal no puede ser negativo'
+      )
     }
 
     // Allowlist explícita para evitar Mass Assignment
     const updates: Partial<IPedido> & Record<string, any> = {}
 
     if (detalles !== undefined) {
-      const { detallesCalculados, subtotal } = await this.procesarDetallesPedido(detalles)
+      const { detallesCalculados, subtotal } =
+        await this.procesarDetallesPedido(detalles)
+
       updates.detalles = detallesCalculados
       updates.subtotalCierre = subtotal
     }
@@ -813,18 +996,39 @@ export class PedidoService {
       updates.estado = ESTADOS_PEDIDO.ABIERTO
     }
 
-    if (clienteNombre !== undefined) updates.clienteNombre = String(clienteNombre).trim()
-    if (clienteCI !== undefined) updates.clienteCI = String(clienteCI).trim()
-    if (clienteNIT !== undefined) updates.clienteNIT = String(clienteNIT).trim()
-    if (cajeroAsignado !== undefined) updates.cajeroAsignado = cajeroAsignado
-    if (montoDescuento !== undefined) updates.montoDescuento = Number(montoDescuento)
-    if (montoPropina !== undefined) updates.montoPropina = Number(montoPropina)
+    if (clienteNombre !== undefined) {
+      updates.clienteNombre = String(clienteNombre).trim()
+    }
+
+    if (clienteCI !== undefined) {
+      updates.clienteCI = String(clienteCI).trim()
+    }
+
+    if (clienteNIT !== undefined) {
+      updates.clienteNIT = String(clienteNIT).trim()
+    }
+
+    if (cajeroAsignado !== undefined) {
+      updates.cajeroAsignado = cajeroAsignado
+    }
+
+    if (montoDescuento !== undefined) {
+      updates.montoDescuento = Number(montoDescuento)
+    }
+
+    if (montoPropina !== undefined) {
+      updates.montoPropina = Number(montoPropina)
+    }
 
     // Autoridad Financiera: subtotal y total siempre calculados por backend
     const finalSub =
       updates.subtotalCierre !== undefined
         ? updates.subtotalCierre
-        : Number(pedidoAnterior?.subtotalCierre || pedidoAnterior?.total || 0)
+        : Number(
+            pedidoAnterior?.subtotalCierre ||
+              pedidoAnterior?.total ||
+              0
+          )
 
     const finalDesc =
       updates.montoDescuento !== undefined
@@ -841,22 +1045,40 @@ export class PedidoService {
       updates.montoDescuento !== undefined ||
       updates.montoPropina !== undefined
     ) {
-      updates.total = Number(Math.max(0, finalSub - finalDesc + finalProp).toFixed(2))
+      updates.total = Number(
+        Math.max(
+          0,
+          finalSub - finalDesc + finalProp
+        ).toFixed(2)
+      )
+
       if (
         !updates.subtotalCierre &&
-        (!pedidoAnterior?.subtotalCierre || pedidoAnterior.subtotalCierre === 0)
+        (!pedidoAnterior?.subtotalCierre ||
+          pedidoAnterior.subtotalCierre === 0)
       ) {
         updates.subtotalCierre = finalSub
       }
     }
 
-    const pedidoActualizado = await this.pedidoRepo.actualizar(id, updates)
+    const pedidoActualizado = await this.pedidoRepo.actualizar(
+      id,
+      updates
+    )
+
     if (!pedidoActualizado) {
-      throw new PedidoServiceError(404, 'Pedido no encontrado')
+      throw new PedidoServiceError(
+        404,
+        'Pedido no encontrado'
+      )
     }
 
     let mesaReactivada: any = null
-    if (pedidoActualizado.mesa && updates.estado === ESTADOS_PEDIDO.ABIERTO) {
+
+    if (
+      pedidoActualizado.mesa &&
+      updates.estado === ESTADOS_PEDIDO.ABIERTO
+    ) {
       const mesaId =
         typeof pedidoActualizado.mesa === 'object'
           ? (pedidoActualizado.mesa as any)._id
@@ -869,10 +1091,14 @@ export class PedidoService {
     }
 
     return {
-      pedidoActualizado: PedidoService.agregarFechaBoliviaPedido(pedidoActualizado),
+      pedidoActualizado:
+        PedidoService.agregarFechaBoliviaPedido(
+          pedidoActualizado
+        ),
       pedidoDoc: pedidoActualizado,
       mesaReactivada,
-      reabierto: updates.estado === ESTADOS_PEDIDO.ABIERTO,
+      reabierto:
+        updates.estado === ESTADOS_PEDIDO.ABIERTO,
       cajeroAsignado
     }
   }
@@ -880,18 +1106,38 @@ export class PedidoService {
   /**
    * Obtiene pedidos de mesas con cuenta solicitada formateados para caja
    */
-  async obtenerPedidosPendientesCobro(cajero?: string): Promise<any[]> {
-    const todasLasMesas = await this.mesaRepo.buscarTodos()
-    const mesasConCuentaSolicitada = todasLasMesas.filter(
-      (mesa) => mesa.estado === ESTADOS_MESA.CUENTA_SOLICITADA
-    )
+  async obtenerPedidosPendientesCobro(
+    cajero?: string
+  ): Promise<any[]> {
+    const todasLasMesas =
+      await this.mesaRepo.buscarTodos()
 
-    const mesaIds = mesasConCuentaSolicitada.map((mesa) => mesa._id)
-    const pedidos = await this.pedidoRepo.buscarPendientesCobro(mesaIds, cajero)
+    const mesasConCuentaSolicitada =
+      todasLasMesas.filter(
+        (mesa) =>
+          mesa.estado === ESTADOS_MESA.CUENTA_SOLICITADA
+      )
+
+    const mesaIds =
+      mesasConCuentaSolicitada.map(
+        (mesa) => mesa._id
+      )
+
+    const pedidos =
+      await this.pedidoRepo.buscarPendientesCobro(
+        mesaIds,
+        cajero
+      )
 
     return pedidos.map((pedido: any) => ({
-      ...PedidoService.formatearPayloadCaja(pedido),
-      fechaHoraBolivia: pedido.fechaHora ? formatearFechaBolivia(pedido.fechaHora) : undefined
+      ...PedidoService.formatearPayloadCaja(
+        pedido
+      ),
+      fechaHoraBolivia: pedido.fechaHora
+        ? formatearFechaBolivia(
+            pedido.fechaHora
+          )
+        : undefined
     }))
   }
 
@@ -903,16 +1149,29 @@ export class PedidoService {
     usuarioAuthId?: string,
     usuarioRol?: string
   ): Promise<ResultadoSolicitarCuenta> {
-    const pedido = await this.pedidoRepo.buscarPorId(id)
+    const pedido =
+      await this.pedidoRepo.buscarPorId(id)
 
     if (!pedido) {
-      throw new PedidoServiceError(404, 'Pedido no encontrado')
+      throw new PedidoServiceError(
+        404,
+        'Pedido no encontrado'
+      )
     }
 
     // Regla de titularidad: Mesero responsable o Administrador
-    const meseroResponsableId = pedido.usuario ? pedido.usuario.toString() : ''
-    const esResponsable = !usuarioAuthId || meseroResponsableId === usuarioAuthId
-    const esAdmin = usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
+    const meseroResponsableId =
+      pedido.usuario
+        ? pedido.usuario.toString()
+        : ''
+
+    const esResponsable =
+      !usuarioAuthId ||
+      meseroResponsableId === usuarioAuthId
+
+    const esAdmin =
+      usuarioRol === 'Administrador' ||
+      usuarioRol === 'superadmin'
 
     if (!esResponsable && !esAdmin) {
       throw new PedidoServiceError(
@@ -938,22 +1197,35 @@ export class PedidoService {
       )
     }
 
-    const mesaActualizada = await this.mesaRepo.actualizarEstado(
-      pedido.mesa.toString(),
-      ESTADOS_MESA.CUENTA_SOLICITADA
-    )
+    const mesaActualizada =
+      await this.mesaRepo.actualizarEstado(
+        pedido.mesa.toString(),
+        ESTADOS_MESA.CUENTA_SOLICITADA
+      )
 
     if (!mesaActualizada) {
-      throw new PedidoServiceError(404, 'Mesa no encontrada')
+      throw new PedidoServiceError(
+        404,
+        'Mesa no encontrada'
+      )
     }
 
-    const pedidoPoblado = await this.pedidoRepo.buscarPorIdPobladoCaja(id)
-    const payload = PedidoService.formatearPayloadCaja(pedidoPoblado, mesaActualizada)
+    const pedidoPoblado =
+      await this.pedidoRepo.buscarPorIdPobladoCaja(
+        id
+      )
+
+    const payload =
+      PedidoService.formatearPayloadCaja(
+        pedidoPoblado,
+        mesaActualizada
+      )
 
     return {
       payload,
       mesaActualizada,
-      cajeroAsignado: pedidoPoblado?.cajeroAsignado
+      cajeroAsignado:
+        pedidoPoblado?.cajeroAsignado
     }
   }
 
@@ -973,16 +1245,27 @@ export class PedidoService {
     pedido: any
   }> {
     if (!Types.ObjectId.isValid(id)) {
-      throw new PedidoServiceError(400, 'ID de pedido inválido')
+      throw new PedidoServiceError(
+        400,
+        'ID de pedido inválido'
+      )
     }
 
-    const pedido = await this.pedidoRepo.buscarPorId(id)
+    const pedido =
+      await this.pedidoRepo.buscarPorId(id)
+
     if (!pedido) {
-      throw new PedidoServiceError(404, 'Pedido no encontrado')
+      throw new PedidoServiceError(
+        404,
+        'Pedido no encontrado'
+      )
     }
 
     // 1. Regla de estado: solo pedidos en estado ENTREGADO pueden ser recogidos
-    if (pedido.estado !== ESTADOS_PEDIDO.ENTREGADO) {
+    if (
+      pedido.estado !==
+      ESTADOS_PEDIDO.ENTREGADO
+    ) {
       throw new PedidoServiceError(
         400,
         `No se puede marcar como recogido un pedido en estado "${pedido.estado}". Solo se pueden recoger pedidos en estado "${ESTADOS_PEDIDO.ENTREGADO}".`
@@ -998,9 +1281,17 @@ export class PedidoService {
     }
 
     // 3. Regla de autorización: Mesero responsable o Administrador
-    const meseroResponsableId = pedido.usuario ? pedido.usuario.toString() : ''
-    const esResponsable = meseroResponsableId === usuarioAuthId
-    const esAdmin = usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
+    const meseroResponsableId =
+      pedido.usuario
+        ? pedido.usuario.toString()
+        : ''
+
+    const esResponsable =
+      meseroResponsableId === usuarioAuthId
+
+    const esAdmin =
+      usuarioRol === 'Administrador' ||
+      usuarioRol === 'superadmin'
 
     if (!esResponsable && !esAdmin) {
       throw new PedidoServiceError(
@@ -1011,27 +1302,38 @@ export class PedidoService {
 
     // 4. Persistir recogida sin alterar la máquina de estados del pedido
     const fechaRecogida = new Date()
-    const pedidoActualizado = await this.pedidoRepo.marcarComoRecogido(
-      id,
-      usuarioAuthId,
-      fechaRecogida
-    )
+
+    const pedidoActualizado =
+      await this.pedidoRepo.marcarComoRecogido(
+        id,
+        usuarioAuthId,
+        fechaRecogida
+      )
 
     if (!pedidoActualizado) {
-      throw new PedidoServiceError(404, 'Error al actualizar el pedido')
+      throw new PedidoServiceError(
+        404,
+        'Error al actualizar el pedido'
+      )
     }
 
-    const pedidoConFechaBolivia = PedidoService.agregarFechaBoliviaPedido(pedidoActualizado)
+    const pedidoConFechaBolivia =
+      PedidoService.agregarFechaBoliviaPedido(
+        pedidoActualizado
+      )
 
     return {
-      mensaje: 'Pedido marcado como recogido exitosamente',
+      mensaje:
+        'Pedido marcado como recogido exitosamente',
       recogido: true,
       recogidoPor: usuarioAuthId,
       fechaRecogida,
-      fechaRecogidaBolivia: pedidoConFechaBolivia.fechaRecogidaBolivia,
+      fechaRecogidaBolivia:
+        pedidoConFechaBolivia.fechaRecogidaBolivia,
       pedido: pedidoConFechaBolivia
     }
   }
 }
 
-export const pedidoService = new PedidoService()
+export const pedidoService =
+  new PedidoService()

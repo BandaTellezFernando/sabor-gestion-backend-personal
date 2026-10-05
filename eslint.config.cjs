@@ -4,9 +4,24 @@ const tsPlugin = require('@typescript-eslint/eslint-plugin')
 
 module.exports = [
   js.configs.recommended,
+
   {
     ignores: ['dist/**', 'node_modules/**']
   },
+
+  {
+    files: ['*.cjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'commonjs',
+      globals: {
+        __dirname: 'readonly',
+        process: 'readonly',
+        console: 'readonly'
+      }
+    }
+  },
+
   {
     files: ['src/**/*.ts'],
     languageOptions: {

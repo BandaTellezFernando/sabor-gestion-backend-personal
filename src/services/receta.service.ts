@@ -189,6 +189,28 @@ export class RecetaService {
       )
     }
 
+    // Validar cantidad y duplicados
+    const uniqueIds = new Set<string>()
+    for (const ing of ingredientes) {
+      if (ing.cantidadNecesaria <= 0) {
+        throw new RecetaServiceError(400, 'La cantidad necesaria debe ser mayor a 0')
+      }
+      const ingId = String(ing.ingrediente)
+      if (uniqueIds.has(ingId)) {
+        throw new RecetaServiceError(400, 'No se puede duplicar el mismo ingrediente en la receta')
+      }
+      uniqueIds.add(ingId)
+    }
+
+    // Validar existencia de ingredientes
+    // Import ingredienteRepo to do this (I will just use mongoose.model)
+    const mongoose = require('mongoose')
+    const Ingrediente = mongoose.model('Ingrediente')
+    const foundIngredients = await Ingrediente.find({ _id: { $in: Array.from(uniqueIds) } })
+    if (foundIngredients.length !== uniqueIds.size) {
+      throw new RecetaServiceError(404, 'Uno o más ingredientes especificados no existen')
+    }
+
     const platoExiste = await this.platoRepo.buscarPorId(String(plato))
     if (!platoExiste) {
       throw new RecetaServiceError(

@@ -102,6 +102,100 @@ export class InventarioService {
       faltantes
     }
   }
+
+  /**
+   * Agrupa los consumos de todos los platos, verifica el stock numéricamente
+   * y lo descuenta de la base de datos atómicamente.
+   */
+  async verificarYDescontarStock(items: ItemValidacionInventario[], session?: any): Promise<{ success: boolean; errores: string[]; faltantes: any[] }> {
+    const mongoose = require('mongoose')
+    const IngredienteModel = mongoose.model('Ingrediente')
+    
+    const errores: string[] = []
+    const faltantes: any[] = []
+    
+    // 1. Agrupar consumos
+    const consumoPorIngrediente = new Map<string, { cantidad: number; nombrePlatos: Set<string> }>()
+    
+    for (const item of items) {
+      const plato = await this.platoRepo.buscarPorId(String(item.platoId))
+      const nombrePlato = plato ? plato.nombre : 'Plato Desconocido'
+      
+      const receta = await this.recetaRepo.buscarPorPlatoIdConIngredientes(String(item.platoId))
+      if (!receta || !receta.ingredientes || receta.ingredientes.length === 0) {
+        errores.push(`El plato no tiene una receta configurada`)
+        faltantes.push({ plato: nombrePlato, mensaje: 'El plato no tiene una receta configurada' })
+        continue
+      }
+      
+      for (const reqIng of receta.ingredientes) {
+        const ingredienteDoc: any = reqIng.ingrediente
+        if (!esIngredientePoblado(ingredienteDoc) || !ingredienteDoc.nombre) continue
+        
+        if (debeExcluirIngrediente(item.observacion || '', ingredienteDoc.nombre)) continue
+        
+        const ingId = String((ingredienteDoc as any)._id)
+        const consumoTotalItem = item.cantidad * reqIng.cantidadNecesaria
+        
+        if (!consumoPorIngrediente.has(ingId)) {
+          consumoPorIngrediente.set(ingId, { cantidad: 0, nombrePlatos: new Set() })
+        }
+        const data = consumoPorIngrediente.get(ingId)!
+        data.cantidad += consumoTotalItem
+        data.nombrePlatos.add(nombrePlato)
+      }
+    }
+    
+    if (errores.length > 0) {
+      return { success: false, errores, faltantes: faltantes.map(f => ({ plato: f.plato, mensaje: f.mensaje })) }
+    }
+    
+    // 2. Verificar stock
+    const ingredienteIds = Array.from(consumoPorIngrediente.keys())
+    const ingredientesDB = await IngredienteModel.find({ _id: { $in: ingredienteIds } }).session(session)
+    
+    const mapIngredientes = new Map<string, any>()
+    for (const ing of ingredientesDB) {
+      mapIngredientes.set(String(ing._id), ing)
+    }
+    
+    for (const [ingId, reqData] of consumoPorIngrediente.entries()) {
+      const ingrediente = mapIngredientes.get(ingId)
+      if (!ingrediente) {
+        errores.push(`Ingrediente no encontrado en BD.`)
+        continue
+      }
+      
+      if (ingrediente.stockActual < reqData.cantidad) {
+        faltantes.push({
+          ingrediente: ingrediente.nombre,
+          disponible: ingrediente.stockActual,
+          requerido: reqData.cantidad,
+          faltante: Number((reqData.cantidad - ingrediente.stockActual).toFixed(3)),
+          unidad: ingrediente.unidadMedida
+        })
+      }
+    }
+    
+    if (faltantes.length > 0 || errores.length > 0) {
+      return { success: false, errores, faltantes }
+    }
+    
+    // 3. Descontar stock
+    for (const [ingId, reqData] of consumoPorIngrediente.entries()) {
+      const updated = await IngredienteModel.findOneAndUpdate(
+        { _id: ingId, stockActual: { $gte: reqData.cantidad } },
+        { $inc: { stockActual: -reqData.cantidad } },
+        { session, returnDocument: 'after' }
+      )
+      if (!updated) {
+        // Concurrency error
+        throw new Error(`Condición de carrera: El stock de un ingrediente cambió y ya no es suficiente.`)
+      }
+    }
+    
+    return { success: true, errores: [], faltantes: [] }
+  }
 }
 
 export const inventarioService = new InventarioService()

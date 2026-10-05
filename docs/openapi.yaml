@@ -3046,6 +3046,20 @@ components:
         categoria:
           type: string
           example: "{{categoriaId}}"
+        ingredientes:
+          type: array
+          items:
+            type: object
+            required:
+              - ingrediente
+              - cantidadNecesaria
+            properties:
+              ingrediente:
+                type: string
+                example: "000000000000000000000050"
+              cantidadNecesaria:
+                type: number
+                example: 0.25
     ActualizarPlatoRequest:
       type: object
       properties:
@@ -3262,6 +3276,9 @@ components:
         disponible:
           type: boolean
           example: true
+        stockActual:
+          type: number
+          example: 50
         fechaRegistro:
           type: string
           format: date-time
@@ -3286,6 +3303,9 @@ components:
         disponible:
           type: boolean
           example: true
+        stockActual:
+          type: number
+          example: 20
     CrearIngredienteResponse:
       type: object
       properties:
@@ -3306,6 +3326,9 @@ components:
         disponible:
           type: boolean
           example: true
+        stockActual:
+          type: number
+          example: 20
     ActualizarIngredienteResponse:
       type: object
       properties:
@@ -3607,9 +3630,31 @@ components:
         faltantes:
           type: array
           items:
-            type: string
-          example:
-            - Lomo de Res
+            type: object
+            properties:
+              ingrediente:
+                type: string
+                example: "Lomo de Res"
+              disponible:
+                type: number
+                example: 1.5
+              requerido:
+                type: number
+                example: 2.0
+              faltante:
+                type: number
+                example: 0.5
+              unidad:
+                type: string
+                example: "kilos"
+              plato:
+                type: string
+                description: Opcional. Usado si el error es de receta faltante.
+                example: "Pique Macho"
+              mensaje:
+                type: string
+                description: Opcional. Mensaje de error para plato.
+                example: "El plato no tiene una receta configurada"
     ActualizarPedidoRequest:
       type: object
       properties:

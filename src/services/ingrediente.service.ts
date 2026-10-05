@@ -20,6 +20,7 @@ export interface IngredienteInputDTO {
   nombre?: string
   unidadMedida?: string
   disponible?: boolean | string
+  stockActual?: number | string
 }
 
 export interface IngredienteResponseDTO {
@@ -28,6 +29,7 @@ export interface IngredienteResponseDTO {
   nombre: string
   unidadMedida: string
   disponible: boolean
+  stockActual: number
   fechaRegistro?: Date
   createdAt?: Date
   updatedAt?: Date
@@ -59,6 +61,7 @@ export class IngredienteService {
       nombre: raw.nombre || '',
       unidadMedida: raw.unidadMedida || '',
       disponible: raw.disponible !== undefined ? Boolean(raw.disponible) : true,
+      stockActual: Number(raw.stockActual || 0),
       fechaRegistro: raw.fechaRegistro,
       createdAt: raw.createdAt,
       updatedAt: raw.updatedAt
@@ -85,7 +88,7 @@ export class IngredienteService {
   }
 
   /**
-   * Valida reglas de negocio y crea un nuevo ingrediente con disponibilidad booleana
+   * Valida reglas de negocio y crea un nuevo ingrediente con disponibilidad booleana y stockActual
    */
   async crearIngrediente(body: IngredienteInputDTO): Promise<IngredienteResponseDTO> {
     const nombre = body.nombre ? String(body.nombre).trim() : ''
@@ -96,6 +99,14 @@ export class IngredienteService {
         400,
         'El nombre y la unidad de medida son obligatorios.'
       )
+    }
+
+    let stockActual = 0
+    if (body.stockActual !== undefined) {
+      stockActual = Number(body.stockActual)
+      if (isNaN(stockActual) || stockActual < 0) {
+        throw new IngredienteServiceError(400, 'El stock actual no puede ser negativo.')
+      }
     }
 
     const duplicado = await this.ingredienteRepo.buscarPorNombre(nombre)
@@ -111,7 +122,8 @@ export class IngredienteService {
     const nuevoIngrediente = await this.ingredienteRepo.crear({
       nombre,
       unidadMedida,
-      disponible
+      disponible,
+      stockActual
     })
     return this.toDTO(nuevoIngrediente)
   }
@@ -147,8 +159,24 @@ export class IngredienteService {
       }
       update.nombre = nombreNormalizado
     }
-    if (body.unidadMedida !== undefined) update.unidadMedida = String(body.unidadMedida).trim()
+   if (body.unidadMedida !== undefined) {
+  const unidadSolicitada = String(body.unidadMedida).trim()
+
+  if (unidadSolicitada !== existente.unidadMedida) {
+    throw new IngredienteServiceError(
+      400,
+      'La unidad de medida no puede modificarse después de crear el ingrediente.'
+    )
+  }
+}
     if (body.disponible !== undefined) update.disponible = Boolean(body.disponible)
+    if (body.stockActual !== undefined) {
+      const stock = Number(body.stockActual)
+      if (isNaN(stock) || stock < 0) {
+        throw new IngredienteServiceError(400, 'El stock actual no puede ser negativo.')
+      }
+      update.stockActual = stock
+    }
 
     const actualizado = await this.ingredienteRepo.actualizar(id, update)
     if (!actualizado) {

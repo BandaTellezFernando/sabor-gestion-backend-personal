@@ -18,7 +18,11 @@ const RecetaIngredienteSchema = new Schema(
       ref: 'Ingrediente',
       required: true
     },
-    cantidadNecesaria: { type: Number, required: true, min: 0 }
+    cantidadNecesaria: { 
+      type: Number, 
+      required: true, 
+      min: [0.000001, 'La cantidad necesaria debe ser mayor a 0'] 
+    }
   },
   { _id: false }
 )

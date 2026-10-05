@@ -28,9 +28,9 @@ export class PedidoRepository {
   /**
    * Crea y persiste un nuevo pedido en MongoDB
    */
-  async crear(datos: PedidoCrearDatos): Promise<IPedido> {
+  async crear(datos: PedidoCrearDatos, session?: any): Promise<IPedido> {
     const nuevoPedido = new Pedido(datos)
-    return await nuevoPedido.save()
+    return await nuevoPedido.save(session ? { session } : undefined)
   }
 
   /**

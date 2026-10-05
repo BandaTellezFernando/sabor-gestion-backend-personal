@@ -5,6 +5,7 @@ export interface IIngrediente extends Document {
   nombre: string
   unidadMedida: string
   disponible: boolean
+  stockActual: number
   fechaRegistro: Date
 }
 
@@ -17,6 +18,7 @@ const IngredienteSchema = new Schema(
       trim: true
     },
     disponible: { type: Boolean, default: true },
+    stockActual: { type: Number, required: true, default: 0, min: 0 },
     fechaRegistro: { type: Date, default: Date.now }
   },
   {

@@ -99,7 +99,7 @@ export class PlatoService {
    * Valida reglas de negocio y crea un nuevo plato
    */
   async crearPlato(datos: any): Promise<PlatoResponseDTO> {
-    const { nombre, descripcion, precio, imagenUrl, imagenPublicId, categoria } = datos
+    const { nombre, descripcion, precio, imagenUrl, imagenPublicId, categoria, ingredientes } = datos
 
     if (!imagenUrl || !imagenPublicId) {
       throw new PlatoServiceError(
@@ -107,16 +107,79 @@ export class PlatoService {
         'Se requiere subir una imagen primero usando POST /api/upload'
       )
     }
+    
+    // REGLA: Un plato vendible debe tener una receta. Si no mandan ingredientes, no podemos crearlo con receta,
+    // o al menos validamos. El prompt dice "NO permitir crear un Plato vendible sin Recipe válida."
+    // Asumimos que los ingredientes vienen en la solicitud.
+    if (!ingredientes || !Array.isArray(ingredientes) || ingredientes.length === 0) {
+      throw new PlatoServiceError(400, 'Debe especificar los ingredientes (receta) para crear el plato')
+    }
 
-    const nuevoPlato = await this.platoRepo.crear({
-      nombre,
-      descripcion,
-      precio,
-      imagenUrl,
-      imagenPublicId,
-      categoria
-    })
-    return this.toDTO(nuevoPlato)
+    // Usar sesión si es posible para asegurar consistencia
+    const mongoose = require('mongoose')
+    let session = null
+    try {
+      session = await mongoose.startSession()
+      session.startTransaction()
+    } catch {
+      throw new PlatoServiceError(500, 'El servidor MongoDB no soporta transacciones (requiere Replica Set). No se puede garantizar la creación atómica de Plato y Receta.')
+    }
+
+    let nuevoPlato
+    try {
+      const PlatoModel = mongoose.model('Plato')
+      const newPlatoArr = await PlatoModel.create([{
+        nombre,
+        descripcion,
+        precio,
+        imagenUrl,
+        imagenPublicId,
+        categoria
+      }], { session })
+      nuevoPlato = newPlatoArr[0]
+      
+      // We do manual validation and creation to use session
+      const RecetaModel = mongoose.model('Receta')
+      
+      const uniqueIds = new Set<string>()
+      for (const ing of ingredientes) {
+        if (ing.cantidadNecesaria <= 0) {
+          throw new Error('La cantidad necesaria debe ser mayor a 0')
+        }
+        const ingId = String(ing.ingrediente)
+        if (uniqueIds.has(ingId)) {
+          throw new Error('No se puede duplicar el mismo ingrediente en la receta')
+        }
+        uniqueIds.add(ingId)
+      }
+
+      const IngredienteModel = mongoose.model('Ingrediente')
+      const foundIngredients = await IngredienteModel.find({ _id: { $in: Array.from(uniqueIds) } }).session(session)
+      if (foundIngredients.length !== uniqueIds.size) {
+        throw new Error('Uno o más ingredientes especificados no existen')
+      }
+
+      await RecetaModel.create([{
+        plato: nuevoPlato._id,
+        ingredientes
+      }], { session })
+
+      if (session) {
+        await session.commitTransaction()
+      }
+    } catch (error) {
+      if (session) {
+        await session.abortTransaction()
+      }
+      throw new PlatoServiceError(400, error instanceof Error ? error.message : 'Error al crear plato y receta')
+    } finally {
+      if (session) {
+        session.endSession()
+      }
+    }
+
+    const platoCreado = await this.platoRepo.buscarPorId(nuevoPlato._id.toString())
+    return this.toDTO(platoCreado)
   }
 
   /**
