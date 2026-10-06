@@ -11,6 +11,7 @@ import {
   formatearFechaBolivia,
   formatearFechaHoraBolivia
 } from '../utils/fechaBolivia'
+import { getIO } from '../socket/socket'
 
 export class UsuarioServiceError extends Error {
   constructor(
@@ -338,6 +339,19 @@ export class UsuarioService {
       })
     }
 
+    // 4. Notificar vía socket si el usuario es desactivado
+    if (estadoBool === false) {
+      try {
+        const io = getIO()
+        io.to(`user:${id}`).emit('auth:unauthorized', {
+          mensaje: 'Tu cuenta ha sido desactivada por un administrador.',
+          usuarioId: id
+        })
+      } catch (e) {
+        console.error('No se pudo emitir evento socket auth:unauthorized', e)
+      }
+    }
+
     return {
       estado: estadoBool,
       usuario: this.normalizarUsuario(usuarioActualizado)
@@ -351,6 +365,16 @@ export class UsuarioService {
     const eliminado = await this.usuarioRepo.eliminar(id)
     if (!eliminado) {
       throw new UsuarioServiceError(404, 'Usuario no encontrado')
+    }
+
+    try {
+      const io = getIO()
+      io.to(`user:${id}`).emit('auth:unauthorized', {
+        mensaje: 'Tu cuenta ha sido eliminada del sistema.',
+        usuarioId: id
+      })
+    } catch (e) {
+      console.error('No se pudo emitir evento socket auth:unauthorized', e)
     }
   }
 
