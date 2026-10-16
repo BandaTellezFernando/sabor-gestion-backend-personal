@@ -46,7 +46,7 @@ export class PedidoRepository {
   async buscarPorIdPoblado(id: string | Types.ObjectId): Promise<IPedido | null> {
     return await Pedido.findById(id)
       .populate('detalles.plato', 'nombre precio')
-      .populate('mesa', 'numero')
+      .populate('mesa', 'numero estado')
       .populate('usuario', 'nombre apellido apellidos')
       .populate('recogidoPor', 'nombre apellido apellidos')
   }
@@ -95,7 +95,7 @@ export class PedidoRepository {
    */
   async buscarConFiltros(filtro: Record<string, any>): Promise<IPedido[]> {
     return await Pedido.find(filtro)
-      .populate('mesa', 'numero')
+      .populate('mesa', 'numero estado')
       .populate('usuario', 'nombre apellido apellidos')
       .populate('cajeroAsignado', 'nombre apellido')
       .populate('recogidoPor', 'nombre apellido apellidos')
@@ -127,7 +127,7 @@ export class PedidoRepository {
       },
       { returnDocument: 'after', session }
     )
-      .populate('mesa', 'numero')
+      .populate('mesa', 'numero estado')
       .populate('usuario', 'nombre apellido apellidos')
       .populate('recogidoPor', 'nombre apellido apellidos')
       .populate('detalles.plato', 'nombre precio')
@@ -147,7 +147,7 @@ export class PedidoRepository {
       { returnDocument: 'after', session }
     )
       .populate('detalles.plato', 'nombre precio')
-      .populate('mesa', 'numero')
+      .populate('mesa', 'numero estado')
       .populate('usuario', 'nombre apellido apellidos')
   }
 
@@ -164,7 +164,7 @@ export class PedidoRepository {
       { estado: nuevoEstado },
       { returnDocument: 'after', session }
     )
-      .populate('mesa', 'numero')
+      .populate('mesa', 'numero estado')
       .populate('detalles.plato', 'nombre precio')
       .populate('usuario', 'nombre apellido')
   }

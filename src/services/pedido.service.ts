@@ -788,6 +788,20 @@ try {
       )
     }
 
+    // Impedir cancelar y liberar una mesa después de solicitar la cuenta.
+    if (pedido.mesa) {
+      const mesaPedido = await this.mesaRepo.buscarPorId(
+        pedido.mesa.toString()
+      )
+
+      if (mesaPedido?.estado === ESTADOS_MESA.CUENTA_SOLICITADA) {
+        throw new PedidoServiceError(
+          400,
+          'No se puede cancelar un pedido cuya mesa ya tiene la cuenta solicitada.'
+        )
+      }
+    }
+
     if (
       pedido.estado !== ESTADOS_PEDIDO.ABIERTO &&
       pedido.estado !== ESTADOS_PEDIDO.EN_PREPARACION
@@ -958,6 +972,20 @@ try {
       )
     }
 
+    // Bloquear cualquier modificación si ya se solicitó la cuenta de la mesa.
+    if (pedidoAnterior.mesa) {
+      const mesaPedido = await this.mesaRepo.buscarPorId(
+        pedidoAnterior.mesa.toString()
+      )
+
+      if (mesaPedido?.estado === ESTADOS_MESA.CUENTA_SOLICITADA) {
+        throw new PedidoServiceError(
+          400,
+          'No se puede modificar un pedido cuya mesa ya tiene la cuenta solicitada.'
+        )
+      }
+    }
+
     // 🛡️ Regla de inmutabilidad: Pedidos CERRADO o CANCELADO no admiten modificaciones
     if (
       pedidoAnterior.estado === ESTADOS_PEDIDO.CERRADO ||
@@ -1030,7 +1058,13 @@ try {
       pedidoAnterior.estado === ESTADOS_PEDIDO.ENTREGADO &&
       detalles !== undefined
     ) {
+      // Los nuevos platos aún deben prepararse y recogerse.
       updates.estado = ESTADOS_PEDIDO.ABIERTO
+      updates.recogido = false
+      Object.assign(updates, {
+        fechaRecogida: null,
+        recogidoPor: null
+      })
     }
 
     if (clienteNombre !== undefined) {
@@ -1231,6 +1265,16 @@ try {
       throw new PedidoServiceError(
         400,
         'No se puede solicitar cuenta de un pedido que ya está cerrado o cancelado.'
+      )
+    }
+
+    if (
+      pedido.estado !== ESTADOS_PEDIDO.ENTREGADO ||
+      pedido.recogido !== true
+    ) {
+      throw new PedidoServiceError(
+        400,
+        'Solo se puede solicitar la cuenta cuando el pedido está entregado y recogido.'
       )
     }
 
