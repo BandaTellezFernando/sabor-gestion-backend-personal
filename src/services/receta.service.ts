@@ -6,6 +6,11 @@ import {
   IRecetaIngredienteInput
 } from '../repositories/receta.repo'
 import { PlatoRepository, platoRepository } from '../repositories/plato.repo'
+import {
+  esUnidadMedida,
+  obtenerFamiliaUnidad,
+  validarCantidadParaUnidad,
+} from '../utils/unidades'
 
 export class RecetaServiceError extends Error {
   constructor(
@@ -32,7 +37,7 @@ export interface RecetaResponseDTO {
 }
 
 export interface ResultadoGuardarReceta {
-  accion: 'creada' | 'actualizada'
+  accion: 'actualizada'
   receta: RecetaResponseDTO
 }
 
@@ -129,7 +134,8 @@ export class RecetaService {
           }
           return {
             ingrediente: ing,
-            cantidadNecesaria: Number(itemRaw.cantidadNecesaria || 0)
+            cantidadNecesaria: Number(itemRaw.cantidadNecesaria || 0),
+            unidadMedida: itemRaw.unidadMedida || '',
           }
         })
       : []
@@ -189,12 +195,23 @@ export class RecetaService {
       )
     }
 
-    // Validar cantidad y duplicados
+    // Validar cantidades, unidades y duplicados.
     const uniqueIds = new Set<string>()
     for (const ing of ingredientes) {
-      if (ing.cantidadNecesaria <= 0) {
-        throw new RecetaServiceError(400, 'La cantidad necesaria debe ser mayor a 0')
+      if (!ing || typeof ing !== 'object') {
+        throw new RecetaServiceError(400, 'Cada ingrediente de la receta debe ser válido.')
       }
+      const cantidad = Number(ing.cantidadNecesaria)
+      if (!Number.isFinite(cantidad) || cantidad <= 0) {
+        throw new RecetaServiceError(400, 'La cantidad necesaria debe ser finita y mayor a 0.')
+      }
+      if (!esUnidadMedida(ing.unidadMedida)) {
+        throw new RecetaServiceError(400, 'Cada ingrediente debe tener una unidad válida: kg, g, mg, L, ml o unidad.')
+      }
+      if (!validarCantidadParaUnidad(cantidad, ing.unidadMedida)) {
+        throw new RecetaServiceError(400, 'La cantidad no es válida para su unidad; las unidades contables deben ser enteras.')
+      }
+      ing.cantidadNecesaria = cantidad
       const ingId = String(ing.ingrediente)
       if (uniqueIds.has(ingId)) {
         throw new RecetaServiceError(400, 'No se puede duplicar el mismo ingrediente en la receta')
@@ -211,6 +228,25 @@ export class RecetaService {
       throw new RecetaServiceError(404, 'Uno o más ingredientes especificados no existen')
     }
 
+    const ingredientesPorId = new Map<string, any>()
+    for (const ingrediente of foundIngredients) {
+      ingredientesPorId.set(String(ingrediente._id), ingrediente)
+    }
+    for (const ing of ingredientes) {
+      const ingrediente = ingredientesPorId.get(String(ing.ingrediente))
+      if (!ingrediente) {
+        throw new RecetaServiceError(404, 'Uno o más ingredientes especificados no existen')
+      }
+      const familiaStock = obtenerFamiliaUnidad(String(ingrediente.unidadMedida || ''))
+      const familiaReceta = obtenerFamiliaUnidad(ing.unidadMedida)
+      if (!familiaStock || familiaStock !== familiaReceta) {
+        throw new RecetaServiceError(
+          400,
+          `La unidad ${ing.unidadMedida} no es compatible con el stock (${ingrediente.unidadMedida}) del ingrediente ${ingrediente.nombre}.`,
+        )
+      }
+    }
+
     const platoExiste = await this.platoRepo.buscarPorId(String(plato))
     if (!platoExiste) {
       throw new RecetaServiceError(
@@ -220,25 +256,20 @@ export class RecetaService {
     }
 
     const recetaExistente = await this.recetaRepo.buscarPorPlatoId(String(plato))
-
-    if (recetaExistente) {
-      const recetaActualizada = await this.recetaRepo.actualizarIngredientes(
-        recetaExistente._id.toString(),
-        ingredientes
+    if (!recetaExistente) {
+      throw new RecetaServiceError(
+        404,
+        'El plato no tiene una receta registrada. La receta se crea al registrar el plato.',
       )
-      return {
-        accion: 'actualizada',
-        receta: this.toDTO(recetaActualizada || recetaExistente)
-      }
-    } else {
-      const nuevaReceta = await this.recetaRepo.crear({
-        plato,
-        ingredientes
-      })
-      return {
-        accion: 'creada',
-        receta: this.toDTO(nuevaReceta)
-      }
+    }
+
+    const recetaActualizada = await this.recetaRepo.actualizarIngredientes(
+      recetaExistente._id.toString(),
+      ingredientes
+    )
+    return {
+      accion: 'actualizada',
+      receta: this.toDTO(recetaActualizada || recetaExistente)
     }
   }
 

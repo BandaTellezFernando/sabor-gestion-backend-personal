@@ -6,6 +6,15 @@ const http = require('http');
 
 const PORT = 3000;
 
+let db = null;
+let categoriaId = null;
+let categoriaCreadaId = null;
+let categoriaNombrePrueba = null;
+let ingredientePapasId = null;
+let ingredienteNombrePrueba = null;
+let platoId = null;
+let platoNombrePrueba = null;
+
 async function request(method, path, body = null, headers = {}) {
   return new Promise((resolve, reject) => {
     const options = {
@@ -59,11 +68,77 @@ function getEntityId(data, property = null) {
   return data?._id || data?.id;
 }
 
+async function limpiarDatosPrueba() {
+  if (!db) return;
+
+  // Priorizar el ID conocido; usar el nombre único si la API no devolvió ID.
+  let idPlato = null;
+
+  if (platoId && mongoose.isValidObjectId(platoId)) {
+    idPlato = new mongoose.Types.ObjectId(platoId);
+  } else if (platoNombrePrueba) {
+    const platoEncontrado = await db.collection('platos').findOne({
+      nombre: platoNombrePrueba
+    });
+    idPlato = platoEncontrado?._id || null;
+  }
+
+  // El plato puede haber sido eliminado antes por la propia prueba.
+  // Por eso se buscan los pedidos usando su ID aunque ya no exista el plato.
+  if (idPlato) {
+    const pedidosPrueba = await db.collection('pedidos')
+      .find({
+        $or: [
+          { 'detalles.plato': idPlato },
+          { 'detalles.plato': idPlato.toString() }
+        ]
+      })
+      .project({ _id: 1 })
+      .toArray();
+
+    const pedidoIds = pedidosPrueba.map((pedido) => pedido._id);
+
+    if (pedidoIds.length > 0) {
+      await db.collection('movimientos_inventario').deleteMany({
+        pedido: { $in: pedidoIds }
+      });
+
+      await db.collection('pedidos').deleteMany({
+        _id: { $in: pedidoIds }
+      });
+    }
+
+    await db.collection('recetas').deleteMany({ plato: idPlato });
+    await db.collection('platos').deleteOne({ _id: idPlato });
+  }
+
+  // Los nombres de respaldo se generan exclusivamente para esta ejecución.
+  if (ingredientePapasId && mongoose.isValidObjectId(ingredientePapasId)) {
+    await db.collection('ingredientes').deleteOne({
+      _id: new mongoose.Types.ObjectId(ingredientePapasId)
+    });
+  } else if (ingredienteNombrePrueba) {
+    await db.collection('ingredientes').deleteOne({
+      nombre: ingredienteNombrePrueba
+    });
+  }
+
+  // Solo se busca/elimina la categoría creada por esta prueba.
+  if (categoriaCreadaId && mongoose.isValidObjectId(categoriaCreadaId)) {
+    await db.collection('categorias').deleteOne({
+      _id: new mongoose.Types.ObjectId(categoriaCreadaId)
+    });
+  } else if (categoriaNombrePrueba) {
+    await db.collection('categorias').deleteOne({
+      nombre: categoriaNombrePrueba
+    });
+  }
+}
 async function runTests() {
   try {
     await mongoose.connect(process.env.MONGO_URI);
 
-    const db = mongoose.connection.db;
+    db = mongoose.connection.db;
 
     const admin = await db
       .collection('usuarios')
@@ -86,20 +161,47 @@ async function runTests() {
       Authorization: `Bearer ${authToken}`
     };
 
-    const categoriaId = '6ac26588f3173071b2506b86';
+    const sufijoCategoria = Date.now()
+      .toString()
+      .split('')
+      .map((digito) => 'abcdefghij'[Number(digito)])
+      .join('');
+
+    categoriaNombrePrueba =
+      `Categoria Pruebas Concurrencia ${sufijoCategoria}`;
+
+    const categoriaNueva = await request(
+      'POST',
+      '/categorias',
+      { nombre: categoriaNombrePrueba },
+      authHeaders
+    );
+
+    if (categoriaNueva.status !== 201) {
+      throw new Error(
+        `No se pudo crear la categoría temporal: ${JSON.stringify(categoriaNueva.data)}`
+      );
+    }
+
+    categoriaCreadaId = getEntityId(categoriaNueva.data);
+    categoriaId = categoriaCreadaId;
+
+    if (!categoriaCreadaId) {
+      throw new Error('La categoría temporal no devolvió su identificador.');
+    }
 
     // =========================================================
     // PREPARACIÓN
     // =========================================================
 
-    const ingredienteNombre = `Ing_Conc_${Date.now()}`;
+    ingredienteNombrePrueba = `Ing_Conc_${Date.now()}`;
 
     const ingRes = await request(
       'POST',
       '/inventario/ingredientes',
       {
-        nombre: ingredienteNombre,
-        unidadMedida: 'kilos',
+        nombre: ingredienteNombrePrueba,
+        unidadMedida: 'kg',
         stockActual: 1.0
       },
       authHeaders
@@ -111,7 +213,7 @@ async function runTests() {
       );
     }
 
-    const ingredientePapasId = getEntityId(ingRes.data, 'ingrediente');
+    ingredientePapasId = getEntityId(ingRes.data, 'ingrediente');
 
     if (!ingredientePapasId) {
       throw new Error(
@@ -119,22 +221,23 @@ async function runTests() {
       );
     }
 
-    const platoNombre = `Plato_Conc_${Date.now()}`;
+    platoNombrePrueba = `Plato_Conc_${Date.now()}`;
 
     const platoRes = await request(
       'POST',
       '/platos',
       {
-        nombre: platoNombre,
+        nombre: platoNombrePrueba,
         descripcion: 'Prueba de concurrencia',
         precio: 50,
         imagenUrl: 'http://test.com/img.jpg',
-        imagenPublicId: 'img1',
+        imagenPublicId: `img-concurrencia-${Date.now()}`,
         categoria: categoriaId,
         ingredientes: [
           {
             ingrediente: ingredientePapasId,
-            cantidadNecesaria: 0.7
+            cantidadNecesaria: 0.7,
+            unidadMedida: 'kg'
           }
         ]
       },
@@ -147,7 +250,7 @@ async function runTests() {
       );
     }
 
-    const platoId = getEntityId(platoRes.data, 'plato');
+    platoId = getEntityId(platoRes.data, 'plato');
 
     if (!platoId) {
       throw new Error(
@@ -368,21 +471,33 @@ async function runTests() {
       );
     }
 
-    console.log('\n=== TODAS LAS PRUEBAS COMPLETADAS ===');
+    console.log('\n=== LIMPIANDO DATOS DE PRUEBA ===');
+    await limpiarDatosPrueba();
+    console.log('✔ Limpieza completada.');
 
+    console.log('\n=== TODAS LAS PRUEBAS COMPLETADAS ===');
     await mongoose.disconnect();
-    process.exit(0);
 
   } catch (error) {
     console.error('\n✖ ERROR EN LAS PRUEBAS:', error.message);
 
     try {
-      await mongoose.disconnect();
-    } catch {
-      // Ignorar error de desconexión durante fallo de pruebas.
+      await limpiarDatosPrueba();
+      console.log('Limpieza posterior al error completada.');
+    } catch (cleanupError) {
+      console.error(
+        '⚠ No se pudo completar toda la limpieza:',
+        cleanupError.message
+      );
     }
 
-    process.exit(1);
+    try {
+      await mongoose.disconnect();
+    } catch {
+      // La conexión puede no haberse establecido o ya estar cerrada.
+    }
+
+    process.exitCode = 1;
   }
 }
 

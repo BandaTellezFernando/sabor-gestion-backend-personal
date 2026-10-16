@@ -1,12 +1,14 @@
 // src/repositories/receta.repo.ts
 import Receta, { IReceta } from '../models/Receta'
 import { Types } from 'mongoose'
+import type { UnidadMedida } from '../utils/unidades'
 
 export { IReceta, IRecetaIngrediente } from '../models/Receta'
 
 export interface IRecetaIngredienteInput {
   ingrediente: string | Types.ObjectId
   cantidadNecesaria: number
+  unidadMedida: UnidadMedida
 }
 
 export interface RecetaCrearDatos {

@@ -14,3 +14,7 @@ export {
   guardarReceta,
   eliminarReceta
 } from './receta.controller'
+
+export {
+  obtenerMovimientosInventario
+} from './movimientoInventario.controller'

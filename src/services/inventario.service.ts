@@ -1,6 +1,11 @@
 // src/services/inventario.service.ts
 import { PlatoRepository, platoRepository } from '../repositories/plato.repo'
 import { RecetaRepository, recetaRepository } from '../repositories/receta.repo'
+import {
+  convertirCantidad,
+  esUnidadMedida,
+  validarCantidadParaUnidad,
+} from '../utils/unidades'
 
 // ─── Interfaces y Types ─────────────────────────────────────────────────────
 
@@ -14,6 +19,26 @@ export interface ItemValidacionInventario {
   platoId: string
   cantidad: number
   observacion?: string
+}
+
+export interface DetalleConsumoIngrediente {
+  platoId: string
+  nombrePlato: string
+  cantidadPlatos: number
+  cantidadNecesariaPorPlato: number
+  unidadReceta: string
+  cantidadPorPlatoEnStock: number
+  unidadStock: string
+  consumoTotal: number
+  observacion?: string
+}
+
+export interface ConsumoIngredientePedido {
+  ingredienteId: string
+  nombreIngrediente: string
+  unidadStock: string
+  cantidadTotal: number
+  detallePlatos: DetalleConsumoIngrediente[]
 }
 
 export interface IngredientePoblado {
@@ -107,94 +132,226 @@ export class InventarioService {
    * Agrupa los consumos de todos los platos, verifica el stock numéricamente
    * y lo descuenta de la base de datos atómicamente.
    */
-  async verificarYDescontarStock(items: ItemValidacionInventario[], session?: any): Promise<{ success: boolean; errores: string[]; faltantes: any[] }> {
+  async verificarYDescontarStock(
+    items: ItemValidacionInventario[],
+    session?: any,
+  ): Promise<{
+    success: boolean
+    errores: string[]
+    faltantes: any[]
+    consumos: ConsumoIngredientePedido[]
+  }> {
     const mongoose = require('mongoose')
     const IngredienteModel = mongoose.model('Ingrediente')
-    
+
     const errores: string[] = []
     const faltantes: any[] = []
-    
-    // 1. Agrupar consumos
-    const consumoPorIngrediente = new Map<string, { cantidad: number; nombrePlatos: Set<string> }>()
-    
+
+    const consumoPorIngrediente = new Map<
+      string,
+      {
+        cantidad: number
+        nombreIngrediente: string
+        unidadStock: string
+        detallePlatos: DetalleConsumoIngrediente[]
+      }
+    >()
+
+    // 1. Calcular cada consumo y convertirlo a la unidad del stock.
     for (const item of items) {
-      const plato = await this.platoRepo.buscarPorId(String(item.platoId))
-      const nombrePlato = plato ? plato.nombre : 'Plato Desconocido'
-      
-      const receta = await this.recetaRepo.buscarPorPlatoIdConIngredientes(String(item.platoId))
-      if (!receta || !receta.ingredientes || receta.ingredientes.length === 0) {
-        errores.push(`El plato no tiene una receta configurada`)
-        faltantes.push({ plato: nombrePlato, mensaje: 'El plato no tiene una receta configurada' })
+      if (!Number.isSafeInteger(item.cantidad) || item.cantidad <= 0) {
+        errores.push(
+          `La cantidad del plato ${item.platoId} debe ser un entero positivo.`,
+        )
         continue
       }
-      
+
+      const plato = await this.platoRepo.buscarPorId(String(item.platoId))
+      const nombrePlato = plato ? plato.nombre : 'Plato Desconocido'
+
+      const receta = await this.recetaRepo.buscarPorPlatoIdConIngredientes(
+        String(item.platoId),
+      )
+
+      if (!receta || !receta.ingredientes || receta.ingredientes.length === 0) {
+        errores.push(`El plato "${nombrePlato}" no tiene una receta configurada.`)
+        faltantes.push({
+          plato: nombrePlato,
+          mensaje: 'El plato no tiene una receta configurada',
+        })
+        continue
+      }
+
       for (const reqIng of receta.ingredientes) {
         const ingredienteDoc: any = reqIng.ingrediente
-        if (!esIngredientePoblado(ingredienteDoc) || !ingredienteDoc.nombre) continue
-        
-        if (debeExcluirIngrediente(item.observacion || '', ingredienteDoc.nombre)) continue
-        
-        const ingId = String((ingredienteDoc as any)._id)
-        const consumoTotalItem = item.cantidad * reqIng.cantidadNecesaria
-        
-        if (!consumoPorIngrediente.has(ingId)) {
-          consumoPorIngrediente.set(ingId, { cantidad: 0, nombrePlatos: new Set() })
+
+        if (!esIngredientePoblado(ingredienteDoc) || !ingredienteDoc.nombre) {
+          errores.push(`No se pudo identificar un ingrediente de "${nombrePlato}".`)
+          continue
         }
+
+        if (debeExcluirIngrediente(item.observacion || '', ingredienteDoc.nombre)) {
+          continue
+        }
+
+        const ingId = String(ingredienteDoc._id || '')
+        if (!ingId || ingId === 'undefined') {
+          errores.push(`No se pudo identificar el ingrediente "${ingredienteDoc.nombre}".`)
+          continue
+        }
+
+        const unidadReceta: unknown = reqIng.unidadMedida
+        const unidadStock: unknown = ingredienteDoc.unidadMedida
+        const cantidadNecesaria = Number(reqIng.cantidadNecesaria)
+
+        let cantidadPorPlatoEnStock: number
+
+        try {
+          if (!esUnidadMedida(unidadReceta) || !esUnidadMedida(unidadStock)) {
+            throw new Error('La unidad de la receta o del stock falta o no está permitida.')
+          }
+
+          if (
+            !Number.isFinite(cantidadNecesaria) ||
+            cantidadNecesaria <= 0 ||
+            !validarCantidadParaUnidad(cantidadNecesaria, unidadReceta)
+          ) {
+            throw new Error('La cantidad de la receta no es válida para su unidad.')
+          }
+
+          cantidadPorPlatoEnStock = convertirCantidad(
+            cantidadNecesaria,
+            unidadReceta,
+            unidadStock,
+          )
+        } catch (error) {
+          const mensaje =
+            error instanceof Error ? error.message : 'Unidad incompatible.'
+
+          errores.push(
+            `No se puede calcular el consumo de "${ingredienteDoc.nombre}" en "${nombrePlato}": ${mensaje}`,
+          )
+          continue
+        }
+
+        const consumoTotalItem = Number(
+          (item.cantidad * cantidadPorPlatoEnStock).toFixed(9),
+        )
+
+        if (!Number.isFinite(consumoTotalItem) || consumoTotalItem <= 0) {
+          errores.push(
+            `El consumo calculado de "${ingredienteDoc.nombre}" no es válido.`,
+          )
+          continue
+        }
+
+        if (!consumoPorIngrediente.has(ingId)) {
+          consumoPorIngrediente.set(ingId, {
+            cantidad: 0,
+            nombreIngrediente: ingredienteDoc.nombre,
+            unidadStock: unidadStock as string,
+            detallePlatos: [],
+          })
+        }
+
         const data = consumoPorIngrediente.get(ingId)!
-        data.cantidad += consumoTotalItem
-        data.nombrePlatos.add(nombrePlato)
+        data.cantidad = Number((data.cantidad + consumoTotalItem).toFixed(9))
+        data.detallePlatos.push({
+          platoId: String(item.platoId),
+          nombrePlato,
+          cantidadPlatos: item.cantidad,
+          cantidadNecesariaPorPlato: cantidadNecesaria,
+          unidadReceta: unidadReceta as string,
+          cantidadPorPlatoEnStock,
+          unidadStock: unidadStock as string,
+          consumoTotal: consumoTotalItem,
+          observacion: item.observacion || '',
+        })
       }
     }
-    
+
     if (errores.length > 0) {
-      return { success: false, errores, faltantes: faltantes.map(f => ({ plato: f.plato, mensaje: f.mensaje })) }
+      return { success: false, errores, faltantes, consumos: [] }
     }
-    
-    // 2. Verificar stock
+
+    // 2. Verificar el stock dentro de la sesión actual.
     const ingredienteIds = Array.from(consumoPorIngrediente.keys())
-    const ingredientesDB = await IngredienteModel.find({ _id: { $in: ingredienteIds } }).session(session)
-    
+    const ingredientesDB = await IngredienteModel.find({
+      _id: { $in: ingredienteIds },
+    }).session(session)
+
     const mapIngredientes = new Map<string, any>()
     for (const ing of ingredientesDB) {
       mapIngredientes.set(String(ing._id), ing)
     }
-    
+
     for (const [ingId, reqData] of consumoPorIngrediente.entries()) {
       const ingrediente = mapIngredientes.get(ingId)
+
       if (!ingrediente) {
-        errores.push(`Ingrediente no encontrado en BD.`)
+        errores.push(`No se encontró en la base de datos el ingrediente "${reqData.nombreIngrediente}".`)
         continue
       }
-      
+
+      if (ingrediente.unidadMedida !== reqData.unidadStock) {
+        errores.push(
+          `La unidad de stock de "${ingrediente.nombre}" cambió durante el cálculo. Vuelve a intentarlo.`,
+        )
+        continue
+      }
+
       if (ingrediente.stockActual < reqData.cantidad) {
         faltantes.push({
           ingrediente: ingrediente.nombre,
           disponible: ingrediente.stockActual,
           requerido: reqData.cantidad,
-          faltante: Number((reqData.cantidad - ingrediente.stockActual).toFixed(3)),
-          unidad: ingrediente.unidadMedida
+          faltante: Number((reqData.cantidad - ingrediente.stockActual).toFixed(9)),
+          unidad: ingrediente.unidadMedida,
         })
       }
     }
-    
+
     if (faltantes.length > 0 || errores.length > 0) {
-      return { success: false, errores, faltantes }
+      return { success: false, errores, faltantes, consumos: [] }
     }
-    
-    // 3. Descontar stock
+
+    // 3. Descontar atómicamente: si el stock cambió, no permitir un saldo negativo.
     for (const [ingId, reqData] of consumoPorIngrediente.entries()) {
       const updated = await IngredienteModel.findOneAndUpdate(
         { _id: ingId, stockActual: { $gte: reqData.cantidad } },
-        { $inc: { stockActual: -reqData.cantidad } },
-        { session, returnDocument: 'after' }
+        [
+          {
+            $set: {
+              stockActual: {
+                $round: [
+                  { $subtract: ['$stockActual', reqData.cantidad] },
+                  9,
+                ],
+              },
+            },
+          },
+        ],
+        { session, returnDocument: 'after', updatePipeline: true },
       )
+
       if (!updated) {
-        // Concurrency error
-        throw new Error(`Condición de carrera: El stock de un ingrediente cambió y ya no es suficiente.`)
+        throw new Error(
+          'Condición de carrera: el stock de un ingrediente cambió y ya no es suficiente.',
+        )
       }
     }
-    
-    return { success: true, errores: [], faltantes: [] }
+
+    const consumos: ConsumoIngredientePedido[] = Array.from(
+      consumoPorIngrediente.entries(),
+    ).map(([ingredienteId, data]) => ({
+      ingredienteId,
+      nombreIngrediente: data.nombreIngrediente,
+      unidadStock: data.unidadStock,
+      cantidadTotal: data.cantidad,
+      detallePlatos: data.detallePlatos,
+    }))
+
+    return { success: true, errores: [], faltantes: [], consumos }
   }
 }
 

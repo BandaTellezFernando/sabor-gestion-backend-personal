@@ -170,7 +170,8 @@ async function crearPlato(
       ingredientes: [
         {
           ingrediente: ingredienteId,
-          cantidadNecesaria
+          cantidadNecesaria,
+          unidadMedida: 'kg'
         }
       ]
     },
@@ -230,6 +231,9 @@ async function eliminarIngrediente(authHeaders, ingredienteId) {
   }
 }
 
+let db = null;
+let categoriaCreadaId = null;
+
 async function runTests() {
   let ingredienteA = null;
   let ingredienteB = null;
@@ -245,7 +249,7 @@ async function runTests() {
   try {
     await mongoose.connect(process.env.MONGO_URI);
 
-    const db = mongoose.connection.db;
+    db = mongoose.connection.db;
 
     const admin = await db
       .collection('usuarios')
@@ -281,15 +285,42 @@ async function runTests() {
       `No se pudieron obtener categorías. Status ${categoriasResponse.status}`
     );
 
+    const categorias = Array.isArray(categoriasResponse.data)
+      ? categoriasResponse.data
+      : categoriasResponse.data?.categorias;
+
     assert(
-      Array.isArray(categoriasResponse.data) &&
-        categoriasResponse.data.length > 0,
-      'No existe ninguna categoría disponible para las pruebas.'
+      Array.isArray(categorias),
+      'La API de categorías devolvió un formato inesperado.'
     );
 
-    const categoriaId =
-      categoriasResponse.data[0]._id ||
-      categoriasResponse.data[0].id;
+    let categoriaId;
+
+    if (categorias.length > 0) {
+      categoriaId = categorias[0]._id || categorias[0].id;
+    } else {
+      const nuevaCategoria = await request(
+        'POST',
+        '/categorias',
+        { nombre: 'Categoria Pruebas Cuantitativas' },
+        authHeaders
+      );
+
+      assert(
+        nuevaCategoria.status === 201,
+        `No se pudo crear la categoría temporal. Status ${nuevaCategoria.status}: ${JSON.stringify(nuevaCategoria.data)}`
+      );
+
+      categoriaCreadaId = getId(nuevaCategoria.data);
+
+      assert(
+        categoriaCreadaId,
+        'La categoría temporal no devolvió un identificador.'
+      );
+
+      categoriaId = categoriaCreadaId;
+      console.log('✔ Categoría temporal creada para la prueba.');
+    }
 
     console.log('=== INVENTARIO CUANTITATIVO ===');
 
@@ -733,10 +764,67 @@ async function runTests() {
     if (authHeaders) {
       console.log('\n--- LIMPIEZA ---');
 
+      // Eliminar pedidos y movimientos asociados exclusivamente a los
+      // platos temporales de esta prueba, antes de borrar esos platos.
+      const idsPlatosPrueba = [
+        platoA,
+        platoInsuficiente,
+        platoB,
+        platoC
+      ]
+        .filter(Boolean)
+        .map((id) => new mongoose.Types.ObjectId(String(id)));
+
+      if (db && idsPlatosPrueba.length > 0) {
+        const pedidosPrueba = await db
+          .collection('pedidos')
+          .find(
+            { 'detalles.plato': { $in: idsPlatosPrueba } },
+            { projection: { _id: 1 } }
+          )
+          .toArray();
+
+        const idsPedidosPrueba = pedidosPrueba.map((pedido) => pedido._id);
+
+        if (idsPedidosPrueba.length > 0) {
+          await db.collection('movimientos_inventario').deleteMany({
+            pedido: { $in: idsPedidosPrueba }
+          });
+
+          await db.collection('pedidos').deleteMany({
+            _id: { $in: idsPedidosPrueba }
+          });
+        }
+
+        console.log(
+          `✔ Pedidos temporales eliminados: ${idsPedidosPrueba.length}`
+        );
+      }
+
       await eliminarPlato(authHeaders, platoA);
       await eliminarPlato(authHeaders, platoInsuficiente);
       await eliminarPlato(authHeaders, platoB);
       await eliminarPlato(authHeaders, platoC);
+
+      // Eliminar solamente la categoría creada por esta prueba.
+      // Los platos de prueba ya se eliminaron antes de llegar aquí.
+      if (categoriaCreadaId) {
+        const eliminacionCategoria = await request(
+          'DELETE',
+          `/categorias/${categoriaCreadaId}`,
+          null,
+          authHeaders
+        );
+
+        if (eliminacionCategoria.status === 200) {
+          console.log('✔ Categoría temporal eliminada.');
+        } else {
+          console.warn(
+            '⚠ No se pudo eliminar la categoría temporal:',
+            eliminacionCategoria.data
+          );
+        }
+      }
 
       await eliminarIngrediente(authHeaders, ingredienteA);
       await eliminarIngrediente(authHeaders, ingredienteB);

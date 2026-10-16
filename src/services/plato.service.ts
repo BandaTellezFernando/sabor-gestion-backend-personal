@@ -3,6 +3,11 @@ import { Types } from 'mongoose'
 import { PlatoRepository } from '../repositories/plato.repo'
 import { RecetaRepository, recetaRepository } from '../repositories/receta.repo'
 import { eliminarDeCloudinary } from '../configs/cloudinary'
+import {
+  esUnidadMedida,
+  obtenerFamiliaUnidad,
+  validarCantidadParaUnidad,
+} from '../utils/unidades'
 
 export class PlatoServiceError extends Error {
   constructor(
@@ -143,9 +148,20 @@ export class PlatoService {
       
       const uniqueIds = new Set<string>()
       for (const ing of ingredientes) {
-        if (ing.cantidadNecesaria <= 0) {
-          throw new Error('La cantidad necesaria debe ser mayor a 0')
+        if (!ing || typeof ing !== 'object') {
+          throw new Error('Cada ingrediente de la receta debe ser válido.')
         }
+        const cantidad = Number(ing.cantidadNecesaria)
+        if (!Number.isFinite(cantidad) || cantidad <= 0) {
+          throw new Error('La cantidad necesaria debe ser finita y mayor a 0.')
+        }
+        if (!esUnidadMedida(ing.unidadMedida)) {
+          throw new Error('Cada ingrediente debe tener una unidad válida: kg, g, mg, L, ml o unidad.')
+        }
+        if (!validarCantidadParaUnidad(cantidad, ing.unidadMedida)) {
+          throw new Error('La cantidad no es válida para su unidad; las unidades contables deben ser enteras.')
+        }
+        ing.cantidadNecesaria = cantidad
         const ingId = String(ing.ingrediente)
         if (uniqueIds.has(ingId)) {
           throw new Error('No se puede duplicar el mismo ingrediente en la receta')
@@ -157,6 +173,24 @@ export class PlatoService {
       const foundIngredients = await IngredienteModel.find({ _id: { $in: Array.from(uniqueIds) } }).session(session)
       if (foundIngredients.length !== uniqueIds.size) {
         throw new Error('Uno o más ingredientes especificados no existen')
+      }
+
+      const ingredientesPorId = new Map<string, any>()
+      for (const ingrediente of foundIngredients) {
+        ingredientesPorId.set(String(ingrediente._id), ingrediente)
+      }
+      for (const ing of ingredientes) {
+        const ingrediente = ingredientesPorId.get(String(ing.ingrediente))
+        if (!ingrediente) {
+          throw new Error('Uno o más ingredientes especificados no existen')
+        }
+        const familiaStock = obtenerFamiliaUnidad(String(ingrediente.unidadMedida || ''))
+        const familiaReceta = obtenerFamiliaUnidad(ing.unidadMedida)
+        if (!familiaStock || familiaStock !== familiaReceta) {
+          throw new Error(
+            `La unidad ${ing.unidadMedida} no es compatible con el stock (${ingrediente.unidadMedida}) del ingrediente ${ingrediente.nombre}.`,
+          )
+        }
       }
 
       await RecetaModel.create([{

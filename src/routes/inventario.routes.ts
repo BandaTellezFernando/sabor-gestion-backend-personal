@@ -7,7 +7,8 @@ import {
   eliminarIngrediente,
   obtenerRecetas,
   guardarReceta,
-  eliminarReceta
+  eliminarReceta,
+  obtenerMovimientosInventario
 } from '../controllers/inventario.controller'
 // Middlewares de seguridad
 import { verificarToken } from '../middlewares/auth.middleware'
@@ -29,6 +30,14 @@ router.get(
   verificarToken,
   permitirRoles('Cocinero', 'Administrador'),
   obtenerEstadoInventario
+)
+
+// GET: Consultar el historial de consumos (Cocinero y Administrador)
+router.get(
+  '/movimientos',
+  verificarToken,
+  permitirRoles('Cocinero', 'Administrador'),
+  obtenerMovimientosInventario
 )
 
 // POST: Solo el Administrador puede crear ingredientes

@@ -18,6 +18,7 @@ import {
   formatearFechaBolivia
 } from '../utils/fechaBolivia'
 import { inventarioService } from './inventario.service'
+import MovimientoInventario from '../models/MovimientoInventario'
 import { generarSiguienteCodigoPedido } from './contador.service'
 
 // ─── Clase de Error de Dominio ───────────────────────────────────────────────
@@ -353,6 +354,42 @@ try {
       },
       session
     )
+
+    // Registrar el consumo calculado dentro de la misma transacción.
+    // Si todos los ingredientes fueron excluidos de la preparación,
+    // no se crea un movimiento sin consumos.
+    if (validacion.consumos.length > 0) {
+      const consumosMovimiento = validacion.consumos.map((consumo) => ({
+        ingrediente: new Types.ObjectId(consumo.ingredienteId),
+        nombreIngrediente: consumo.nombreIngrediente,
+        unidadStock: consumo.unidadStock,
+        cantidadTotal: consumo.cantidadTotal,
+        detallePlatos: consumo.detallePlatos.map((detalle) => ({
+          plato: new Types.ObjectId(detalle.platoId),
+          nombrePlato: detalle.nombrePlato,
+          cantidadPlatos: detalle.cantidadPlatos,
+          cantidadNecesariaPorPlato: detalle.cantidadNecesariaPorPlato,
+          unidadReceta: detalle.unidadReceta,
+          cantidadPorPlatoEnStock: detalle.cantidadPorPlatoEnStock,
+          unidadStock: detalle.unidadStock,
+          consumoTotal: detalle.consumoTotal,
+          observacion: detalle.observacion || '',
+        })),
+      }))
+
+      await MovimientoInventario.create(
+        [
+          {
+            pedido: pedidoId,
+            codigoPedido: codigo,
+            fechaHora,
+            usuario: usuarioResponsable,
+            consumos: consumosMovimiento,
+          },
+        ],
+        { session },
+      )
+    }
   })
 
   if (!nuevoPedidoDoc) {

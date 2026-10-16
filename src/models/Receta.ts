@@ -1,9 +1,11 @@
 // src/models/Receta.ts
 import mongoose, { Schema, Document } from 'mongoose'
+import { UNIDADES_MEDIDA, UnidadMedida } from '../utils/unidades'
 
 export interface IRecetaIngrediente {
   ingrediente: mongoose.Types.ObjectId
   cantidadNecesaria: number
+  unidadMedida: UnidadMedida
 }
 
 export interface IReceta extends Document {
@@ -18,10 +20,18 @@ const RecetaIngredienteSchema = new Schema(
       ref: 'Ingrediente',
       required: true
     },
-    cantidadNecesaria: { 
-      type: Number, 
-      required: true, 
-      min: [0.000001, 'La cantidad necesaria debe ser mayor a 0'] 
+    cantidadNecesaria: {
+      type: Number,
+      required: true,
+      min: [0.000001, 'La cantidad necesaria debe ser mayor a 0'],
+    },
+    unidadMedida: {
+      type: String,
+      required: true,
+      enum: {
+        values: [...UNIDADES_MEDIDA],
+        message: 'La unidad de medida no está permitida.',
+      },
     }
   },
   { _id: false }

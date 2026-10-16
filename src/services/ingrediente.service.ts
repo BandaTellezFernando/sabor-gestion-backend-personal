@@ -5,6 +5,7 @@ import {
   IngredienteActualizarDatos
 } from '../repositories/ingrediente.repo'
 import { RecetaRepository, recetaRepository } from '../repositories/receta.repo'
+import { esUnidadMedida, validarCantidadParaUnidad } from '../utils/unidades'
 
 export class IngredienteServiceError extends Error {
   constructor(
@@ -101,11 +102,21 @@ export class IngredienteService {
       )
     }
 
+    if (!esUnidadMedida(unidadMedida)) {
+      throw new IngredienteServiceError(
+        400,
+        'La unidad debe ser kg, g, mg, L, ml o unidad.'
+      )
+    }
+
     let stockActual = 0
     if (body.stockActual !== undefined) {
       stockActual = Number(body.stockActual)
-      if (isNaN(stockActual) || stockActual < 0) {
-        throw new IngredienteServiceError(400, 'El stock actual no puede ser negativo.')
+      if (!validarCantidadParaUnidad(stockActual, unidadMedida)) {
+        throw new IngredienteServiceError(
+          400,
+          'El stock debe ser finito y no negativo; para unidad debe ser un entero.'
+        )
       }
     }
 
@@ -172,8 +183,11 @@ export class IngredienteService {
     if (body.disponible !== undefined) update.disponible = Boolean(body.disponible)
     if (body.stockActual !== undefined) {
       const stock = Number(body.stockActual)
-      if (isNaN(stock) || stock < 0) {
-        throw new IngredienteServiceError(400, 'El stock actual no puede ser negativo.')
+      if (!validarCantidadParaUnidad(stock, existente.unidadMedida)) {
+        throw new IngredienteServiceError(
+          400,
+          'El stock debe ser finito y no negativo; para unidad debe ser un entero.'
+        )
       }
       update.stockActual = stock
     }

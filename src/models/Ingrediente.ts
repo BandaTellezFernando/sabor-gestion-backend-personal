@@ -1,9 +1,10 @@
 // src/models/Ingrediente.ts
 import mongoose, { Schema, Document } from 'mongoose'
+import { UNIDADES_MEDIDA, UnidadMedida } from '../utils/unidades'
 
 export interface IIngrediente extends Document {
   nombre: string
-  unidadMedida: string
+  unidadMedida: UnidadMedida
   disponible: boolean
   stockActual: number
   fechaRegistro: Date
@@ -15,7 +16,11 @@ const IngredienteSchema = new Schema(
     unidadMedida: {
       type: String,
       required: true,
-      trim: true
+      trim: true,
+      enum: {
+        values: [...UNIDADES_MEDIDA],
+        message: 'La unidad de medida no está permitida.',
+      },
     },
     disponible: { type: Boolean, default: true },
     stockActual: { type: Number, required: true, default: 0, min: 0 },
