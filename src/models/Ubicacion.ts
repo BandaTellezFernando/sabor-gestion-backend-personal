@@ -27,4 +27,9 @@ UbicacionSchema.pre('save', function () {
   }
 })
 
-export default mongoose.model<IUbicacion>('Ubicacion', UbicacionSchema)
+// Nombre explícito para evitar que Mongoose utilice 'ubicacions'.
+export default mongoose.model<IUbicacion>(
+  'Ubicacion',
+  UbicacionSchema,
+  'ubicaciones'
+)

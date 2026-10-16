@@ -990,3 +990,112 @@ Documento técnico y base documental para el apartado universitario *10. Impleme
 Fernando Banda Téllez • Octubre 2026
 
 </div>
+
+```
+sabor-gestion-backend-personal
+├─ Codigos.txt
+├─ README.md
+├─ docs
+│  ├─ Informe_Implementacion_Prototipo_Sabor_Gestion.pdf
+│  ├─ Informe_Modulos_Backend_Sabor_Gestion.pdf
+│  ├─ Manual_Tecnico_Sabor_Gestion.md
+│  ├─ Manual_Tecnico_Sabor_Gestion.pdf
+│  ├─ frontend-reference.md
+│  ├─ informe_funcional_backend.md
+│  ├─ informe_funcional_backend.pdf
+│  ├─ informe_incidentes_y_correcciones_backend.md
+│  ├─ informe_incidentes_y_correcciones_backend.pdf
+│  └─ openapi.yaml
+├─ eslint.config.cjs
+├─ get_cats.cjs
+├─ get_roles.cjs
+├─ get_struct.cjs
+├─ package.json
+├─ pnpm-lock.yaml
+├─ pnpm-workspace.yaml
+├─ scripts
+│  ├─ fixUbicacionNames.ts
+│  └─ migrateUbicaciones.ts
+├─ src
+│  ├─ app.ts
+│  ├─ configs
+│  │  ├─ cloudinary.ts
+│  │  └─ db.ts
+│  ├─ controllers
+│  │  ├─ categoria.controller.ts
+│  │  ├─ dashboard.controller.ts
+│  │  ├─ ingrediente.controller.ts
+│  │  ├─ inventario.controller.ts
+│  │  ├─ mesa.controller.ts
+│  │  ├─ pago.controller.ts
+│  │  ├─ pedido.controller.ts
+│  │  ├─ plato.controller.ts
+│  │  ├─ receta.controller.ts
+│  │  ├─ ubicacion.controller.ts
+│  │  ├─ upload.controller.ts
+│  │  └─ usuario.controller.ts
+│  ├─ middlewares
+│  │  ├─ auth.middleware.ts
+│  │  └─ rol.middleware.ts
+│  ├─ models
+│  │  ├─ Categoria.ts
+│  │  ├─ CierreCaja.ts
+│  │  ├─ Contador.ts
+│  │  ├─ Ingrediente.ts
+│  │  ├─ Mesa.ts
+│  │  ├─ MesaOcupacionTemporal.ts
+│  │  ├─ Pago.ts
+│  │  ├─ Pedido.ts
+│  │  ├─ Plato.ts
+│  │  ├─ Receta.ts
+│  │  ├─ Ubicacion.ts
+│  │  └─ Usuario.ts
+│  ├─ repositories
+│  │  ├─ categoria.repo.ts
+│  │  ├─ contador.repo.ts
+│  │  ├─ dashboard.repo.ts
+│  │  ├─ ingrediente.repo.ts
+│  │  ├─ mesa.repo.ts
+│  │  ├─ mesaOcupacion.repo.ts
+│  │  ├─ pago.repo.ts
+│  │  ├─ pedido.repo.ts
+│  │  ├─ plato.repo.ts
+│  │  ├─ receta.repo.ts
+│  │  ├─ ubicacion.repo.ts
+│  │  └─ usuarios.repo.ts
+│  ├─ scripts
+│  │  └─ migrarCatalogo.ts
+│  ├─ server.ts
+│  ├─ services
+│  │  ├─ categoria.service.ts
+│  │  ├─ contador.service.ts
+│  │  ├─ dashboard.service.ts
+│  │  ├─ email.service.ts
+│  │  ├─ ingrediente.service.ts
+│  │  ├─ inventario.service.ts
+│  │  ├─ mesa.service.ts
+│  │  ├─ mesaOcupacion.service.ts
+│  │  ├─ pago.service.ts
+│  │  ├─ pedido.service.ts
+│  │  ├─ plato.service.ts
+│  │  ├─ receta.service.ts
+│  │  ├─ ubicacion.service.ts
+│  │  └─ usuario.service.ts
+│  ├─ socket
+│  │  └─ socket.ts
+│  ├─ types
+│  │  ├─ dashboard.types.ts
+│  │  ├─ multer-storage-cloudinary.d.ts
+│  │  └─ pago.types.ts
+│  └─ utils
+│     ├─ constants.ts
+│     ├─ facturaTemplate.ts
+│     ├─ fechaBolivia.ts
+│     ├─ seed.ts
+│     └─ seedInventario.ts
+├─ test_final_direct.cjs
+├─ test_inventario_cuantitativo.cjs
+├─ tsconfig.json
+└─ vercel.json
+
+```

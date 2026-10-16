@@ -1,6 +1,6 @@
-import { connectDB } from '../configs/db'
-import Mesa from '../models/Mesa'
-import Ubicacion from '../models/Ubicacion'
+import { connectDB } from '../src/configs/db'
+import Mesa from '../src/models/Mesa'
+import Ubicacion from '../src/models/Ubicacion'
 
 function escapeRegex(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
