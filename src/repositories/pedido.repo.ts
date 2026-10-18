@@ -1,8 +1,14 @@
 // src/repositories/pedido.repo.ts
-import { Types, ClientSession } from 'mongoose'
-import Pedido, { IPedido } from '../models/Pedido'
+import { Types, ClientSession, type QueryFilter } from 'mongoose'
+import Pedido, { IDetallePedido, IPedido, ITandaCocina } from '../models/Pedido'
 import CierreCaja from '../models/CierreCaja'
-import { ESTADOS_PEDIDO } from '../utils/constants'
+import {
+  ESTADOS_CUENTA,
+  ESTADOS_PEDIDO,
+  ESTADOS_TANDA_COCINA,
+  EstadoTandaCocina,
+  EstadoCuenta
+} from '../utils/constants'
 
 export { IPedido } from '../models/Pedido'
 
@@ -13,22 +19,45 @@ export interface PedidoCrearDatos {
   fechaHoraBolivia?: string
   fechaHora: Date
   estado?: string
+  estadoCuenta?: EstadoCuenta
+  tandas?: ITandaCocina[]
   total: number
+  subtotalCierre?: number
+  montoDescuento?: number
+  montoPropina?: number
   mesa?: string | Types.ObjectId
   usuario: string | Types.ObjectId
-  detalles: any[]
+  detalles: IDetallePedido[]
   clienteNombre?: string
   clienteCI?: string
   clienteNIT?: string
   cajeroAsignado?: string | Types.ObjectId
-  [key: string]: any
+  recogido?: boolean
+  fechaRecogida?: Date
+  recogidoPor?: string | Types.ObjectId
+}
+
+export interface PedidoActualizarDatos {
+  detalles?: IDetallePedido[]
+  estado?: string
+  total?: number
+  subtotalCierre?: number
+  montoDescuento?: number
+  montoPropina?: number
+  clienteNombre?: string
+  clienteCI?: string
+  clienteNIT?: string
+  cajeroAsignado?: string | Types.ObjectId
+  recogido?: boolean
+  fechaRecogida?: Date | null
+  recogidoPor?: Types.ObjectId | null
 }
 
 export class PedidoRepository {
   /**
    * Crea y persiste un nuevo pedido en MongoDB
    */
-  async crear(datos: PedidoCrearDatos, session?: any): Promise<IPedido> {
+  async crear(datos: PedidoCrearDatos, session?: ClientSession): Promise<IPedido> {
     const nuevoPedido = new Pedido(datos)
     return await nuevoPedido.save(session ? { session } : undefined)
   }
@@ -36,8 +65,11 @@ export class PedidoRepository {
   /**
    * Busca un pedido por ID simple (sin populates)
    */
-  async buscarPorId(id: string | Types.ObjectId): Promise<IPedido | null> {
-    return await Pedido.findById(id)
+  async buscarPorId(
+    id: string | Types.ObjectId,
+    session?: ClientSession
+  ): Promise<IPedido | null> {
+    return await Pedido.findById(id).session(session ?? null)
   }
 
   /**
@@ -93,7 +125,7 @@ export class PedidoRepository {
   /**
    * Busca pedidos aplicando filtros dinámicos con populates profundos (incluyendo categoría del plato)
    */
-  async buscarConFiltros(filtro: Record<string, any>): Promise<IPedido[]> {
+  async buscarConFiltros(filtro: QueryFilter<IPedido>): Promise<IPedido[]> {
     return await Pedido.find(filtro)
       .populate('mesa', 'numero estado')
       .populate('usuario', 'nombre apellido apellidos')
@@ -134,11 +166,198 @@ export class PedidoRepository {
   }
 
   /**
+   * Cambia una tanda de BORRADOR a PENDIENTE de forma condicional.
+   * Se ejecuta dentro de la misma transacción que el descuento de inventario.
+   */
+  /**
+   * Cancela una tanda si sigue en el estado esperado.
+   * Opcionalmente cancela también la cuenta cuando ya no quedan tandas
+   * utilizables. Se ejecuta dentro de la transacción de inventario.
+   */
+  async cancelarTanda(
+    pedidoId: string | Types.ObjectId,
+    tandaId: Types.ObjectId,
+    estadoActual: EstadoTandaCocina,
+    usuarioId: Types.ObjectId,
+    fecha: Date,
+    motivo: string,
+    subtotalCierre: number,
+    total: number,
+    cancelarCuenta: boolean,
+    session: ClientSession
+  ): Promise<IPedido | null> {
+    const cambios: Record<string, unknown> = {
+      'tandas.$.estado': ESTADOS_TANDA_COCINA.CANCELADA,
+      'tandas.$.canceladaPor': usuarioId,
+      'tandas.$.fechaCancelacion': fecha,
+      'tandas.$.motivoCancelacion': motivo,
+      subtotalCierre,
+      total
+    }
+
+    if (cancelarCuenta) {
+      cambios.estadoCuenta = ESTADOS_CUENTA.CANCELADA
+      cambios.estado = ESTADOS_PEDIDO.CANCELADO
+    }
+
+    return await Pedido.findOneAndUpdate(
+      {
+        _id: pedidoId,
+        estadoCuenta: ESTADOS_CUENTA.ABIERTA,
+        estado: {
+          $nin: [ESTADOS_PEDIDO.CERRADO, ESTADOS_PEDIDO.CANCELADO]
+        },
+        tandas: {
+          $elemMatch: {
+            _id: tandaId,
+            estado: estadoActual
+          }
+        }
+      },
+      { $set: cambios },
+      {
+        returnDocument: 'after',
+        session,
+        runValidators: true
+      }
+    )
+      .populate('mesa', 'numero estado')
+      .populate('usuario', 'nombre apellido apellidos')
+      .populate('detalles.plato', 'nombre precio')
+  }
+
+  async marcarTandaEnviada(
+    pedidoId: string | Types.ObjectId,
+    tandaId: Types.ObjectId,
+    usuarioId: Types.ObjectId,
+    fechaEnvio: Date,
+    session: ClientSession
+  ): Promise<IPedido | null> {
+    return await Pedido.findOneAndUpdate(
+      {
+        _id: pedidoId,
+        estadoCuenta: ESTADOS_CUENTA.ABIERTA,
+        estado: {
+          $nin: [ESTADOS_PEDIDO.CERRADO, ESTADOS_PEDIDO.CANCELADO]
+        },
+        tandas: {
+          $elemMatch: {
+            _id: tandaId,
+            estado: ESTADOS_TANDA_COCINA.BORRADOR
+          }
+        }
+      },
+      {
+        $set: {
+          'tandas.$.estado': ESTADOS_TANDA_COCINA.PENDIENTE,
+          'tandas.$.enviadaPor': usuarioId,
+          'tandas.$.fechaEnvio': fechaEnvio
+        }
+      },
+      {
+        returnDocument: 'after',
+        session,
+        runValidators: true
+      }
+    )
+      .populate('mesa', 'numero estado')
+      .populate('usuario', 'nombre apellido apellidos')
+      .populate('detalles.plato', 'nombre precio')
+  }
+
+  /**
+   * Transiciona únicamente la tanda cuyo estado coincide con el esperado.
+   * Una actualización concurrente no puede avanzar dos veces la misma transición.
+   */
+  async transicionarTandaEstado(
+    pedidoId: string | Types.ObjectId,
+    tandaId: Types.ObjectId,
+    estadoActual: EstadoTandaCocina,
+    estadoNuevo: EstadoTandaCocina,
+    usuarioId: Types.ObjectId,
+    fecha: Date
+  ): Promise<IPedido | null> {
+    const campos: Record<string, unknown> = {
+      'tandas.$.estado': estadoNuevo
+    }
+
+    if (estadoNuevo === ESTADOS_TANDA_COCINA.EN_PREPARACION) {
+      campos['tandas.$.iniciadaPor'] = usuarioId
+      campos['tandas.$.fechaInicio'] = fecha
+    } else if (estadoNuevo === ESTADOS_TANDA_COCINA.LISTA) {
+      campos['tandas.$.listaPor'] = usuarioId
+      campos['tandas.$.fechaLista'] = fecha
+    } else if (estadoNuevo === ESTADOS_TANDA_COCINA.ENTREGADA) {
+      campos['tandas.$.recogidaPor'] = usuarioId
+      campos['tandas.$.fechaRecogida'] = fecha
+    }
+
+    return await Pedido.findOneAndUpdate(
+      {
+        _id: pedidoId,
+        estadoCuenta: ESTADOS_CUENTA.ABIERTA,
+        estado: {
+          $nin: [ESTADOS_PEDIDO.CERRADO, ESTADOS_PEDIDO.CANCELADO]
+        },
+        tandas: {
+          $elemMatch: {
+            _id: tandaId,
+            estado: estadoActual
+          }
+        }
+      },
+      { $set: campos },
+      { returnDocument: 'after', runValidators: true }
+    )
+      .populate('mesa', 'numero estado')
+      .populate('usuario', 'nombre apellido apellidos')
+      .populate('detalles.plato', 'nombre precio')
+  }
+
+  /**
+   * Añade una tanda en borrador y sus detalles en una única operación atómica.
+   * updatedAt evita sobrescribir cambios realizados por otra solicitud concurrente.
+   */
+  async agregarTandaBorrador(
+    id: string | Types.ObjectId,
+    updatedAtEsperado: Date,
+    tanda: ITandaCocina,
+    detalles: IDetallePedido[],
+    subtotalCierre: number,
+    total: number
+  ): Promise<IPedido | null> {
+    return await Pedido.findOneAndUpdate(
+      {
+        _id: id,
+        updatedAt: updatedAtEsperado,
+        estadoCuenta: ESTADOS_CUENTA.ABIERTA,
+        estado: {
+          $nin: [ESTADOS_PEDIDO.CERRADO, ESTADOS_PEDIDO.CANCELADO]
+        }
+      },
+      {
+        $push: {
+          tandas: tanda,
+          detalles: { $each: detalles }
+        },
+        $set: {
+          subtotalCierre,
+          total
+        }
+      },
+      {
+        returnDocument: 'after',
+        runValidators: true
+      }
+    )
+  }
+
+  /**
    * Actualiza campos arbitrarios de un pedido y retorna el documento actualizado poblado
    */
   async actualizar(
     id: string | Types.ObjectId,
-    updates: Record<string, any>,
+    updates: PedidoActualizarDatos,
     session?: ClientSession
   ): Promise<IPedido | null> {
     return await Pedido.findByIdAndUpdate(
@@ -149,6 +368,53 @@ export class PedidoRepository {
       .populate('detalles.plato', 'nombre precio')
       .populate('mesa', 'numero estado')
       .populate('usuario', 'nombre apellido apellidos')
+  }
+
+  /**
+   * Solicita la cuenta solo cuando todas las tandas están entregadas o canceladas.
+   * La condición se comprueba también al realizar la escritura.
+   */
+  async marcarCuentaSolicitadaPorTandas(
+    id: string | Types.ObjectId,
+    session: ClientSession
+  ): Promise<IPedido | null> {
+    return await Pedido.findOneAndUpdate(
+      {
+        _id: id,
+        estadoCuenta: ESTADOS_CUENTA.ABIERTA,
+        estado: {
+          $nin: [ESTADOS_PEDIDO.CERRADO, ESTADOS_PEDIDO.CANCELADO]
+        },
+        'tandas.0': { $exists: true },
+        $nor: [
+          {
+            tandas: {
+              $elemMatch: {
+                estado: {
+                  $nin: [
+                    ESTADOS_TANDA_COCINA.ENTREGADA,
+                    ESTADOS_TANDA_COCINA.CANCELADA
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      {
+        $set: {
+          estadoCuenta: ESTADOS_CUENTA.CUENTA_SOLICITADA
+        }
+      },
+      {
+        returnDocument: 'after',
+        session,
+        runValidators: true
+      }
+    )
+      .populate('mesa', 'numero estado')
+      .populate('usuario', 'nombre apellido apellidos')
+      .populate('detalles.plato', 'nombre precio')
   }
 
   /**
@@ -183,7 +449,7 @@ export class PedidoRepository {
     mesaIds: (string | Types.ObjectId)[],
     cajero?: string
   ): Promise<IPedido[]> {
-    const filtroPedidos: any = {
+    const filtroPedidos: QueryFilter<IPedido> = {
       estado: { $nin: [ESTADOS_PEDIDO.CERRADO, ESTADOS_PEDIDO.CANCELADO] },
       mesa: { $in: mesaIds }
     }

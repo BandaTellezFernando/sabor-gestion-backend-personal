@@ -54,8 +54,13 @@ export class MesaRepository {
   /**
    * Busca una mesa por su ID con su ubicación poblada.
    */
-  async buscarPorId(id: string): Promise<MesaPobladaDoc | null> {
-    return (await Mesa.findById(id).populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
+  async buscarPorId(
+    id: string,
+    session?: ClientSession
+  ): Promise<MesaPobladaDoc | null> {
+    return (await Mesa.findById(id)
+      .session(session ?? null)
+      .populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
   }
 
   /**
@@ -157,6 +162,24 @@ export class MesaRepository {
       session,
       runValidators: true
     }).populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
+  }
+
+  /**
+   * Solicita la cuenta únicamente si la mesa sigue ocupada.
+   */
+  async marcarCuentaSolicitadaSiOcupada(
+    id: string,
+    session: ClientSession
+  ): Promise<MesaPobladaDoc | null> {
+    return (await Mesa.findOneAndUpdate(
+      { _id: id, estado: 'Ocupada' },
+      { estado: 'Cuenta Solicitada' },
+      {
+        returnDocument: 'after',
+        session,
+        runValidators: true
+      }
+    ).populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
   }
 
   /**
