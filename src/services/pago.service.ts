@@ -3,7 +3,11 @@ import mongoose from 'mongoose'
 import { PagoRepository, pagoRepository } from '../repositories/pago.repo'
 import { PedidoRepository, pedidoRepository } from '../repositories/pedido.repo'
 import { MesaRepository, mesaRepository } from '../repositories/mesa.repo'
-import { METODOS_PAGO } from '../utils/constants'
+import {
+  ESTADOS_CUENTA,
+  ESTADOS_TANDA_COCINA,
+  METODOS_PAGO
+} from '../utils/constants'
 import { enviarCorreo } from './email.service'
 import {
   generarPlantillaFacturaHTML,
@@ -48,12 +52,45 @@ export class PagoService {
    * Genera el código QR estático con el identificador del pedido y su monto total,
    * guardando la URL generada en el pedido.
    */
+  /**
+   * Las cuentas con tandas deben haberse solicitado y no tener tandas
+   * pendientes de preparación o entrega para entrar al flujo de cobro.
+   * Los pedidos históricos sin tandas mantienen el comportamiento anterior.
+   */
+  private validarCuentaModernaListaParaCobro(pedido: any): void {
+    if (!Array.isArray(pedido?.tandas) || pedido.tandas.length === 0) {
+      return
+    }
+
+    if (pedido.estadoCuenta !== ESTADOS_CUENTA.CUENTA_SOLICITADA) {
+      throw new PagoServiceError(
+        409,
+        'El mesero debe solicitar la cuenta antes de iniciar el cobro.'
+      )
+    }
+
+    const tandasPendientes = pedido.tandas.filter(
+      (tanda: any) =>
+        tanda.estado !== ESTADOS_TANDA_COCINA.ENTREGADA &&
+        tanda.estado !== ESTADOS_TANDA_COCINA.CANCELADA
+    )
+
+    if (tandasPendientes.length > 0) {
+      throw new PagoServiceError(
+        409,
+        'No se puede cobrar porque todavía hay tandas sin entregar o cancelar.'
+      )
+    }
+  }
+
   async generarPagoQR(pedidoId: string): Promise<{ qrUrl: string; total: number }> {
     const pedido = await this.pedidoRepo.buscarPorId(pedidoId)
 
     if (!pedido) {
       throw new PagoServiceError(404, 'Pedido no encontrado')
     }
+
+    this.validarCuentaModernaListaParaCobro(pedido)
 
     const datosPago = `SABOR_GESTION_ID_${pedido._id}_TOTAL_${pedido.total}`
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${datosPago}`
@@ -92,6 +129,8 @@ export class PagoService {
     if (!pedido) {
       throw new PagoServiceError(404, 'Pedido no encontrado')
     }
+
+    this.validarCuentaModernaListaParaCobro(pedido)
 
     if (pedido.estado === 'CERRADO') {
       throw new PagoServiceError(400, 'Este pedido ya ha sido pagado y cerrado.')
@@ -158,6 +197,11 @@ export class PagoService {
     try {
       // 3.1 Actualizar Pedido
       pedido.estado = 'CERRADO'
+
+      if (Array.isArray(ped.tandas) && ped.tandas.length > 0) {
+        pedido.estadoCuenta = ESTADOS_CUENTA.CERRADA
+      }
+
       pedido.total = totalFinal
       ped.metodoPago = metodoPagoValido
       ped.montoDescuento = montoDescuento

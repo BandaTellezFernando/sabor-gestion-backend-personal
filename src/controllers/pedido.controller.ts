@@ -9,6 +9,43 @@ import {
 } from '../services/pedido.service'
 import { mesaService } from '../services/mesa.service'
 
+function obtenerIdReferenciaMesa(valor: unknown): string | undefined {
+  if (typeof valor === 'string') {
+    return valor
+  }
+
+  if (!valor || typeof valor !== 'object') {
+    return undefined
+  }
+
+  if ('_id' in valor) {
+    const id = obtenerIdReferenciaMesa(valor._id)
+    if (id) return id
+  }
+
+  const id = String(valor)
+  return id !== '[object Object]' ? id : undefined
+}
+
+function obtenerNombreMesa(valor: unknown): string | undefined {
+  if (!valor || typeof valor !== 'object') {
+    return undefined
+  }
+
+  const numero = 'numero' in valor ? valor.numero : undefined
+  const name = 'name' in valor ? valor.name : undefined
+  const nombre = 'nombre' in valor ? valor.nombre : undefined
+
+  for (const candidato of [numero, name, nombre]) {
+    if (typeof candidato === 'string' || typeof candidato === 'number') {
+      return String(candidato)
+    }
+  }
+
+  return undefined
+}
+
+
 export const crearPedido = async (req: CustomRequest, res: Response): Promise<void> => {
   try {
     const usuarioAuthId = req.usuario?.id
@@ -17,9 +54,6 @@ export const crearPedido = async (req: CustomRequest, res: Response): Promise<vo
     // Notificaciones en tiempo real
     try {
       const io = getIO()
-
-      // Notificar a cocina para que aparezca el ticket en "Por hacer"
-      io.emit('cocina:nuevo_pedido', resultado.pedidoPoblado)
 
       // Notificar a todos los meseros que la mesa ahora está ocupada (se pone roja)
       if (resultado.mesaActualizada) {
@@ -48,6 +82,45 @@ export const crearPedido = async (req: CustomRequest, res: Response): Promise<vo
     }
     console.error('Error al registrar el pedido:', error)
     res.status(500).json({ mensaje: 'Error al registrar el pedido' })
+  }
+}
+
+export const crearTandaPedido = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const usuarioAuthId = req.usuario?.id
+
+    if (!usuarioAuthId) {
+      res.status(401).json({ mensaje: 'Usuario no autenticado' })
+      return
+    }
+
+    const detalles = req.body?.detalles
+
+    const resultado = await pedidoService.crearTandaPedido(
+      String(req.params.id),
+      { detalles },
+      usuarioAuthId,
+      req.usuario?.rol
+    )
+
+    res.status(201).json({
+      mensaje: 'Tanda creada como borrador. Todavía no se ha enviado a cocina.',
+      ...resultado
+    })
+  } catch (error) {
+    if (error instanceof PedidoServiceError) {
+      res.status(error.statusCode).json({
+        mensaje: error.message,
+        ...error.extra
+      })
+      return
+    }
+
+    console.error('Error al crear la tanda:', error)
+    res.status(500).json({ mensaje: 'Error al crear la tanda' })
   }
 }
 
@@ -85,6 +158,75 @@ export const obtenerPedidoPorId = async (req: CustomRequest, res: Response): Pro
     }
     console.error('Error al obtener el pedido:', error)
     res.status(500).json({ mensaje: 'Error al obtener el pedido' })
+  }
+}
+
+export const cancelarTandaPedido = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const usuarioAuthId = req.usuario?.id
+
+    if (!usuarioAuthId) {
+      res.status(401).json({ mensaje: 'Usuario no autenticado' })
+      return
+    }
+
+    const resultado = await pedidoService.cancelarTandaPedido(
+      String(req.params.id),
+      String(req.params.tandaId),
+      usuarioAuthId,
+      req.usuario?.rol,
+      typeof req.body?.motivo === 'string' ? req.body.motivo : undefined
+    )
+
+    try {
+      const io = getIO()
+      const evento = {
+        pedidoId: resultado.pedido._id?.toString() || String(req.params.id),
+        tandaId: resultado.tanda._id?.toString() || String(req.params.tandaId),
+        numeroTanda: resultado.tanda.numeroTanda,
+        estado: resultado.tanda.estado,
+        pedido: resultado.pedido,
+        cuentaCancelada: resultado.cuentaCancelada
+      }
+
+      io.emit('cocina:tanda_cancelada', evento)
+      io.emit('cocina:tanda_actualizada', evento)
+
+      if (resultado.mesaLiberada) {
+        const mesaDTO = await mesaService.obtenerMesaPorId(
+          resultado.mesaLiberada._id.toString()
+        )
+        io.emit('mesas:updated', mesaDTO)
+      }
+    } catch (socketError) {
+      console.warn(
+        'Tanda cancelada, pero falló la notificación Socket.IO:',
+        socketError
+      )
+    }
+
+    res.status(200).json({
+      mensaje: resultado.cuentaCancelada
+        ? 'Tanda cancelada; la cuenta quedó cancelada y la mesa fue liberada.'
+        : 'Tanda cancelada correctamente.',
+      pedido: resultado.pedido,
+      tanda: resultado.tanda,
+      cuentaCancelada: resultado.cuentaCancelada
+    })
+  } catch (error) {
+    if (error instanceof PedidoServiceError) {
+      res.status(error.statusCode).json({
+        mensaje: error.message,
+        ...error.extra
+      })
+      return
+    }
+
+    console.error('Error al cancelar tanda:', error)
+    res.status(500).json({ mensaje: 'Error al cancelar la tanda' })
   }
 }
 
@@ -145,15 +287,9 @@ export const actualizarEstadoPedido = async (req: Request, res: Response): Promi
         )
         io.to('room:meseros').emit('mesas:alerta_listo', {
           pedidoId: pedidoActualizado._id.toString(),
-          mesaId: pedidoActualizado.mesa
-            ? (pedidoActualizado.mesa as any)._id?.toString() ||
-              pedidoActualizado.mesa.toString()
-            : undefined,
+          mesaId: obtenerIdReferenciaMesa(pedidoActualizado.mesa),
           mesaNombre: pedidoActualizado.mesa
-            ? (pedidoActualizado.mesa as any).numero ||
-              (pedidoActualizado.mesa as any).name ||
-              (pedidoActualizado.mesa as any).nombre ||
-              'Mesa'
+            ? obtenerNombreMesa(pedidoActualizado.mesa) ?? 'Mesa'
             : '?'
         })
       }
@@ -298,6 +434,67 @@ export const solicitarCuentaPedido = async (
   }
 }
 
+export const marcarTandaEntregada = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const usuarioAuthId = req.usuario?.id
+    const usuarioRol = req.usuario?.rol || ''
+
+    if (!usuarioAuthId) {
+      res.status(401).json({ mensaje: 'Usuario no autenticado' })
+      return
+    }
+
+    const resultado = await pedidoService.marcarTandaEntregada(
+      String(req.params.id),
+      String(req.params.tandaId),
+      usuarioAuthId,
+      usuarioRol
+    )
+
+    try {
+      const io = getIO()
+      const pedidoId = resultado.pedido._id
+        ? resultado.pedido._id.toString()
+        : String(req.params.id)
+
+      const evento = {
+        pedidoId,
+        tandaId: resultado.tanda._id?.toString() || String(req.params.tandaId),
+        numeroTanda: resultado.tanda.numeroTanda,
+        estado: resultado.tanda.estado,
+        fechaRecogida: resultado.fechaRecogida,
+        pedido: resultado.pedido
+      }
+
+      io.emit('cocina:tanda_actualizada', evento)
+      io.emit('cocina:tanda_entregada', evento)
+    } catch (socketError) {
+      console.warn(
+        'Tanda entregada, pero falló la notificación Socket.IO:',
+        socketError
+      )
+    }
+
+    res.status(200).json(resultado)
+  } catch (error) {
+    if (error instanceof PedidoServiceError) {
+      res.status(error.statusCode).json({
+        mensaje: error.message,
+        ...error.extra
+      })
+      return
+    }
+
+    console.error('Error al marcar la tanda como entregada:', error)
+    res.status(500).json({
+      mensaje: 'Error al marcar la tanda como entregada'
+    })
+  }
+}
+
 export const marcarPedidoRecogido = async (
   req: CustomRequest,
   res: Response
@@ -323,8 +520,8 @@ export const marcarPedidoRecogido = async (
       io.emit('cocina:pedido_recogido', {
         pedidoId: resultado.pedido._id ? resultado.pedido._id.toString() : String(id),
         codigo: resultado.pedido.codigo,
-        mesaId: resultado.pedido.mesa?._id || resultado.pedido.mesa,
-        mesaNombre: (resultado.pedido.mesa as any)?.numero || 'Mesa',
+        mesaId: obtenerIdReferenciaMesa(resultado.pedido.mesa),
+        mesaNombre: obtenerNombreMesa(resultado.pedido.mesa) ?? 'Mesa',
         recogido: true,
         recogidoPor: usuarioAuthId,
         fechaRecogida: resultado.fechaRecogida
@@ -346,6 +543,122 @@ export const marcarPedidoRecogido = async (
     console.error('Error al marcar pedido como recogido:', error)
     res.status(500).json({
       mensaje: 'Error al marcar pedido como recogido'
+    })
+  }
+}
+
+export const enviarTandaCocina = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const usuarioAuthId = req.usuario?.id
+
+    if (!usuarioAuthId) {
+      res.status(401).json({ mensaje: 'Usuario no autenticado' })
+      return
+    }
+
+    const resultado = await pedidoService.enviarTandaCocina(
+      String(req.params.id),
+      String(req.params.tandaId),
+      usuarioAuthId,
+      req.usuario?.rol
+    )
+
+    // La notificación ocurre únicamente después de confirmar la transacción.
+    try {
+      getIO().emit('cocina:nueva_tanda', {
+        pedidoId: resultado.pedido._id?.toString(),
+        codigo: resultado.pedido.codigo,
+        pedido: resultado.pedido,
+        tanda: resultado.tanda
+      })
+
+      getIO().emit('cocina:actualizar_tablero', resultado.pedido)
+    } catch (socketError) {
+      console.warn(
+        'Tanda enviada correctamente, pero falló la notificación Socket.IO:',
+        socketError
+      )
+    }
+
+    res.status(200).json({
+      mensaje: 'Tanda enviada a cocina correctamente',
+      ...resultado
+    })
+  } catch (error) {
+    if (error instanceof PedidoServiceError) {
+      res.status(error.statusCode).json({
+        mensaje: error.message,
+        ...error.extra
+      })
+      return
+    }
+
+    console.error('Error al enviar la tanda a cocina:', error)
+    res.status(500).json({
+      mensaje: 'Error al enviar la tanda a cocina'
+    })
+  }
+}
+
+export const actualizarEstadoTandaCocina = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const usuarioAuthId = req.usuario?.id
+    if (!usuarioAuthId) {
+      res.status(401).json({ mensaje: 'Usuario no autenticado' })
+      return
+    }
+
+    const resultado = await pedidoService.actualizarEstadoTandaCocina(
+      String(req.params.id),
+      String(req.params.tandaId),
+      String(req.body?.estado || ''),
+      usuarioAuthId,
+      req.usuario?.rol
+    )
+
+    try {
+      const io = getIO()
+      const evento = {
+        pedidoId: resultado.pedido._id.toString(),
+        codigo: resultado.pedido.codigo,
+        tanda: resultado.tanda
+      }
+
+      io.emit('cocina:tanda_actualizada', evento)
+
+      if (resultado.disparaAlertaListo) {
+        io.to('room:meseros').emit('mesas:alerta_listo', evento)
+      }
+    } catch (socketError) {
+      console.warn(
+        'Estado de tanda actualizado, pero falló la notificación Socket.IO:',
+        socketError
+      )
+    }
+
+    res.status(200).json({
+      mensaje: 'Estado de la tanda actualizado correctamente',
+      pedidoId: resultado.pedido._id,
+      tanda: resultado.tanda
+    })
+  } catch (error) {
+    if (error instanceof PedidoServiceError) {
+      res.status(error.statusCode).json({
+        mensaje: error.message,
+        ...error.extra
+      })
+      return
+    }
+
+    console.error('Error al actualizar el estado de la tanda:', error)
+    res.status(500).json({
+      mensaje: 'Error al actualizar el estado de la tanda'
     })
   }
 }

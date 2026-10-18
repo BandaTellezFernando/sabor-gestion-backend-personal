@@ -23,6 +23,12 @@ export interface IMovimientoConsumoIngrediente {
 
 export interface IMovimientoInventario extends Document {
   pedido: mongoose.Types.ObjectId
+  // Opcionales para conservar compatibilidad con movimientos históricos.
+  tandaId?: mongoose.Types.ObjectId
+  numeroTanda?: number
+  stockRestituido?: boolean
+  fechaRestitucion?: Date
+  restituidoPor?: mongoose.Types.ObjectId
   codigoPedido: string
   fechaHora: Date
   usuario: mongoose.Types.ObjectId
@@ -84,7 +90,22 @@ const MovimientoInventarioSchema = new Schema<IMovimientoInventario>(
       type: Schema.Types.ObjectId,
       ref: 'Pedido',
       required: true,
-      unique: true,
+    },
+    tandaId: {
+      type: Schema.Types.ObjectId,
+      required: false,
+    },
+    numeroTanda: {
+      type: Number,
+      required: false,
+      min: 1,
+    },
+    stockRestituido: { type: Boolean, default: false },
+    fechaRestitucion: { type: Date, required: false },
+    restituidoPor: {
+      type: Schema.Types.ObjectId,
+      ref: 'Usuario',
+      required: false,
     },
     codigoPedido: { type: String, required: true, trim: true },
     fechaHora: { type: Date, required: true },
@@ -112,6 +133,11 @@ const MovimientoInventarioSchema = new Schema<IMovimientoInventario>(
 
 MovimientoInventarioSchema.index({ fechaHora: -1 })
 MovimientoInventarioSchema.index({ codigoPedido: 1 })
+MovimientoInventarioSchema.index({ pedido: 1, fechaHora: -1 })
+MovimientoInventarioSchema.index(
+  { tandaId: 1 },
+  { unique: true, sparse: true },
+)
 
 export default mongoose.model<IMovimientoInventario>(
   'MovimientoInventario',

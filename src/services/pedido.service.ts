@@ -1,25 +1,192 @@
 // src/services/pedido.service.ts
 // ─── Servicio de Lógica de Negocio y Orquestación de Pedidos ──────────────────
-import { Types } from 'mongoose'
+import mongoose, { Types, type Document, type QueryFilter } from 'mongoose'
 import {
   PedidoRepository,
   pedidoRepository,
-  IPedido
+  IPedido,
+  PedidoActualizarDatos
 } from '../repositories/pedido.repo'
-import { MesaRepository, mesaRepository } from '../repositories/mesa.repo'
+import { MesaPobladaDoc, MesaRepository, mesaRepository } from '../repositories/mesa.repo'
 import {
   MesaOcupacionRepository,
   mesaOcupacionRepository
 } from '../repositories/mesaOcupacion.repo'
 import { PlatoRepository, platoRepository } from '../repositories/plato.repo'
-import { ESTADOS_MESA, ESTADOS_PEDIDO } from '../utils/constants'
+import {
+  ESTADOS_CUENTA,
+  ESTADOS_MESA,
+  ESTADOS_PEDIDO,
+  ESTADOS_TANDA_COCINA,
+  EstadoTandaCocina
+} from '../utils/constants'
 import {
   obtenerFechaBolivia,
   formatearFechaBolivia
 } from '../utils/fechaBolivia'
 import { inventarioService } from './inventario.service'
 import MovimientoInventario from '../models/MovimientoInventario'
+import IngredienteModel from '../models/Ingrediente'
+import { esUnidadMedida } from '../utils/unidades'
 import { generarSiguienteCodigoPedido } from './contador.service'
+import type { IDetallePedido, ITandaCocina } from '../models/Pedido'
+
+type CocinaId = Types.ObjectId | string
+
+type CocinaReferenciaPlato =
+  | CocinaId
+  | { _id?: CocinaId; nombre?: string }
+  | null
+
+type CocinaDetalleEntrada = Omit<IDetallePedido, 'plato' | 'tandaId'> & {
+  _id?: CocinaId
+  plato: CocinaReferenciaPlato
+  tandaId?: CocinaId | null
+}
+
+type CocinaTandaEntrada = Omit<ITandaCocina, '_id'> & {
+  _id?: CocinaId
+  toObject?: () => CocinaTandaEntrada
+}
+
+interface PedidoCocinaRaw {
+  _id?: CocinaId
+  codigo?: string
+  estado?: string
+  estadoCuenta?: string
+  mesa?: unknown
+  usuario?: unknown
+  tandas?: CocinaTandaEntrada[]
+  detalles?: CocinaDetalleEntrada[]
+  recogido?: boolean
+  recogidoPor?: unknown
+  fechaRecogida?: Date | null
+  fechaHoraBolivia?: string
+  createdAt?: Date
+  updatedAt?: Date
+  toObject?: () => PedidoCocinaRaw
+}
+
+function obtenerNombrePlatoCocina(
+  plato: CocinaReferenciaPlato | undefined
+): string | undefined {
+  if (
+    plato &&
+    typeof plato === 'object' &&
+    'nombre' in plato &&
+    typeof plato.nombre === 'string'
+  ) {
+    return plato.nombre
+  }
+
+  return undefined
+}
+
+type PlatoIdEntrada = Types.ObjectId | string
+
+type PlatoReferenciaEntrada =
+  | PlatoIdEntrada
+  | { _id?: PlatoIdEntrada; nombre?: string }
+  | null
+  | undefined
+
+interface DetallePedidoEntrada {
+  plato?: PlatoReferenciaEntrada
+  platoId?: PlatoIdEntrada
+  cantidad: number | string
+  observacion?: string | null
+}
+
+function obtenerIdPlatoEntrada(
+  plato: PlatoReferenciaEntrada,
+  platoIdAlternativo?: PlatoIdEntrada
+): PlatoIdEntrada | undefined {
+  if (typeof plato === 'string' || plato instanceof Types.ObjectId) {
+    return plato
+  }
+
+  if (plato && typeof plato === 'object') {
+    return plato._id ?? platoIdAlternativo
+  }
+
+  return platoIdAlternativo
+}
+
+interface ActualizarPedidoEntrada {
+  total?: number | string
+  detalles?: DetallePedidoEntrada[]
+  clienteNombre?: string
+  clienteCI?: string
+  clienteNIT?: string
+  cajeroAsignado?: string | Types.ObjectId
+  montoDescuento?: number | string
+  montoPropina?: number | string
+  subtotalCierre?: number | string
+  estado?: string
+}
+
+type PedidoFormateado = Omit<IPedido, keyof Document> & {
+  _id: Types.ObjectId
+  fechaRecogidaBolivia?: string
+}
+
+type MesaReferenciaEntrada = PlatoIdEntrada | { _id?: PlatoIdEntrada }
+
+interface CrearPedidoEntrada {
+  mesa?: MesaReferenciaEntrada | null
+  usuario?: PlatoIdEntrada
+  detalles: DetallePedidoEntrada[]
+  montoDescuento?: number | string
+  montoPropina?: number | string
+  clienteNombre?: string
+  clienteCI?: string
+  clienteNIT?: string
+  cajeroAsignado?: PlatoIdEntrada
+}
+
+function obtenerIdMesaEntrada(mesa: MesaReferenciaEntrada): string {
+  if (typeof mesa === 'string' || mesa instanceof Types.ObjectId) {
+    return mesa.toString()
+  }
+
+  return mesa._id ? mesa._id.toString() : String(mesa)
+}
+
+function obtenerIdReferenciaPedido(valor: unknown): string | undefined {
+  if (typeof valor === 'string') {
+    return valor
+  }
+
+  if (valor instanceof Types.ObjectId) {
+    return valor.toString()
+  }
+
+  if (valor && typeof valor === 'object' && '_id' in valor) {
+    const id = valor._id
+
+    if (typeof id === 'string') {
+      return id
+    }
+
+    if (id instanceof Types.ObjectId) {
+      return id.toString()
+    }
+  }
+
+  return undefined
+}
+
+function obtenerEstadoReferenciaPedido(valor: unknown): string | undefined {
+  if (valor && typeof valor === 'object' && 'estado' in valor) {
+    return typeof valor.estado === 'string' ? valor.estado : undefined
+  }
+
+  return undefined
+}
+
+function obtenerTextoQuery(valor: unknown): string | undefined {
+  return typeof valor === 'string' ? valor : undefined
+}
 
 // ─── Clase de Error de Dominio ───────────────────────────────────────────────
 
@@ -27,7 +194,7 @@ export class PedidoServiceError extends Error {
   constructor(
     public statusCode: number,
     message: string,
-    public extra?: Record<string, any>
+    public extra?: Record<string, unknown>
   ) {
     super(message)
     this.name = 'PedidoServiceError'
@@ -37,36 +204,36 @@ export class PedidoServiceError extends Error {
 // ─── Interfaces de Resultados ────────────────────────────────────────────────
 
 export interface ResultadoActualizarEstado {
-  pedidoActualizado: any
+  pedidoActualizado: IPedido
   /** true cuando el nuevo estado activa la alerta "¡Listo!" hacia los meseros */
   disparaAlertaListo: boolean
 }
 
 export interface ResultadoCrearPedido {
-  nuevoPedido: any
-  pedidoPoblado: any
-  mesaActualizada: any
+  nuevoPedido: PedidoFormateado
+  pedidoPoblado: IPedido | null
+  mesaActualizada: MesaPobladaDoc | null
 }
 
 export interface ResultadoCancelarPedido {
-  pedido: any
-  mesaLiberada: any
+  pedido: PedidoFormateado
+  mesaLiberada: MesaPobladaDoc | null
   nuevoEstadoMesa: string
   statusSocket: string
 }
 
 export interface ResultadoActualizarPedido {
-  pedidoActualizado: any
-  pedidoDoc: any
-  mesaReactivada: any
+  pedidoActualizado: PedidoFormateado
+  pedidoDoc: IPedido
+  mesaReactivada: MesaPobladaDoc | null
   reabierto: boolean
-  cajeroAsignado?: any
+  cajeroAsignado?: string | Types.ObjectId
 }
 
 export interface ResultadoSolicitarCuenta {
-  payload: any
-  mesaActualizada: any
-  cajeroAsignado?: any
+  payload: ReturnType<typeof PedidoService.formatearPayloadCaja>
+  mesaActualizada: MesaPobladaDoc
+  cajeroAsignado?: IPedido['cajeroAsignado']
 }
 
 // ─── Clase Principal PedidoService ───────────────────────────────────────────
@@ -82,7 +249,7 @@ export class PedidoService {
   /**
    * Helper para adjuntar campos de fecha formateada para Bolivia
    */
-  static agregarFechaBoliviaPedido(pedido: any): any {
+  static agregarFechaBoliviaPedido(pedido: IPedido): PedidoFormateado {
     if (!pedido) return pedido
     const pedidoPlano = typeof pedido.toObject === 'function' ? pedido.toObject() : pedido
     const { _id, codigo, fechaHoraBolivia, fechaHora, ...restoPedido } = pedidoPlano
@@ -159,13 +326,89 @@ export class PedidoService {
   }
 
   /**
-   * Formatea un pedido excluyendo información financiera/de facturación para la vista operativa de cocina
+   * Formatea los pedidos para cocina.
+   * En pedidos nuevos muestra exclusivamente tandas enviadas que aún requieren servicio.
+   * Los pedidos históricos sin tandas mantienen el formato anterior.
    */
-  static formatearPedidoCocina(pedido: any): any {
-    const raw = typeof pedido?.toObject === 'function' ? pedido.toObject() : pedido || {}
+  static formatearPedidoCocina(
+    pedido: unknown
+  ): Record<string, unknown> | null {
+    const entrada = pedido as PedidoCocinaRaw | null | undefined
+    const raw: PedidoCocinaRaw =
+      entrada && typeof entrada.toObject === 'function'
+        ? entrada.toObject()
+        : entrada || {}
+
     const fechaHoraBolivia =
       raw.fechaHoraBolivia ||
       (raw.createdAt ? formatearFechaBolivia(raw.createdAt) : undefined)
+
+    if (Array.isArray(raw.tandas)) {
+      const tandasEntrada = raw.tandas as CocinaTandaEntrada[]
+      const estadosVisibles: EstadoTandaCocina[] = [
+        ESTADOS_TANDA_COCINA.PENDIENTE,
+        ESTADOS_TANDA_COCINA.EN_PREPARACION,
+        ESTADOS_TANDA_COCINA.LISTA
+      ]
+
+      const tandas = tandasEntrada
+        .map((tanda) =>
+          typeof tanda?.toObject === 'function' ? tanda.toObject() : tanda
+        )
+        .filter((tanda) => estadosVisibles.includes(tanda.estado))
+        .map((tanda) => {
+          const tandaId = tanda._id?.toString()
+
+          const detalles = (raw.detalles || [])
+            .filter(
+              (detalle) =>
+                detalle.tandaId &&
+                detalle.tandaId.toString() === tandaId
+            )
+            .map((detalle) => ({
+              plato: detalle.plato,
+              nombrePlato:
+                detalle.nombrePlato ||
+                obtenerNombrePlatoCocina(detalle.plato) ||
+                'Plato',
+              cantidad: detalle.cantidad,
+              observacion: detalle.observacion
+            }))
+
+          return {
+            ...tanda,
+            detalles
+          }
+        })
+        .filter((tanda) => tanda.detalles.length > 0)
+
+      if (tandas.length === 0) {
+        return null
+      }
+
+      return {
+        _id: raw._id,
+        pedidoId: raw._id,
+        codigo: raw.codigo,
+        estadoCuenta: raw.estadoCuenta || ESTADOS_CUENTA.ABIERTA,
+        mesa: raw.mesa,
+        usuario: raw.usuario,
+        tandas,
+        createdAt: raw.createdAt,
+        updatedAt: raw.updatedAt,
+        fechaHoraBolivia
+      }
+    }
+
+    // Compatibilidad con pedidos históricos que todavía no tienen tandas.
+    const pedidoActivo =
+      raw.estado === ESTADOS_PEDIDO.ABIERTO ||
+      raw.estado === ESTADOS_PEDIDO.EN_PREPARACION ||
+      (raw.estado === ESTADOS_PEDIDO.ENTREGADO && raw.recogido !== true)
+
+    if (!pedidoActivo) {
+      return null
+    }
 
     return {
       _id: raw._id,
@@ -173,12 +416,15 @@ export class PedidoService {
       estado: raw.estado,
       mesa: raw.mesa,
       usuario: raw.usuario,
-      detalles: (raw.detalles || []).map((d: any) => ({
-        _id: d._id,
-        plato: d.plato,
-        nombrePlato: d.nombrePlato || d.plato?.nombre || 'Plato',
-        cantidad: d.cantidad,
-        observacion: d.observacion
+      detalles: (raw.detalles || []).map((detalle) => ({
+        _id: detalle._id,
+        plato: detalle.plato,
+        nombrePlato:
+          detalle.nombrePlato ||
+          obtenerNombrePlatoCocina(detalle.plato) ||
+          'Plato',
+        cantidad: detalle.cantidad,
+        observacion: detalle.observacion
       })),
       recogido: raw.recogido || false,
       recogidoPor: raw.recogidoPor,
@@ -190,21 +436,21 @@ export class PedidoService {
   }
 
   /**
-   * Procesa cada detalle de pedido obteniendo el precio real y nombre desde PlatoRepository,
-   * calculando subtotal = precioReal * cantidad y validando la disponibilidad de recetas e ingredientes.
+   * Obtiene los nombres y precios reales de los platos y calcula sus subtotales.
+   * La disponibilidad del inventario se validará cuando la tanda se envíe a cocina.
    */
-  private async procesarDetallesPedido(detalles: any[]): Promise<{
-    detallesCalculados: any[]
+  private async procesarDetallesPedido(detalles: DetallePedidoEntrada[]): Promise<{
+    detallesCalculados: IDetallePedido[]
     subtotal: number
   }> {
     if (!detalles || !Array.isArray(detalles) || detalles.length === 0) {
       throw new PedidoServiceError(400, 'El pedido debe incluir al menos un plato en detalles')
     }
 
-    const detallesCalculados: any[] = []
+    const detallesCalculados: IDetallePedido[] = []
 
     for (const d of detalles) {
-      const platoId = d.plato?._id || d.plato || d.platoId
+      const platoId = obtenerIdPlatoEntrada(d.plato, d.platoId)
       if (!platoId) {
         throw new PedidoServiceError(400, 'Cada detalle debe especificar un plato')
       }
@@ -248,19 +494,15 @@ export class PedidoService {
   }
 
   /**
-   * Valida existencia de mesa, calcula importes mediante PlatoRepository,
-   * valida ingredientes, genera correlativo diario PED-XXXX,
-   * crea el pedido en BD y actualiza el estado de la mesa a 'Ocupada'.
-   *
-   * La confirmación de inventario utiliza session.withTransaction().
-   * MongoDB/Mongoose puede reintentar automáticamente la transacción
-   * cuando ocurre un conflicto transitorio de escritura.
+   * Valida la mesa, calcula importes con precios obtenidos del backend,
+   * genera el correlativo diario y crea la cuenta con su primera tanda
+   * en borrador. El inventario se procesa al enviar la tanda a cocina.
    */
-  async crearPedido(datos: any, usuarioAuthId?: string): Promise<ResultadoCrearPedido> {
+  async crearPedido(datos: CrearPedidoEntrada, usuarioAuthId?: string): Promise<ResultadoCrearPedido> {
     // 1. Validar existencia de mesa si fue enviada (404 si no existe)
     let mesaIdString: string | undefined = undefined
     if (datos.mesa) {
-      const mesaId = (datos.mesa._id || datos.mesa).toString()
+      const mesaId = obtenerIdMesaEntrada(datos.mesa)
       mesaIdString = mesaId
       const mesaExiste = await this.mesaRepo.buscarPorId(mesaId)
       if (!mesaExiste) {
@@ -299,106 +541,179 @@ export class PedidoService {
       Math.max(0, subtotal - montoDescuento + montoPropina).toFixed(2)
     )
 
-    // 5. Generar código diario secuencial y fechas Bolivia
+    // 5. Generar código diario secuencial y fechas Bolivia.
     const pedidoId = new Types.ObjectId()
+    const tandaId = new Types.ObjectId()
     const { codigo, fechaDiaBolivia } = await generarSiguienteCodigoPedido()
     const fechaHora = obtenerFechaBolivia()
     const usuarioResponsable = usuarioAuthId || datos.usuario
 
-    const mongoose = require('mongoose')
-let session: any = null
-let nuevoPedidoDoc: IPedido | null = null
+    if (
+      !usuarioResponsable ||
+      !Types.ObjectId.isValid(usuarioResponsable.toString())
+    ) {
+      throw new PedidoServiceError(
+        401,
+        'Se necesita un usuario válido para registrar la cuenta.'
+      )
+    }
 
-try {
-  session = await mongoose.startSession()
+    const usuarioResponsableId = new Types.ObjectId(
+      usuarioResponsable.toString()
+    )
 
-  await session.withTransaction(async () => {
-    const itemsParaValidar = detallesCalculados.map((item) => ({
-      platoId: item.plato.toString(),
-      cantidad: item.cantidad,
-      observacion: item.observacion
+    // Cada detalle queda asociado a su tanda inicial en borrador.
+    const detallesConTanda = detallesCalculados.map((detalle) => ({
+      ...detalle,
+      tandaId
     }))
 
-    const validacion =
-      await inventarioService.verificarYDescontarStock(
-        itemsParaValidar,
-        session
-      )
+    let nuevoPedidoDoc: IPedido | null = null
+    let mesaActualizada: MesaPobladaDoc | null = null
 
-    if (!validacion.success) {
-      throw new PedidoServiceError(
-        400,
-        'No se puede registrar el pedido por restricciones de receta o ingredientes insuficientes',
-        {
-          errores: validacion.errores,
-          faltantes: validacion.faltantes
+    const session = await mongoose.startSession()
+
+    try {
+      nuevoPedidoDoc = await session.withTransaction<IPedido>(async () => {
+        let ocupacion = null
+
+        if (mesaIdString) {
+          const mesa = await this.mesaRepo.buscarPorId(
+            mesaIdString,
+            session
+          )
+
+          if (!mesa) {
+            throw new PedidoServiceError(404, 'Mesa no encontrada')
+          }
+
+          // Una mesa no puede recibir una segunda cuenta activa.
+          const pedidoActivo =
+            await this.pedidoRepo.buscarPedidoActivoPorMesa(
+              mesaIdString,
+              session
+            )
+
+          if (pedidoActivo) {
+            throw new PedidoServiceError(
+              409,
+              'La mesa ya tiene un pedido activo. Añade los productos a esa cuenta.'
+            )
+          }
+
+          ocupacion = await this.mesaOcupacionRepo.buscarPorMesaId(
+            mesaIdString,
+            session
+          )
+
+          const ahora = new Date()
+          const ocupacionVigente =
+            ocupacion !== null && ocupacion.expiraEn > ahora
+
+          if (
+            ocupacionVigente &&
+            ocupacion!.usuarioId.toString() !==
+              usuarioResponsableId.toString()
+          ) {
+            throw new PedidoServiceError(
+              409,
+              'La mesa está ocupada temporalmente por otro mesero.'
+            )
+          }
+
+          if (mesa.estado === ESTADOS_MESA.LIBRE) {
+            // Una reserva vigente con mesa libre indica datos inconsistentes.
+            if (ocupacionVigente) {
+              throw new PedidoServiceError(
+                409,
+                'La reserva temporal y el estado de la mesa no coinciden. Actualiza la mesa antes de continuar.'
+              )
+            }
+
+            // La actualización condicional impide que dos solicitudes
+            // ocupen simultáneamente una mesa libre.
+            mesaActualizada = await this.mesaRepo.ocuparMesaSiLibre(
+              mesaIdString,
+              session
+            )
+
+            if (!mesaActualizada) {
+              throw new PedidoServiceError(
+                409,
+                'La mesa acaba de ser ocupada por otra operación.'
+              )
+            }
+          } else if (mesa.estado === ESTADOS_MESA.OCUPADA) {
+            // Una mesa ocupada solo puede convertirse en pedido si conserva
+            // la reserva temporal propia o una reserva que ya expiró.
+            if (!ocupacion) {
+              throw new PedidoServiceError(
+                409,
+                'La mesa figura ocupada y no tiene una reserva temporal disponible para convertir en pedido.'
+              )
+            }
+
+            mesaActualizada = mesa
+          } else {
+            throw new PedidoServiceError(
+              409,
+              'La mesa no está disponible para registrar un pedido.'
+            )
+          }
         }
-      )
-    }
 
-    nuevoPedidoDoc = await this.pedidoRepo.crear(
-      {
-        ...datos,
-        _id: pedidoId,
-        codigo,
-        fechaDiaBolivia,
-        detalles: detallesCalculados,
-        total: totalCalculado,
-        subtotalCierre: subtotal,
-        montoDescuento,
-        montoPropina,
-        mesa: mesaIdString || undefined,
-        usuario: usuarioResponsable,
-        fechaHoraBolivia: formatearFechaBolivia(fechaHora),
-        fechaHora
-      },
-      session
-    )
-
-    // Registrar el consumo calculado dentro de la misma transacción.
-    // Si todos los ingredientes fueron excluidos de la preparación,
-    // no se crea un movimiento sin consumos.
-    if (validacion.consumos.length > 0) {
-      const consumosMovimiento = validacion.consumos.map((consumo) => ({
-        ingrediente: new Types.ObjectId(consumo.ingredienteId),
-        nombreIngrediente: consumo.nombreIngrediente,
-        unidadStock: consumo.unidadStock,
-        cantidadTotal: consumo.cantidadTotal,
-        detallePlatos: consumo.detallePlatos.map((detalle) => ({
-          plato: new Types.ObjectId(detalle.platoId),
-          nombrePlato: detalle.nombrePlato,
-          cantidadPlatos: detalle.cantidadPlatos,
-          cantidadNecesariaPorPlato: detalle.cantidadNecesariaPorPlato,
-          unidadReceta: detalle.unidadReceta,
-          cantidadPorPlatoEnStock: detalle.cantidadPorPlatoEnStock,
-          unidadStock: detalle.unidadStock,
-          consumoTotal: detalle.consumoTotal,
-          observacion: detalle.observacion || '',
-        })),
-      }))
-
-      await MovimientoInventario.create(
-        [
+        // Crear el pedido dentro de la misma transacción que la mesa.
+        // La creación NO descuenta inventario.
+        const pedidoCreado = await this.pedidoRepo.crear(
           {
-            pedido: pedidoId,
-            codigoPedido: codigo,
-            fechaHora,
-            usuario: usuarioResponsable,
-            consumos: consumosMovimiento,
+            ...datos,
+            _id: pedidoId,
+            codigo,
+            fechaDiaBolivia,
+            estado: ESTADOS_PEDIDO.ABIERTO,
+            estadoCuenta: ESTADOS_CUENTA.ABIERTA,
+            tandas: [
+              {
+                _id: tandaId,
+                numeroTanda: 1,
+                estado: ESTADOS_TANDA_COCINA.BORRADOR,
+                creadaPor: usuarioResponsableId,
+                fechaCreacion: fechaHora
+              }
+            ],
+            detalles: detallesConTanda,
+            total: totalCalculado,
+            subtotalCierre: subtotal,
+            montoDescuento,
+            montoPropina,
+            mesa: mesaIdString || undefined,
+            usuario: usuarioResponsableId,
+            fechaHoraBolivia: formatearFechaBolivia(fechaHora),
+            fechaHora
           },
-        ],
-        { session },
-      )
-    }
-  })
+          session
+        )
 
-  if (!nuevoPedidoDoc) {
-    throw new PedidoServiceError(
-      500,
-      'La transacción terminó correctamente pero no se pudo obtener el pedido creado.'
-    )
-  }
-} catch (error: any) {
+        // Si la mesa procedía de una reserva temporal, eliminarla en la
+        // misma transacción. Si algo falla, se revierte también el pedido.
+        if (mesaIdString && ocupacion) {
+          const ocupacionEliminada =
+            await this.mesaOcupacionRepo.eliminarPorMesaId(
+              mesaIdString,
+              session
+            )
+
+          if (!ocupacionEliminada) {
+            throw new PedidoServiceError(
+              409,
+              'La reserva temporal cambió durante la operación. Vuelve a consultar la mesa.'
+            )
+          }
+        }
+
+        return pedidoCreado
+      })
+    } catch (error) {
       if (error instanceof PedidoServiceError) {
         throw error
       }
@@ -406,10 +721,6 @@ try {
       const mensajeError =
         error instanceof Error ? error.message : String(error || '')
 
-      /*
-       * Si la infraestructura MongoDB no soporta transacciones,
-       * no podemos garantizar la atomicidad requerida.
-       */
       if (
         /Transaction numbers are only allowed/i.test(mensajeError) ||
         /replica set/i.test(mensajeError) ||
@@ -417,40 +728,34 @@ try {
       ) {
         throw new PedidoServiceError(
           500,
-          'El servidor MongoDB no soporta transacciones (requiere Replica Set). No se puede garantizar la atomicidad del inventario.'
+          'MongoDB debe soportar transacciones para crear el pedido y ocupar la mesa de forma atómica.'
         )
       }
 
-      console.error('Error transaccional al registrar el pedido:', error)
+      console.error(
+        'Error transaccional al registrar la cuenta:',
+        error
+      )
 
       throw new PedidoServiceError(
         500,
-        mensajeError || 'Error interno al registrar la comanda'
+        'No se pudo registrar la cuenta y ocupar la mesa. La operación no se confirmó.'
       )
     } finally {
-      if (session) {
-        await session.endSession()
-      }
+      await session.endSession()
     }
 
-    // 6. Eliminar la ocupación temporal si existía para esta mesa (convertida a comanda real)
-    if (mesaIdString) {
-      await this.mesaOcupacionRepo.eliminarPorMesaId(mesaIdString)
-    }
-
-    // 7. Poblar datos para vista de cocina
-    const pedidoPoblado = await this.pedidoRepo.buscarPorIdPoblado(
-  (nuevoPedidoDoc as IPedido)._id
-)
-
-    // 8. AUTOMATIZACIÓN: Cambiar estado de la mesa a 'Ocupada'
-    let mesaActualizada: any = null
-    if (mesaIdString) {
-      mesaActualizada = await this.mesaRepo.actualizarEstado(
-        mesaIdString,
-        ESTADOS_MESA.OCUPADA
+    if (!nuevoPedidoDoc) {
+      throw new PedidoServiceError(
+        500,
+        'La transacción terminó sin devolver el pedido creado.'
       )
     }
+
+    // Consultar el pedido ya confirmado y devolver la mesa actualizada.
+    const pedidoPoblado = await this.pedidoRepo.buscarPorIdPoblado(
+      nuevoPedidoDoc._id
+    )
 
     return {
       nuevoPedido: PedidoService.agregarFechaBoliviaPedido(nuevoPedidoDoc),
@@ -466,7 +771,7 @@ try {
     id: string,
     usuarioAuthId?: string,
     usuarioRol?: string
-  ): Promise<any> {
+  ): Promise<PedidoFormateado | Record<string, unknown>> {
     if (!Types.ObjectId.isValid(id)) {
       throw new PedidoServiceError(400, 'ID de pedido inválido')
     }
@@ -482,8 +787,7 @@ try {
     const esCajero = usuarioRol === 'Cajero'
 
     if (esMesero) {
-      const meseroId =
-        (pedido.usuario as any)?._id?.toString() || pedido.usuario?.toString()
+      const meseroId = obtenerIdReferenciaPedido(pedido.usuario)
 
       if (usuarioAuthId && meseroId !== usuarioAuthId.toString()) {
         throw new PedidoServiceError(
@@ -504,13 +808,20 @@ try {
         )
       }
 
-      return PedidoService.formatearPedidoCocina(pedido)
+      const pedidoCocina = PedidoService.formatearPedidoCocina(pedido)
+      if (!pedidoCocina) {
+        throw new PedidoServiceError(
+          403,
+          'Acceso denegado: el pedido no tiene tandas activas para cocina.'
+        )
+      }
+      return pedidoCocina
     } else if (esCajero) {
       // Alcance Cajero: Pedidos con cuenta solicitada, asignados a este cajero, o en proceso de cobro
-      const mesaEstado = (pedido.mesa as any)?.estado
-      const cajeroAsignadoId =
-        (pedido.cajeroAsignado as any)?._id?.toString() ||
-        pedido.cajeroAsignado?.toString()
+      const mesaEstado = obtenerEstadoReferenciaPedido(pedido.mesa)
+      const cajeroAsignadoId = obtenerIdReferenciaPedido(
+        pedido.cajeroAsignado
+      )
 
       const tieneCuentaSolicitada = mesaEstado === 'Cuenta Solicitada'
       const esCajeroAsignado = Boolean(
@@ -541,21 +852,19 @@ try {
    * y el rol/titularidad del usuario autenticado
    */
   async obtenerPedidos(
-    query: Record<string, any>,
+    query: Record<string, unknown>,
     usuarioAuthId?: string,
     usuarioRol?: string
-  ): Promise<any[]> {
-    const {
-      hoy,
-      fecha,
-      mesa,
-      activo,
-      cajero,
-      mesero,
-      reportesCierre,
-      recogido,
-      incluirRecogidos
-    } = query
+  ): Promise<(PedidoFormateado | Record<string, unknown>)[]> {
+    const hoy = obtenerTextoQuery(query.hoy)
+    const fecha = obtenerTextoQuery(query.fecha)
+    const mesa = obtenerTextoQuery(query.mesa)
+    const activo = obtenerTextoQuery(query.activo)
+    const cajero = obtenerTextoQuery(query.cajero)
+    const mesero = obtenerTextoQuery(query.mesero)
+    const reportesCierre = obtenerTextoQuery(query.reportesCierre)
+    const recogido = obtenerTextoQuery(query.recogido)
+    const incluirRecogidos = obtenerTextoQuery(query.incluirRecogidos)
 
     const esAdmin =
       usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
@@ -595,8 +904,8 @@ try {
       })
     }
 
-    const filtro: any = {}
-    const andClauses: any[] = []
+    const filtro: QueryFilter<IPedido> = {}
+    const andClauses: QueryFilter<IPedido>[] = []
 
     // Reglas de alcance por Rol:
     if (esMesero) {
@@ -721,9 +1030,11 @@ try {
     const pedidos = await this.pedidoRepo.buscarConFiltros(filtro)
 
     if (esCocinero) {
-      return pedidos.map((pedido) =>
-        PedidoService.formatearPedidoCocina(pedido)
-      )
+      return pedidos
+        .map((pedido) => PedidoService.formatearPedidoCocina(pedido))
+        .filter(
+          (pedido): pedido is Record<string, unknown> => pedido !== null
+        )
     }
 
     return pedidos.map((pedido) =>
@@ -734,7 +1045,7 @@ try {
   /**
    * Obtiene exclusivamente los pedidos operativos para el tablero de cocina (Cocinero, Admin)
    */
-  async obtenerPedidosCocina(): Promise<any[]> {
+  async obtenerPedidosCocina(): Promise<Record<string, unknown>[]> {
     const filtro = {
       $or: [
         {
@@ -751,14 +1062,842 @@ try {
 
     const pedidos = await this.pedidoRepo.buscarConFiltros(filtro)
 
-    return pedidos.map((pedido) =>
-      PedidoService.formatearPedidoCocina(pedido)
+    return pedidos
+      .map((pedido) => PedidoService.formatearPedidoCocina(pedido))
+      .filter(
+        (pedido): pedido is Record<string, unknown> => pedido !== null
+      )
+  }
+
+  /**
+   * Crea una tanda nueva en borrador dentro de una cuenta abierta.
+   * No envía la tanda a cocina ni descuenta inventario.
+   */
+  async crearTandaPedido(
+    id: string,
+    datos: { detalles?: DetallePedidoEntrada[] },
+    usuarioAuthId?: string,
+    usuarioRol?: string
+  ): Promise<{
+    pedido: PedidoFormateado
+    tanda: {
+      id: string
+      numeroTanda: number
+      estado: string
+      fechaCreacion: Date
+    }
+  }> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new PedidoServiceError(400, 'ID de pedido inválido')
+    }
+
+    if (!usuarioAuthId) {
+      throw new PedidoServiceError(401, 'Usuario no autenticado')
+    }
+
+    const pedido = await this.pedidoRepo.buscarPorId(id)
+
+    if (!pedido) {
+      throw new PedidoServiceError(404, 'Pedido no encontrado')
+    }
+
+    const esAdmin =
+      usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
+    const esResponsable =
+      pedido.usuario.toString() === usuarioAuthId
+
+    if (!esResponsable && !esAdmin) {
+      throw new PedidoServiceError(
+        403,
+        'Solo el mesero responsable o un Administrador pueden agregar tandas.'
+      )
+    }
+
+    if (
+      pedido.estadoCuenta !== ESTADOS_CUENTA.ABIERTA ||
+      !Array.isArray(pedido.tandas) ||
+      pedido.tandas.length === 0
+    ) {
+      throw new PedidoServiceError(
+        409,
+        'La cuenta no está preparada para recibir nuevas tandas.'
+      )
+    }
+
+    if (
+      pedido.estado === ESTADOS_PEDIDO.CERRADO ||
+      pedido.estado === ESTADOS_PEDIDO.CANCELADO
+    ) {
+      throw new PedidoServiceError(
+        409,
+        'No se pueden agregar tandas a una cuenta cerrada o cancelada.'
+      )
+    }
+
+    if (pedido.mesa) {
+      const mesa = await this.mesaRepo.buscarPorId(pedido.mesa.toString())
+
+      if (mesa?.estado === ESTADOS_MESA.CUENTA_SOLICITADA) {
+        throw new PedidoServiceError(
+          409,
+          'No se pueden agregar productos después de solicitar la cuenta.'
+        )
+      }
+    }
+
+    if (!(pedido.updatedAt instanceof Date)) {
+      throw new PedidoServiceError(
+        409,
+        'No se pudo comprobar la versión de la cuenta. Vuelve a consultar el pedido.'
+      )
+    }
+
+    const { detallesCalculados, subtotal } =
+      await this.procesarDetallesPedido(datos.detalles ?? [])
+
+    const numeroTanda =
+      Math.max(0, ...pedido.tandas.map((tanda) => tanda.numeroTanda)) + 1
+
+    const tandaId = new Types.ObjectId()
+    const fechaCreacion = obtenerFechaBolivia()
+
+    const nuevaTanda: ITandaCocina = {
+      _id: tandaId,
+      numeroTanda,
+      estado: ESTADOS_TANDA_COCINA.BORRADOR,
+      creadaPor: new Types.ObjectId(usuarioAuthId),
+      fechaCreacion
+    }
+
+    const detallesTanda: IDetallePedido[] = detallesCalculados.map(
+      (detalle: IDetallePedido) => ({
+        ...detalle,
+        tandaId
+      })
     )
+
+    const subtotalAnterior = Number(
+      (pedido.detalles ?? [])
+        .reduce((suma, detalle) => suma + Number(detalle.subtotal || 0), 0)
+        .toFixed(2)
+    )
+    const subtotalActualizado = Number(
+      (subtotalAnterior + subtotal).toFixed(2)
+    )
+    const descuento = Number(pedido.montoDescuento || 0)
+    const propina = Number(pedido.montoPropina || 0)
+    const totalActualizado = Number(
+      Math.max(0, subtotalActualizado - descuento + propina).toFixed(2)
+    )
+
+    const pedidoActualizado = await this.pedidoRepo.agregarTandaBorrador(
+      id,
+      pedido.updatedAt,
+      nuevaTanda,
+      detallesTanda,
+      subtotalActualizado,
+      totalActualizado
+    )
+
+    if (!pedidoActualizado) {
+      throw new PedidoServiceError(
+        409,
+        'La cuenta cambió o dejó de estar abierta. Vuelve a consultar el pedido antes de agregar la tanda.'
+      )
+    }
+
+    const pedidoPoblado = await this.pedidoRepo.buscarPorIdPoblado(id)
+
+    return {
+      pedido: PedidoService.agregarFechaBoliviaPedido(
+        pedidoPoblado ?? pedidoActualizado
+      ),
+      tanda: {
+        id: tandaId.toString(),
+        numeroTanda,
+        estado: ESTADOS_TANDA_COCINA.BORRADOR,
+        fechaCreacion
+      }
+    }
+  }
+
+  /**
+   * Envía una tanda en borrador a cocina.
+   * Descuento, movimiento y transición de estado se confirman juntos.
+   */
+  async enviarTandaCocina(
+    pedidoId: string,
+    tandaId: string,
+    usuarioAuthId?: string,
+    usuarioRol?: string
+  ): Promise<{ pedido: PedidoFormateado; tanda: ITandaCocina }> {
+    if (
+      !Types.ObjectId.isValid(pedidoId) ||
+      !Types.ObjectId.isValid(tandaId)
+    ) {
+      throw new PedidoServiceError(400, 'ID de pedido o tanda inválido')
+    }
+
+    if (!usuarioAuthId || !Types.ObjectId.isValid(usuarioAuthId)) {
+      throw new PedidoServiceError(401, 'Usuario no autenticado')
+    }
+
+    const session = await mongoose.startSession()
+    let pedidoActualizado: IPedido | null = null
+
+    try {
+      pedidoActualizado = await session.withTransaction<IPedido>(async () => {
+        const pedido = await this.pedidoRepo.buscarPorId(pedidoId, session)
+
+        if (!pedido) {
+          throw new PedidoServiceError(404, 'Pedido no encontrado')
+        }
+
+        const esAdmin =
+          usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
+        const esResponsable =
+          pedido.usuario.toString() === usuarioAuthId
+
+        if (!esResponsable && !esAdmin) {
+          throw new PedidoServiceError(
+            403,
+            'Solo el mesero responsable o un Administrador pueden enviar esta tanda.'
+          )
+        }
+
+        if (
+          pedido.estadoCuenta !== ESTADOS_CUENTA.ABIERTA ||
+          !Array.isArray(pedido.tandas)
+        ) {
+          throw new PedidoServiceError(
+            409,
+            'La cuenta no está abierta para enviar tandas.'
+          )
+        }
+
+        if (
+          pedido.estado === ESTADOS_PEDIDO.CERRADO ||
+          pedido.estado === ESTADOS_PEDIDO.CANCELADO
+        ) {
+          throw new PedidoServiceError(
+            409,
+            'No se puede enviar una tanda de una cuenta cerrada o cancelada.'
+          )
+        }
+
+        if (pedido.mesa) {
+          const mesa = await this.mesaRepo.buscarPorId(
+            pedido.mesa.toString()
+          )
+
+          if (mesa?.estado === ESTADOS_MESA.CUENTA_SOLICITADA) {
+            throw new PedidoServiceError(
+              409,
+              'No se puede enviar una tanda después de solicitar la cuenta.'
+            )
+          }
+        }
+
+        const tanda = pedido.tandas.find(
+          (item) => item._id?.toString() === tandaId
+        )
+
+        if (!tanda) {
+          throw new PedidoServiceError(
+            404,
+            'La tanda no pertenece a esta cuenta o no existe.'
+          )
+        }
+
+        if (tanda.estado !== ESTADOS_TANDA_COCINA.BORRADOR) {
+          throw new PedidoServiceError(
+            409,
+            'Solo se pueden enviar tandas que estén en borrador.'
+          )
+        }
+
+        const detallesTanda = pedido.detalles.filter(
+          (detalle) => detalle.tandaId?.toString() === tandaId
+        )
+
+        if (detallesTanda.length === 0) {
+          throw new PedidoServiceError(
+            400,
+            'La tanda no tiene productos asociados.'
+          )
+        }
+
+        const itemsParaValidar = detallesTanda.map((detalle) => ({
+          platoId: detalle.plato.toString(),
+          cantidad: detalle.cantidad,
+          observacion: detalle.observacion
+        }))
+
+        const validacion =
+          await inventarioService.verificarYDescontarStock(
+            itemsParaValidar,
+            session
+          )
+
+        if (!validacion.success) {
+          throw new PedidoServiceError(
+            400,
+            'No se puede enviar la tanda por restricciones de receta o inventario.',
+            {
+              errores: validacion.errores,
+              faltantes: validacion.faltantes
+            }
+          )
+        }
+
+        const fechaEnvio = obtenerFechaBolivia()
+
+        const actualizado = await this.pedidoRepo.marcarTandaEnviada(
+          pedidoId,
+          new Types.ObjectId(tandaId),
+          new Types.ObjectId(usuarioAuthId),
+          fechaEnvio,
+          session
+        )
+
+        if (!actualizado) {
+          throw new PedidoServiceError(
+            409,
+            'La tanda o la cuenta cambiaron mientras se procesaba el envío. Vuelve a consultar el pedido.'
+          )
+        }
+
+        // Registrar el consumo dentro de la misma transacción.
+        // Los registros con todos los ingredientes excluidos no generan
+        // un movimiento vacío, siguiendo el comportamiento previo.
+        if (validacion.consumos.length > 0) {
+          const consumosMovimiento = validacion.consumos.map((consumo) => ({
+            ingrediente: new Types.ObjectId(consumo.ingredienteId),
+            nombreIngrediente: consumo.nombreIngrediente,
+            unidadStock: consumo.unidadStock,
+            cantidadTotal: consumo.cantidadTotal,
+            detallePlatos: consumo.detallePlatos.map((detalle) => ({
+              plato: new Types.ObjectId(detalle.platoId),
+              nombrePlato: detalle.nombrePlato,
+              cantidadPlatos: detalle.cantidadPlatos,
+              cantidadNecesariaPorPlato: detalle.cantidadNecesariaPorPlato,
+              unidadReceta: detalle.unidadReceta,
+              cantidadPorPlatoEnStock: detalle.cantidadPorPlatoEnStock,
+              unidadStock: detalle.unidadStock,
+              consumoTotal: detalle.consumoTotal,
+              observacion: detalle.observacion || ''
+            }))
+          }))
+
+          await MovimientoInventario.create(
+            [
+              {
+                pedido: pedido._id,
+                tandaId: new Types.ObjectId(tandaId),
+                numeroTanda: tanda.numeroTanda,
+                codigoPedido: pedido.codigo,
+                fechaHora: fechaEnvio,
+                usuario: new Types.ObjectId(usuarioAuthId),
+                consumos: consumosMovimiento
+              }
+            ],
+            { session }
+          )
+        }
+
+        return actualizado
+      })
+    } catch (error) {
+      if (error instanceof PedidoServiceError) {
+        throw error
+      }
+
+      console.error('Error transaccional al enviar tanda a cocina:', error)
+      throw new PedidoServiceError(
+        500,
+        'No se pudo enviar la tanda a cocina. La operación no se confirmó.'
+      )
+    } finally {
+      await session.endSession()
+    }
+
+    if (!pedidoActualizado) {
+      throw new PedidoServiceError(
+        500,
+        'No se obtuvo el pedido actualizado después de la transacción.'
+      )
+    }
+
+    const tandaActualizada = pedidoActualizado.tandas?.find(
+      (item) => item._id?.toString() === tandaId
+    )
+
+    if (!tandaActualizada) {
+      throw new PedidoServiceError(
+        500,
+        'No se encontró la tanda actualizada después del envío.'
+      )
+    }
+
+    return {
+      pedido: PedidoService.agregarFechaBoliviaPedido(pedidoActualizado),
+      tanda: tandaActualizada
+    }
+  }
+
+  /**
+   * Actualiza el estado operativo de una tanda sin cambiar el estado
+   * global de la cuenta.
+   */
+  async actualizarEstadoTandaCocina(
+    pedidoId: string,
+    tandaId: string,
+    nuevoEstado: string,
+    usuarioAuthId?: string,
+    usuarioRol?: string
+  ): Promise<{
+    pedido: IPedido
+    tanda: ITandaCocina
+    disparaAlertaListo: boolean
+  }> {
+    if (!Types.ObjectId.isValid(pedidoId) || !Types.ObjectId.isValid(tandaId)) {
+      throw new PedidoServiceError(400, 'ID de pedido o tanda inválido')
+    }
+
+    if (!usuarioAuthId || !Types.ObjectId.isValid(usuarioAuthId)) {
+      throw new PedidoServiceError(401, 'Usuario no autenticado')
+    }
+
+    if (!['Cocinero', 'Administrador', 'superadmin'].includes(usuarioRol || '')) {
+      throw new PedidoServiceError(403, 'No tienes permiso para modificar el estado de cocina.')
+    }
+
+    if (
+      nuevoEstado !== ESTADOS_TANDA_COCINA.EN_PREPARACION &&
+      nuevoEstado !== ESTADOS_TANDA_COCINA.LISTA
+    ) {
+      throw new PedidoServiceError(
+        400,
+        'Los estados permitidos para cocina son EN_PREPARACION y LISTA.'
+      )
+    }
+
+    const pedido = await this.pedidoRepo.buscarPorId(pedidoId)
+
+    if (!pedido) {
+      throw new PedidoServiceError(404, 'Pedido no encontrado')
+    }
+
+    if (
+      pedido.estadoCuenta !== ESTADOS_CUENTA.ABIERTA ||
+      !Array.isArray(pedido.tandas) ||
+      pedido.estado === ESTADOS_PEDIDO.CERRADO ||
+      pedido.estado === ESTADOS_PEDIDO.CANCELADO
+    ) {
+      throw new PedidoServiceError(
+        409,
+        'La cuenta no está abierta para continuar la preparación.'
+      )
+    }
+
+    if (pedido.mesa) {
+      const mesa = await this.mesaRepo.buscarPorId(pedido.mesa.toString())
+      if (mesa?.estado === ESTADOS_MESA.CUENTA_SOLICITADA) {
+        throw new PedidoServiceError(
+          409,
+          'No se puede avanzar la tanda después de solicitar la cuenta.'
+        )
+      }
+    }
+
+    const tanda = pedido.tandas.find(
+      (item) => item._id?.toString() === tandaId
+    )
+
+    if (!tanda) {
+      throw new PedidoServiceError(404, 'La tanda no existe en esta cuenta.')
+    }
+
+    const transiciones: Partial<Record<EstadoTandaCocina, EstadoTandaCocina[]>> = {
+      [ESTADOS_TANDA_COCINA.PENDIENTE]: [
+        ESTADOS_TANDA_COCINA.EN_PREPARACION
+      ],
+      [ESTADOS_TANDA_COCINA.EN_PREPARACION]: [
+        ESTADOS_TANDA_COCINA.LISTA
+      ]
+    }
+
+    if (!transiciones[tanda.estado]?.includes(nuevoEstado as EstadoTandaCocina)) {
+      throw new PedidoServiceError(
+        409,
+        `No se permite avanzar una tanda desde "${tanda.estado}" hacia "${nuevoEstado}".`
+      )
+    }
+
+    const pedidoActualizado = await this.pedidoRepo.transicionarTandaEstado(
+      pedidoId,
+      new Types.ObjectId(tandaId),
+      tanda.estado,
+      nuevoEstado as EstadoTandaCocina,
+      new Types.ObjectId(usuarioAuthId),
+      obtenerFechaBolivia()
+    )
+
+    if (!pedidoActualizado) {
+      throw new PedidoServiceError(
+        409,
+        'La tanda cambió mientras se actualizaba. Vuelve a consultar la cocina.'
+      )
+    }
+
+    const tandaActualizada = pedidoActualizado.tandas?.find(
+      (item) => item._id?.toString() === tandaId
+    )
+
+    if (!tandaActualizada) {
+      throw new PedidoServiceError(
+        500,
+        'No se encontró la tanda después de actualizar su estado.'
+      )
+    }
+
+    return {
+      pedido: pedidoActualizado,
+      tanda: tandaActualizada,
+      disparaAlertaListo: nuevoEstado === ESTADOS_TANDA_COCINA.LISTA
+    }
   }
 
   /**
    * Cancela un pedido y libera la mesa
    */
+  /**
+   * Cancela una tanda individual.
+   * BORRADOR: no afecta al inventario.
+   * PENDIENTE: restituye el consumo registrado si existe movimiento.
+   * EN_PREPARACION, LISTA y ENTREGADA son estados no cancelables.
+   */
+  async cancelarTandaPedido(
+    pedidoId: string,
+    tandaId: string,
+    usuarioAuthId?: string,
+    usuarioRol?: string,
+    motivoEntrada?: string
+  ): Promise<{
+    pedido: PedidoFormateado
+    tanda: ITandaCocina
+    mesaLiberada: MesaPobladaDoc | null
+    cuentaCancelada: boolean
+  }> {
+    if (!Types.ObjectId.isValid(pedidoId) || !Types.ObjectId.isValid(tandaId)) {
+      throw new PedidoServiceError(400, 'ID de pedido o tanda inválido')
+    }
+
+    if (!usuarioAuthId || !Types.ObjectId.isValid(usuarioAuthId)) {
+      throw new PedidoServiceError(401, 'Usuario no autenticado')
+    }
+
+    const motivo = String(motivoEntrada || '').trim()
+    if (motivo.length > 300) {
+      throw new PedidoServiceError(
+        400,
+        'El motivo de cancelación no puede superar los 300 caracteres.'
+      )
+    }
+
+    const session = await mongoose.startSession()
+
+    try {
+      const resultado = await session.withTransaction<{
+        pedido: IPedido
+        tanda: ITandaCocina
+        mesaLiberada: MesaPobladaDoc | null
+        cuentaCancelada: boolean
+      }>(async () => {
+        const pedido = await this.pedidoRepo.buscarPorId(pedidoId, session)
+
+        if (!pedido) {
+          throw new PedidoServiceError(404, 'Pedido no encontrado')
+        }
+
+        const esResponsable = pedido.usuario?.toString() === usuarioAuthId
+        const esAdmin = ['Administrador', 'superadmin'].includes(usuarioRol || '')
+
+        if (!esResponsable && !esAdmin) {
+          throw new PedidoServiceError(
+            403,
+            'Solo el mesero responsable o un Administrador pueden cancelar esta tanda.'
+          )
+        }
+
+        if (
+          pedido.estadoCuenta !== ESTADOS_CUENTA.ABIERTA ||
+          !Array.isArray(pedido.tandas) ||
+          pedido.estado === ESTADOS_PEDIDO.CERRADO ||
+          pedido.estado === ESTADOS_PEDIDO.CANCELADO
+        ) {
+          throw new PedidoServiceError(
+            409,
+            'La cuenta no está abierta para cancelar tandas.'
+          )
+        }
+
+        if (pedido.mesa) {
+          const mesa = await this.mesaRepo.buscarPorId(
+            pedido.mesa.toString(),
+            session
+          )
+
+          if (mesa?.estado === ESTADOS_MESA.CUENTA_SOLICITADA) {
+            throw new PedidoServiceError(
+              409,
+              'No se puede cancelar una tanda después de solicitar la cuenta.'
+            )
+          }
+        }
+
+        const tanda = pedido.tandas.find(
+          (item) => item._id?.toString() === tandaId
+        )
+
+        if (!tanda) {
+          throw new PedidoServiceError(
+            404,
+            'La tanda no existe en esta cuenta.'
+          )
+        }
+
+        if (
+          tanda.estado !== ESTADOS_TANDA_COCINA.BORRADOR &&
+          tanda.estado !== ESTADOS_TANDA_COCINA.PENDIENTE
+        ) {
+          throw new PedidoServiceError(
+            409,
+            `No se puede cancelar una tanda en estado "${tanda.estado}". La preparación ya comenzó o la tanda fue finalizada.`
+          )
+        }
+
+        const fechaCancelacion = obtenerFechaBolivia()
+        const usuarioId = new Types.ObjectId(usuarioAuthId)
+        const tandaObjectId = new Types.ObjectId(tandaId)
+
+        // Si se envió la tanda, restituir el consumo exacto registrado
+        // al enviarla. No recalculamos las recetas actuales.
+        if (tanda.estado === ESTADOS_TANDA_COCINA.PENDIENTE) {
+          const movimiento = await MovimientoInventario.findOne({
+            tandaId: tandaObjectId
+          }).session(session)
+
+          if (movimiento) {
+            if (movimiento.stockRestituido === true) {
+              throw new PedidoServiceError(
+                409,
+                'El inventario de esta tanda ya fue restituido.'
+              )
+            }
+
+            for (const consumo of movimiento.consumos) {
+              const cantidad = Number(consumo.cantidadTotal)
+
+              if (!Number.isFinite(cantidad) || cantidad < 0) {
+                throw new PedidoServiceError(
+                  500,
+                  `El movimiento de inventario de "${consumo.nombreIngrediente}" tiene una cantidad inválida.`
+                )
+              }
+
+              if (cantidad === 0) continue
+
+              const unidadStock = consumo.unidadStock
+
+              if (!esUnidadMedida(unidadStock)) {
+                throw new PedidoServiceError(
+                  500,
+                  `El movimiento de inventario de "${consumo.nombreIngrediente}" tiene una unidad de stock inválida.`
+                )
+              }
+
+              const resultadoActualizacion =
+                await IngredienteModel.updateOne(
+                  {
+                    _id: consumo.ingrediente,
+                    unidadMedida: unidadStock
+                  },
+                  { $inc: { stockActual: cantidad } },
+                  {
+                    session,
+                    runValidators: true
+                  }
+                )
+
+              if (resultadoActualizacion.matchedCount === 0) {
+                throw new PedidoServiceError(
+                  409,
+                  `No se pudo restituir el inventario de "${consumo.nombreIngrediente}": el ingrediente ya no existe o cambió su unidad de stock.`
+                )
+              }
+            }
+
+            const movimientoRestituido =
+              await MovimientoInventario.findOneAndUpdate(
+                {
+                  _id: movimiento._id,
+                  stockRestituido: { $ne: true }
+                },
+                {
+                  $set: {
+                    stockRestituido: true,
+                    fechaRestitucion: fechaCancelacion,
+                    restituidoPor: usuarioId
+                  }
+                },
+                {
+                  session,
+                  returnDocument: 'after',
+                  runValidators: true
+                }
+              )
+
+            if (!movimientoRestituido) {
+              throw new PedidoServiceError(
+                409,
+                'El movimiento fue actualizado simultáneamente. No se confirmó la cancelación.'
+              )
+            }
+          }
+          // Si no hay movimiento, el envío no registró consumo de ingredientes.
+        }
+
+        // La cuenta completa solo se cancela automáticamente si todas sus
+        // tandas quedarían canceladas y no existen detalles huérfanos.
+        const todasLasTandasCanceladas = pedido.tandas.every(
+          (item) =>
+            item._id?.toString() === tandaId ||
+            item.estado === ESTADOS_TANDA_COCINA.CANCELADA
+        )
+        const hayDetallesSinTanda = (pedido.detalles || []).some(
+          (detalle) => !detalle.tandaId
+        )
+        const cuentaCancelada =
+          todasLasTandasCanceladas && !hayDetallesSinTanda
+
+        const idsTandasRestantes = new Set(
+          pedido.tandas
+            .filter(
+              (item) =>
+                item._id?.toString() !== tandaId &&
+                item.estado !== ESTADOS_TANDA_COCINA.CANCELADA
+            )
+            .map((item) => item._id?.toString())
+            .filter((id): id is string => Boolean(id))
+        )
+
+        const subtotalCierre = cuentaCancelada
+          ? 0
+          : Number(
+              (pedido.detalles || [])
+                .filter(
+                  (detalle) =>
+                    !detalle.tandaId ||
+                    idsTandasRestantes.has(detalle.tandaId.toString())
+                )
+                .reduce(
+                  (suma, detalle) => suma + Number(detalle.subtotal || 0),
+                  0
+                )
+                .toFixed(2)
+            )
+
+        const descuento = Number(pedido.montoDescuento || 0)
+        const propina = Number(pedido.montoPropina || 0)
+        const total = cuentaCancelada || subtotalCierre <= 0
+          ? 0
+          : Number(
+              Math.max(0, subtotalCierre - descuento + propina).toFixed(2)
+            )
+
+        const pedidoActualizado = await this.pedidoRepo.cancelarTanda(
+          pedidoId,
+          tandaObjectId,
+          tanda.estado,
+          usuarioId,
+          fechaCancelacion,
+          motivo,
+          subtotalCierre,
+          total,
+          cuentaCancelada,
+          session
+        )
+
+        if (!pedidoActualizado) {
+          throw new PedidoServiceError(
+            409,
+            'La tanda cambió mientras se procesaba la cancelación. No se confirmó la operación.'
+          )
+        }
+
+        const tandaActualizada = pedidoActualizado.tandas?.find(
+          (item) => item._id?.toString() === tandaId
+        )
+
+        if (!tandaActualizada) {
+          throw new PedidoServiceError(
+            500,
+            'No se encontró la tanda cancelada después de actualizar la cuenta.'
+          )
+        }
+
+        let mesaLiberada: MesaPobladaDoc | null = null
+
+        if (cuentaCancelada && pedido.mesa) {
+          mesaLiberada = await this.mesaRepo.actualizarEstado(
+            pedido.mesa.toString(),
+            ESTADOS_MESA.LIBRE,
+            session
+          )
+
+          if (!mesaLiberada) {
+            throw new PedidoServiceError(
+              409,
+              'No se pudo liberar la mesa. La cancelación no se confirmó.'
+            )
+          }
+        }
+
+        return {
+          pedido: pedidoActualizado,
+          tanda: tandaActualizada,
+          mesaLiberada,
+          cuentaCancelada
+        }
+      })
+
+      if (!resultado) {
+        throw new PedidoServiceError(
+          500,
+          'No se obtuvo el resultado de la cancelación.'
+        )
+      }
+
+      return {
+        ...resultado,
+        pedido: PedidoService.agregarFechaBoliviaPedido(resultado.pedido)
+      }
+    } catch (error) {
+      if (error instanceof PedidoServiceError) {
+        throw error
+      }
+
+      console.error('Error transaccional al cancelar la tanda:', error)
+      throw new PedidoServiceError(
+        500,
+        'No se pudo cancelar la tanda ni confirmar la restitución del inventario.'
+      )
+    } finally {
+      await session.endSession()
+    }
+  }
+
   async cancelarPedido(
     id: string,
     usuarioAuthId?: string,
@@ -785,6 +1924,14 @@ try {
       throw new PedidoServiceError(
         403,
         'Acceso denegado: solo el mesero responsable del pedido o un Administrador pueden cancelar este pedido.'
+      )
+    }
+
+    // Las cuentas nuevas deben cancelarse tanda por tanda.
+    if (Array.isArray(pedido.tandas) && pedido.tandas.length > 0) {
+      throw new PedidoServiceError(
+        409,
+        'Esta cuenta utiliza tandas. No se puede cancelar mediante la operación antigua.'
       )
     }
 
@@ -815,7 +1962,7 @@ try {
     pedido.estado = ESTADOS_PEDIDO.CANCELADO
     await this.pedidoRepo.guardar(pedido)
 
-    let mesaLiberada: any = null
+    let mesaLiberada: MesaPobladaDoc | null = null
     const nuevoEstado = 'Libre'
 
     // Si el pedido tenía una mesa asignada, liberarla
@@ -857,6 +2004,13 @@ try {
 
     if (!pedidoAnterior) {
       throw new PedidoServiceError(404, 'Pedido no encontrado')
+    }
+
+    if (Array.isArray(pedidoAnterior.tandas) && pedidoAnterior.tandas.length > 0) {
+      throw new PedidoServiceError(
+        409,
+        'Esta cuenta utiliza tandas. Los estados de cocina deben actualizarse por tanda.'
+      )
     }
 
     // Validar máquina de estados para cocina:
@@ -931,7 +2085,7 @@ try {
    */
   async actualizarPedido(
     id: string,
-    body: any,
+    body: ActualizarPedidoEntrada,
     usuarioAuthId?: string,
     usuarioRol?: string
   ): Promise<ResultadoActualizarPedido> {
@@ -952,6 +2106,19 @@ try {
 
     if (!pedidoAnterior) {
       throw new PedidoServiceError(404, 'Pedido no encontrado')
+    }
+
+    // Las cuentas con tandas no pueden reemplazar todos sus detalles.
+    // Las nuevas adiciones deben pasar por crearTandaPedido.
+    if (
+      detalles !== undefined &&
+      Array.isArray(pedidoAnterior.tandas) &&
+      pedidoAnterior.tandas.length > 0
+    ) {
+      throw new PedidoServiceError(
+        409,
+        'No se pueden reemplazar los detalles de una cuenta con tandas. Crea una nueva tanda para agregar productos.'
+      )
     }
 
     // Regla de titularidad: Mesero responsable o Administrador
@@ -1043,7 +2210,7 @@ try {
     }
 
     // Allowlist explícita para evitar Mass Assignment
-    const updates: Partial<IPedido> & Record<string, any> = {}
+    const updates: PedidoActualizarDatos = {}
 
     if (detalles !== undefined) {
       const { detallesCalculados, subtotal } =
@@ -1144,19 +2311,23 @@ try {
       )
     }
 
-    let mesaReactivada: any = null
+    let mesaReactivada: MesaPobladaDoc | null = null
 
     if (
       pedidoActualizado.mesa &&
       updates.estado === ESTADOS_PEDIDO.ABIERTO
     ) {
-      const mesaId =
-        typeof pedidoActualizado.mesa === 'object'
-          ? (pedidoActualizado.mesa as any)._id
-          : pedidoActualizado.mesa
+      const mesaId = obtenerIdReferenciaPedido(pedidoActualizado.mesa)
+
+      if (!mesaId) {
+        throw new PedidoServiceError(
+          500,
+          'No se pudo identificar la mesa del pedido para reactivarla.'
+        )
+      }
 
       mesaReactivada = await this.mesaRepo.actualizarEstado(
-        mesaId.toString(),
+        mesaId,
         ESTADOS_MESA.OCUPADA
       )
     }
@@ -1213,6 +2384,135 @@ try {
   }
 
   /**
+   * Solicita una cuenta con tandas.
+   * La cuenta y la mesa se actualizan en una única transacción.
+   */
+  private async solicitarCuentaConTandas(
+    id: string,
+    usuarioAuthId?: string,
+    usuarioRol?: string
+  ): Promise<ResultadoSolicitarCuenta> {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new PedidoServiceError(400, 'ID de pedido inválido')
+    }
+
+    if (!usuarioAuthId || !Types.ObjectId.isValid(usuarioAuthId)) {
+      throw new PedidoServiceError(401, 'Usuario no autenticado')
+    }
+
+    const session = await mongoose.startSession()
+    let mesaActualizada: MesaPobladaDoc | null = null
+
+    try {
+      await session.withTransaction(async () => {
+        const pedido = await this.pedidoRepo.buscarPorId(id, session)
+
+        if (!pedido) {
+          throw new PedidoServiceError(404, 'Pedido no encontrado')
+        }
+
+        const esResponsable = pedido.usuario?.toString() === usuarioAuthId
+        const esAdmin = ['Administrador', 'superadmin'].includes(usuarioRol || '')
+
+        if (!esResponsable && !esAdmin) {
+          throw new PedidoServiceError(
+            403,
+            'Solo el mesero responsable del pedido o un Administrador pueden solicitar la cuenta.'
+          )
+        }
+
+        if (!pedido.mesa) {
+          throw new PedidoServiceError(
+            400,
+            'No se puede solicitar cuenta porque el pedido no tiene una mesa asignada.'
+          )
+        }
+
+        if (
+          pedido.estadoCuenta !== ESTADOS_CUENTA.ABIERTA ||
+          pedido.estado === ESTADOS_PEDIDO.CERRADO ||
+          pedido.estado === ESTADOS_PEDIDO.CANCELADO
+        ) {
+          throw new PedidoServiceError(
+            409,
+            'La cuenta ya no está abierta o fue cerrada o cancelada.'
+          )
+        }
+
+        if (!Array.isArray(pedido.tandas) || pedido.tandas.length === 0) {
+          throw new PedidoServiceError(
+            409,
+            'La cuenta no contiene tandas válidas para solicitar el cobro.'
+          )
+        }
+
+        const tandasPendientes = pedido.tandas.filter(
+          (tanda) =>
+            tanda.estado !== ESTADOS_TANDA_COCINA.ENTREGADA &&
+            tanda.estado !== ESTADOS_TANDA_COCINA.CANCELADA
+        )
+
+        if (tandasPendientes.length > 0) {
+          const detalle = tandasPendientes
+            .map((tanda) => `#${tanda.numeroTanda}: ${tanda.estado}`)
+            .join(', ')
+
+          throw new PedidoServiceError(
+            409,
+            `No se puede solicitar la cuenta mientras haya tandas pendientes: ${detalle}.`
+          )
+        }
+
+        const pedidoActualizado =
+          await this.pedidoRepo.marcarCuentaSolicitadaPorTandas(id, session)
+
+        if (!pedidoActualizado) {
+          throw new PedidoServiceError(
+            409,
+            'La cuenta cambió durante la operación. Actualiza el pedido e inténtalo nuevamente.'
+          )
+        }
+
+        const mesa = await this.mesaRepo.marcarCuentaSolicitadaSiOcupada(
+          pedido.mesa.toString(),
+          session
+        )
+
+        if (!mesa) {
+          throw new PedidoServiceError(
+            409,
+            'La mesa ya no está ocupada o cambió de estado. No se solicitó la cuenta.'
+          )
+        }
+
+        mesaActualizada = mesa
+      })
+
+      const pedidoPoblado = await this.pedidoRepo.buscarPorIdPobladoCaja(id)
+
+      if (!pedidoPoblado || !mesaActualizada) {
+        throw new PedidoServiceError(
+          500,
+          'No se pudo preparar la respuesta de la solicitud de cuenta.'
+        )
+      }
+
+      const payload = PedidoService.formatearPayloadCaja(
+        pedidoPoblado,
+        mesaActualizada
+      )
+
+      return {
+        payload,
+        mesaActualizada,
+        cajeroAsignado: pedidoPoblado.cajeroAsignado
+      }
+    } finally {
+      await session.endSession()
+    }
+  }
+
+  /**
    * Solicita cuenta de un pedido y cambia el estado de la mesa a 'Cuenta Solicitada'
    */
   async solicitarCuentaPedido(
@@ -1227,6 +2527,16 @@ try {
       throw new PedidoServiceError(
         404,
         'Pedido no encontrado'
+      )
+    }
+
+    // Las cuentas nuevas usan el flujo por tandas.
+    // Los pedidos históricos conservan su lógica anterior.
+    if (Array.isArray(pedido.tandas) && pedido.tandas.length > 0) {
+      return await this.solicitarCuentaConTandas(
+        id,
+        usuarioAuthId,
+        usuarioRol
       )
     }
 
@@ -1311,7 +2621,121 @@ try {
   }
 
   /**
-   * Marca un pedido en estado ENTREGADO como recogido físicamente por el mesero
+   * Registra la recogida física de una tanda individual por el mesero.
+   * No modifica el estado global del pedido ni el de otras tandas.
+   */
+  async marcarTandaEntregada(
+    pedidoId: string,
+    tandaId: string,
+    usuarioAuthId: string,
+    usuarioRol: string
+  ): Promise<{
+    mensaje: string
+    pedido: PedidoFormateado
+    tanda: ITandaCocina
+    fechaRecogida: Date
+  }> {
+    if (!Types.ObjectId.isValid(pedidoId) || !Types.ObjectId.isValid(tandaId)) {
+      throw new PedidoServiceError(400, 'ID de pedido o tanda inválido')
+    }
+
+    if (!Types.ObjectId.isValid(usuarioAuthId)) {
+      throw new PedidoServiceError(401, 'Usuario no autenticado')
+    }
+
+    const pedido = await this.pedidoRepo.buscarPorId(pedidoId)
+
+    if (!pedido) {
+      throw new PedidoServiceError(404, 'Pedido no encontrado')
+    }
+
+    const esResponsable = pedido.usuario?.toString() === usuarioAuthId
+    const esAdmin = ['Administrador', 'superadmin'].includes(usuarioRol)
+
+    if (!esResponsable && !esAdmin) {
+      throw new PedidoServiceError(
+        403,
+        'Solo el mesero responsable o un Administrador pueden recoger esta tanda.'
+      )
+    }
+
+    if (
+      pedido.estadoCuenta !== ESTADOS_CUENTA.ABIERTA ||
+      !Array.isArray(pedido.tandas) ||
+      pedido.estado === ESTADOS_PEDIDO.CERRADO ||
+      pedido.estado === ESTADOS_PEDIDO.CANCELADO
+    ) {
+      throw new PedidoServiceError(
+        409,
+        'La cuenta no está abierta para registrar la entrega de una tanda.'
+      )
+    }
+
+    if (pedido.mesa) {
+      const mesa = await this.mesaRepo.buscarPorId(pedido.mesa.toString())
+
+      if (mesa?.estado === ESTADOS_MESA.CUENTA_SOLICITADA) {
+        throw new PedidoServiceError(
+          409,
+          'No se puede recoger una tanda después de solicitar la cuenta.'
+        )
+      }
+    }
+
+    const tanda = pedido.tandas.find(
+      (item) => item._id?.toString() === tandaId
+    )
+
+    if (!tanda) {
+      throw new PedidoServiceError(404, 'La tanda no existe en esta cuenta.')
+    }
+
+    if (tanda.estado !== ESTADOS_TANDA_COCINA.LISTA) {
+      throw new PedidoServiceError(
+        409,
+        `Solo se pueden recoger tandas en estado LISTA. Estado actual: "${tanda.estado}".`
+      )
+    }
+
+    const fechaRecogida = obtenerFechaBolivia()
+
+    const pedidoActualizado = await this.pedidoRepo.transicionarTandaEstado(
+      pedidoId,
+      new Types.ObjectId(tandaId),
+      ESTADOS_TANDA_COCINA.LISTA,
+      ESTADOS_TANDA_COCINA.ENTREGADA,
+      new Types.ObjectId(usuarioAuthId),
+      fechaRecogida
+    )
+
+    if (!pedidoActualizado) {
+      throw new PedidoServiceError(
+        409,
+        'La tanda cambió mientras se registraba la entrega. Vuelve a consultar el pedido.'
+      )
+    }
+
+    const tandaActualizada = pedidoActualizado.tandas?.find(
+      (item) => item._id?.toString() === tandaId
+    )
+
+    if (!tandaActualizada) {
+      throw new PedidoServiceError(
+        500,
+        'No se encontró la tanda después de registrar la entrega.'
+      )
+    }
+
+    return {
+      mensaje: 'Tanda marcada como entregada.',
+      pedido: PedidoService.agregarFechaBoliviaPedido(pedidoActualizado),
+      tanda: tandaActualizada,
+      fechaRecogida
+    }
+  }
+
+  /**
+   * Marca un pedido antiguo, sin tandas, como recogido físicamente por el mesero.
    */
   async marcarPedidoRecogido(
     id: string,
@@ -1323,7 +2747,7 @@ try {
     recogidoPor: string
     fechaRecogida: Date
     fechaRecogidaBolivia?: string
-    pedido: any
+    pedido: PedidoFormateado
   }> {
     if (!Types.ObjectId.isValid(id)) {
       throw new PedidoServiceError(
@@ -1342,7 +2766,15 @@ try {
       )
     }
 
-    // 1. Regla de estado: solo pedidos en estado ENTREGADO pueden ser recogidos
+    // Las cuentas modernas deben registrar la recogida tanda por tanda.
+    if (Array.isArray(pedido.tandas) && pedido.tandas.length > 0) {
+      throw new PedidoServiceError(
+        409,
+        'Esta cuenta utiliza tandas. Recoge cada tanda mediante su operación específica.'
+      )
+    }
+
+    // 1. Regla de estado: solo pedidos antiguos en estado ENTREGADO pueden ser recogidos.
     if (
       pedido.estado !==
       ESTADOS_PEDIDO.ENTREGADO

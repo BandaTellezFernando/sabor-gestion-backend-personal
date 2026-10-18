@@ -2,7 +2,11 @@
 import { Router } from 'express'
 import {
   cancelarPedido,
+  cancelarTandaPedido,
   crearPedido,
+  crearTandaPedido,
+  enviarTandaCocina,
+  actualizarEstadoTandaCocina,
   obtenerPedidos,
   obtenerPedidoPorId,
   actualizarEstadoPedido,
@@ -10,6 +14,7 @@ import {
   obtenerPedidosPendientesCobro,
   solicitarCuentaPedido,
   marcarPedidoRecogido,
+  marcarTandaEntregada,
   obtenerPedidosCocina
 } from '../controllers/pedido.controller'
 import { verificarToken } from '../middlewares/auth.middleware'
@@ -42,6 +47,46 @@ router.get(
   verificarToken,
   permitirRoles('Cajero', 'Administrador'),
   obtenerPedidosPendientesCobro
+)
+
+// Agregar una tanda en borrador a una cuenta abierta.
+router.post(
+  '/:id/tandas',
+  verificarToken,
+  permitirRoles('Mesero', 'Administrador'),
+  crearTandaPedido
+)
+
+// Enviar una tanda en borrador a cocina (Mesero, Administrador).
+router.post(
+  '/:id/tandas/:tandaId/enviar',
+  verificarToken,
+  permitirRoles('Mesero', 'Administrador'),
+  enviarTandaCocina
+)
+
+// Avanzar una tanda en cocina (Cocinero, Administrador).
+router.patch(
+  '/:id/tandas/:tandaId/estado',
+  verificarToken,
+  permitirRoles('Cocinero', 'Administrador'),
+  actualizarEstadoTandaCocina
+)
+
+// Recoger una tanda que ya está lista (Mesero, Administrador).
+router.patch(
+  '/:id/tandas/:tandaId/recoger',
+  verificarToken,
+  permitirRoles('Mesero', 'Administrador'),
+  marcarTandaEntregada
+)
+
+// Cancelar una tanda solo antes de que comience la preparación.
+router.patch(
+  '/:id/tandas/:tandaId/cancelar',
+  verificarToken,
+  permitirRoles('Mesero', 'Administrador'),
+  cancelarTandaPedido
 )
 
 // Obtener un pedido específico por ID (Administrador, Mesero, Cocinero, Cajero según RBAC)

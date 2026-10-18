@@ -15,6 +15,28 @@ export const ESTADOS_PEDIDO = {
   CERRADO: 'CERRADO'
 } as const
 
+export const ESTADOS_CUENTA = {
+  ABIERTA: 'ABIERTA',
+  CUENTA_SOLICITADA: 'CUENTA_SOLICITADA',
+  CERRADA: 'CERRADA',
+  CANCELADA: 'CANCELADA'
+} as const
+
+export type EstadoCuenta =
+  (typeof ESTADOS_CUENTA)[keyof typeof ESTADOS_CUENTA]
+
+export const ESTADOS_TANDA_COCINA = {
+  BORRADOR: 'BORRADOR',
+  PENDIENTE: 'PENDIENTE',
+  EN_PREPARACION: 'EN_PREPARACION',
+  LISTA: 'LISTA',
+  ENTREGADA: 'ENTREGADA',
+  CANCELADA: 'CANCELADA'
+} as const
+
+export type EstadoTandaCocina =
+  (typeof ESTADOS_TANDA_COCINA)[keyof typeof ESTADOS_TANDA_COCINA]
+
 export const METODOS_PAGO = ['Efectivo', 'Tarjeta', 'QR'] as const
 export type MetodoPago = (typeof METODOS_PAGO)[number]
 
