@@ -2,9 +2,7 @@
 import { Types } from 'mongoose'
 import type { IPago } from '../models/Pago'
 import type { IDetallePedido, IPedido } from '../models/Pedido'
-import { DatosRecibo, ItemRecibo } from '../utils/reciboTemplate'
 
-export { DatosRecibo, ItemRecibo }
 
 export interface MesaPagoResumen {
   _id: Types.ObjectId

@@ -58,5 +58,3 @@ export class CategoriaRepository {
     return await Categoria.findByIdAndDelete(id)
   }
 }
-
-export const categoriaRepository = new CategoriaRepository()

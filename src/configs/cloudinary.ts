@@ -60,5 +60,3 @@ export const uploadToCloudinary = (
 export const eliminarDeCloudinary = async (publicId: string) => {
   return await cloudinary.uploader.destroy(publicId)
 }
-
-export { cloudinary }

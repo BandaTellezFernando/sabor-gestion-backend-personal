@@ -167,20 +167,3 @@ export class UsuarioRepository {
 }
 
 export const usuarioRepository = new UsuarioRepository()
-
-// ─── FUNCIONES LEGACY RE-EXPORTADAS PARA RETROCOMPATIBILIDAD ────────────────
-export const buscarPorEmail = async (email: string): Promise<IUsuario | null> => {
-  return await usuarioRepository.buscarPorEmail(email)
-}
-
-export const obtenerUsuarioPorId = async (id: string): Promise<IUsuario | null> => {
-  return await usuarioRepository.buscarPorIdConPassword(id)
-}
-
-export const crearUsuario = async (datos: Partial<IUsuario>): Promise<IUsuario> => {
-  return await usuarioRepository.crear(datos as UsuarioCrearDatos)
-}
-
-export const marcarUsuarioComoVerificado = async (id: string): Promise<void> => {
-  await Usuario.findByIdAndUpdate(id, { verificado: true })
-}

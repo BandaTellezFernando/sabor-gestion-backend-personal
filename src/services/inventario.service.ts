@@ -368,12 +368,3 @@ export class InventarioService {
 }
 
 export const inventarioService = new InventarioService()
-
-/**
- * Función exportada para mantener compatibilidad con consumidores existentes (ej. PedidoService)
- */
-export async function validarDisponibilidadIngredientes(
-  items: ItemValidacionInventario[]
-): Promise<ResultadoValidacionIngredientes> {
-  return await inventarioService.validarDisponibilidadIngredientes(items)
-}

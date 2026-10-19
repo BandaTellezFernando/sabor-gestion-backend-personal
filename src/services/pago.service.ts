@@ -20,11 +20,8 @@ import {
   METODOS_PAGO
 } from '../utils/constants'
 import { enviarCorreo } from './email.service'
-import {
-  generarPlantillaReciboHTML,
-  DatosRecibo,
-  ItemRecibo
-} from '../utils/reciboTemplate'
+import { generarPlantillaReciboHTML } from '../utils/reciboTemplate'
+import type { DatosRecibo, ItemRecibo } from '../utils/reciboTemplate'
 import {
   obtenerFechaBolivia,
   formatearFechaBolivia,
