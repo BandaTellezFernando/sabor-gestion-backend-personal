@@ -15,18 +15,18 @@ import { permitirRoles } from '../middlewares/rol.middleware'
 
 const router = Router()
 
-// Consultas globales de pagos: acceso exclusivo al Administrador.
+// Administrador: historial global. Cajero: solo sus propios pagos.
 router.get(
   '/',
   verificarToken,
-  permitirRoles('Administrador'),
+  permitirRoles('Administrador', 'Cajero'),
   listarPagos
 )
 
 router.get(
   '/:id',
   verificarToken,
-  permitirRoles('Administrador'),
+  permitirRoles('Administrador', 'Cajero'),
   obtenerDetallePago
 )
 

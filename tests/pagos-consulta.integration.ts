@@ -177,6 +177,7 @@ async function main(): Promise<void> {
     const idMesa = new Types.ObjectId()
     const idMesero = new Types.ObjectId()
     const idCajero = new Types.ObjectId()
+    const idOtroCajero = new Types.ObjectId()
 
     const idPedidoEfectivo = new Types.ObjectId()
     const idPedidoTarjeta = new Types.ObjectId()
@@ -210,7 +211,7 @@ async function main(): Promise<void> {
         pedido: idPedidoTarjeta,
         mesa: idMesa,
         mesero: idMesero,
-        cajero: idCajero,
+        cajero: idOtroCajero,
         fechaRegistro: fechaTarjeta,
         fechaPago: fechaTarjeta,
         estadoPago: 'Pagado',
@@ -294,6 +295,13 @@ async function main(): Promise<void> {
         apellido: 'QA',
         ci: `QA-CAJ-${sufijo}`,
         email: `qa-caj-${sufijo}@example.invalid`
+      },
+      {
+        _id: idOtroCajero,
+        nombre: 'Otro Cajero',
+        apellido: 'QA',
+        ci: `QA-CAJ2-${sufijo}`,
+        email: `qa-caj2-${sufijo}@example.invalid`
       }
     ])
 
@@ -307,6 +315,7 @@ async function main(): Promise<void> {
     await db.collection('pagos').insertMany(pagos)
 
     const pagoEfectivo = pagos[0]
+    const pagoTarjeta = pagos[1]
 
     // -------------------------------------------------------
     // A. Historial por fechas y valor por defecto de hasta
@@ -339,6 +348,44 @@ async function main(): Promise<void> {
       'Historial con datos: advertencia es nula',
       historial.advertencia,
       null
+    )
+
+    // El administrador conserva el historial global.
+    comprobar(
+      'Administrador: el historial incluye pagos de distintos cajeros',
+      historial.datos.some(
+        (pago) => String(pago._id) === String(pagoTarjeta._id)
+      )
+    )
+
+    // El listado del cajero se filtra también antes de contar y paginar.
+    const historialCajero = await servicio.listarPagos({
+      cajeroId: idCajero.toString()
+    })
+    comprobarIgual(
+      'Cajero: total limitado a sus propios pagos',
+      historialCajero.paginacion.total,
+      4
+    )
+    comprobar(
+      'Cajero: no recibe pagos cobrados por otro cajero',
+      !historialCajero.datos.some(
+        (pago) => String(pago._id) === String(pagoTarjeta._id)
+      )
+    )
+
+    const historialOtroCajero = await servicio.listarPagos({
+      cajeroId: idOtroCajero.toString()
+    })
+    comprobarIgual(
+      'Segundo cajero: solo ve su pago',
+      historialOtroCajero.paginacion.total,
+      1
+    )
+    comprobarIgual(
+      'Segundo cajero: el pago devuelto es el suyo',
+      String(historialOtroCajero.datos[0]._id),
+      String(pagoTarjeta._id)
     )
 
     // -------------------------------------------------------
@@ -528,6 +575,35 @@ async function main(): Promise<void> {
       'Detalle: cajero relacionado',
       detalle.cajero.nombre,
       'Cajero'
+    )
+
+    const detallePropio = await servicio.obtenerDetallePago(
+      pagoEfectivo._id.toString(),
+      idCajero.toString()
+    )
+    comprobarIgual(
+      'Cajero: puede consultar el detalle de su pago',
+      String(detallePropio._id),
+      String(pagoEfectivo._id)
+    )
+
+    await debeRechazar(
+      'Cajero: no puede consultar el detalle de otro cajero',
+      () => servicio.obtenerDetallePago(
+        pagoTarjeta._id.toString(),
+        idCajero.toString()
+      ),
+      404
+    )
+
+    // Sin alcance de cajero, el administrador puede consultar cualquier detalle.
+    const detalleOtroAdmin = await servicio.obtenerDetallePago(
+      pagoTarjeta._id.toString()
+    )
+    comprobarIgual(
+      'Administrador: puede consultar pagos de otros cajeros',
+      String(detalleOtroAdmin._id),
+      String(pagoTarjeta._id)
     )
 
     await debeRechazar(

@@ -66,9 +66,14 @@ export class PagoRepository {
   }
 
   async buscarPorId(
-    id: string | Types.ObjectId
+    id: string | Types.ObjectId,
+    cajeroId?: string
   ): Promise<PagoConRelaciones | null> {
-    return await Pago.findById(id)
+    const filtro = cajeroId !== undefined
+      ? { _id: id, cajero: cajeroId }
+      : { _id: id }
+
+    return await Pago.findOne(filtro)
       .populate('mesa', 'numero ubicacion')
       .populate('mesero', 'nombre apellido')
       .populate('cajero', 'nombre apellido')

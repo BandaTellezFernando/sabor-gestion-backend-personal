@@ -76,6 +76,7 @@ export class PagoService {
     metodoPago?: string
     pagina?: string
     limite?: string
+    cajeroId?: string
   }): Promise<{
     sinDatos: boolean
     advertencia: string | null
@@ -145,6 +146,18 @@ export class PagoService {
       }
     }
 
+    // El controlador obtiene cajeroId del JWT. Si existe, MongoDB
+    // limita tanto los datos como el total de la paginación a ese cajero.
+    if (params.cajeroId !== undefined) {
+      if (!mongoose.Types.ObjectId.isValid(params.cajeroId)) {
+        throw new PagoServiceError(
+          403,
+          'No tienes permiso para consultar estos pagos.'
+        )
+      }
+      filtros.cajero = params.cajeroId
+    }
+
     const estadosPermitidos = [
       'Pendiente',
       'Procesado',
@@ -193,12 +206,24 @@ export class PagoService {
   /**
    * Recupera un pago por su ID con datos relacionados.
    */
-  async obtenerDetallePago(id: string): Promise<PagoConRelaciones> {
+  async obtenerDetallePago(
+    id: string,
+    cajeroId?: string
+  ): Promise<PagoConRelaciones> {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       throw new PagoServiceError(400, 'El identificador del pago no es válido.')
     }
 
-    const pago = await this.pagoRepo.buscarPorId(id)
+    if (
+      cajeroId !== undefined &&
+      !mongoose.Types.ObjectId.isValid(cajeroId)
+    ) {
+      throw new PagoServiceError(404, 'No se encontró el pago solicitado.')
+    }
+
+    // Cuando se proporciona cajeroId, el repositorio exige que el pago
+    // pertenezca a ese usuario. Para el administrador no hay ese filtro.
+    const pago = await this.pagoRepo.buscarPorId(id, cajeroId)
     if (!pago) {
       throw new PagoServiceError(404, 'No se encontró el pago solicitado.')
     }

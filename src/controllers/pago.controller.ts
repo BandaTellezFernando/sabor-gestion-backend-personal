@@ -300,13 +300,25 @@ export const listarPagos = async (
   res: Response
 ): Promise<void> => {
   try {
+    const usuario = req.usuario
+    const rol = usuario?.rol.trim().toLowerCase()
+
+    if (!usuario || !['administrador', 'cajero'].includes(rol ?? '')) {
+      res.status(usuario ? 403 : 401).json({
+        mensaje: 'No tienes permiso para consultar pagos.'
+      })
+      return
+    }
+
     const resultado = await pagoService.listarPagos({
       desde: leerParametroQuery(req.query.desde, 'desde'),
       hasta: leerParametroQuery(req.query.hasta, 'hasta'),
       estadoPago: leerParametroQuery(req.query.estadoPago, 'estadoPago'),
       metodoPago: leerParametroQuery(req.query.metodoPago, 'metodoPago'),
       pagina: leerParametroQuery(req.query.pagina, 'pagina'),
-      limite: leerParametroQuery(req.query.limite, 'limite')
+      limite: leerParametroQuery(req.query.limite, 'limite'),
+      // Este ID procede del JWT, nunca de req.query.
+      cajeroId: rol === 'cajero' ? usuario.id : undefined
     })
 
     res.status(200).json(resultado)
@@ -330,7 +342,20 @@ export const obtenerDetallePago = async (
   res: Response
 ): Promise<void> => {
   try {
-    const pago = await pagoService.obtenerDetallePago(String(req.params.id))
+    const usuario = req.usuario
+    const rol = usuario?.rol.trim().toLowerCase()
+
+    if (!usuario || !['administrador', 'cajero'].includes(rol ?? '')) {
+      res.status(usuario ? 403 : 401).json({
+        mensaje: 'No tienes permiso para consultar pagos.'
+      })
+      return
+    }
+
+    const pago = await pagoService.obtenerDetallePago(
+      String(req.params.id),
+      rol === 'cajero' ? usuario.id : undefined
+    )
     res.status(200).json({
       sinDatos: false,
       mensaje: 'Pago encontrado.',
