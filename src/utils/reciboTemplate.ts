@@ -14,6 +14,7 @@ export interface DatosRecibo {
   clienteNombre: string
   clienteApellido?: string
   clienteCI: string
+  clienteCIComplemento?: string
   clienteExtensionCI?: string
   clienteNIT?: string
   subtotal: number
@@ -36,6 +37,7 @@ export function generarPlantillaReciboHTML(datos: DatosRecibo): string {
     clienteNombre,
     clienteApellido = '',
     clienteCI,
+    clienteCIComplemento = '',
     clienteExtensionCI = '',
     clienteNIT = '',
     subtotal,
@@ -80,7 +82,8 @@ export function generarPlantillaReciboHTML(datos: DatosRecibo): string {
             <p style="margin: 0;"><strong>Mesa:</strong> ${mesaNombre}</p>
             <p style="margin: 0;"><strong>Mesero:</strong> ${meseroNombre}</p>
             <p style="margin: 0;"><strong>Cliente:</strong> ${(clienteNombre + " " + clienteApellido).trim()}</p>
-            <p style="margin: 0;"><strong>CI:</strong> ${clienteCI || "S/N"}${clienteCI && clienteExtensionCI ? "-" + clienteExtensionCI : ""}</p>
+            <p style="margin: 0;"><strong>CI:</strong> ${clienteCI || "S/N"}${clienteCIComplemento ? "-" + clienteCIComplemento : ""}</p>
+            <p style="margin: 0;"><strong>Extensión CI:</strong> ${clienteExtensionCI || "S/N"}</p>
             <p style="margin: 0;"><strong>NIT:</strong> ${clienteNIT || "S/N"}</p>
           </div>
 

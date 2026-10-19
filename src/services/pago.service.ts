@@ -269,13 +269,14 @@ export class PagoService {
     metodoPago: string,
     datos: Pick<
       ProcesarPagoDTO,
-      'clienteNombre' | 'clienteApellido' | 'clienteCI' | 'clienteExtensionCI' | 'clienteNIT'
+      'clienteNombre' | 'clienteApellido' | 'clienteCI' | 'clienteExtensionCI' | 'clienteCIComplemento' | 'clienteNIT'
     >
   ): {
     clienteNombre: string
     clienteApellido: string
     clienteCI: string
     clienteExtensionCI: string
+    clienteCIComplemento: string
     clienteNIT: string
   } {
     const normalizarTexto = (valor: unknown, campo: string): string => {
@@ -292,6 +293,10 @@ export class PagoService {
     const clienteExtensionCI = normalizarTexto(
       datos.clienteExtensionCI,
       'La extensión de CI'
+    ).toUpperCase()
+    const clienteCIComplemento = normalizarTexto(
+      datos.clienteCIComplemento,
+      'El complemento de CI'
     ).toUpperCase()
     const clienteNIT = normalizarTexto(datos.clienteNIT, 'El NIT')
 
@@ -313,19 +318,34 @@ export class PagoService {
     validarNombre(clienteNombre, 'Los nombres')
     validarNombre(clienteApellido, 'Los apellidos')
 
-    const patronDocumento = /^\d{5,12}$/
+    const patronCI = /^\d{5,10}$/
+    const patronNIT = /^\d{5,12}$/
 
-    if (clienteCI && !patronDocumento.test(clienteCI)) {
+    if (clienteCI && !patronCI.test(clienteCI)) {
       throw new PagoServiceError(
         400,
-        'La CI debe contener entre 5 y 12 dígitos numéricos.'
+        'La CI debe contener entre 5 y 10 dígitos numéricos.'
       )
     }
 
-    if (clienteNIT && !patronDocumento.test(clienteNIT)) {
+    if (clienteNIT && !patronNIT.test(clienteNIT)) {
       throw new PagoServiceError(
         400,
         'El NIT debe contener entre 5 y 12 dígitos numéricos.'
+      )
+    }
+
+    if (clienteCIComplemento && !clienteCI) {
+      throw new PagoServiceError(
+        400,
+        'El complemento solo puede proporcionarse cuando se registra una CI.'
+      )
+    }
+
+    if (clienteCIComplemento && !/^\d[A-Z]$/.test(clienteCIComplemento)) {
+      throw new PagoServiceError(
+        400,
+        'El complemento de CI debe tener un dígito seguido de una letra, por ejemplo 1A.'
       )
     }
 
@@ -364,6 +384,7 @@ export class PagoService {
       clienteApellido,
       clienteCI,
       clienteExtensionCI,
+      clienteCIComplemento,
       clienteNIT
     }
   }
@@ -541,7 +562,7 @@ export class PagoService {
     token: string,
     datosCliente: Pick<
       ProcesarPagoDTO,
-      'clienteNombre' | 'clienteApellido' | 'clienteCI' | 'clienteExtensionCI' | 'clienteNIT'
+      'clienteNombre' | 'clienteApellido' | 'clienteCI' | 'clienteExtensionCI' | 'clienteCIComplemento' | 'clienteNIT'
     > = {}
   ): Promise<ResultadoProcesarPago> {
     const tokenHash = this.obtenerHashTokenQR(token)
@@ -591,6 +612,7 @@ export class PagoService {
       clienteApellido,
       clienteCI,
       clienteExtensionCI,
+      clienteCIComplemento,
       clienteNIT
     } = dto
 
@@ -642,6 +664,7 @@ export class PagoService {
       clienteApellido,
       clienteCI,
       clienteExtensionCI,
+      clienteCIComplemento,
       clienteNIT
     })
 
@@ -766,6 +789,9 @@ export class PagoService {
       if (datosCliente.clienteExtensionCI) {
         ped.clienteExtensionCI = datosCliente.clienteExtensionCI
       }
+      if (datosCliente.clienteCIComplemento) {
+        ped.clienteCIComplemento = datosCliente.clienteCIComplemento
+      }
       if (datosCliente.clienteNIT) ped.clienteNIT = datosCliente.clienteNIT
       if (cajeroId) {
         ped.cajeroAsignado =
@@ -794,6 +820,7 @@ export class PagoService {
           apellidoCliente: ped.clienteApellido || '',
           ci: ped.clienteCI || '',
           extensionCI: ped.clienteExtensionCI || '',
+          complementoCI: ped.clienteCIComplemento || '',
           nit: ped.clienteNIT || '',
           subtotal: subtotal,
           propina: montoPropina,
@@ -848,6 +875,7 @@ export class PagoService {
       clienteNombre: ped.clienteNombre || 'Consumidor Final',
       clienteApellido: ped.clienteApellido || '',
       clienteCI: ped.clienteCI || '',
+      clienteCIComplemento: ped.clienteCIComplemento || '',
       clienteExtensionCI: ped.clienteExtensionCI || '',
       clienteNIT: ped.clienteNIT || '',
       fechaBolivia: formatearFechaBolivia(fechaComprobante),
@@ -923,6 +951,7 @@ export class PagoService {
       clienteNombre || pedido.clienteNombre || 'Consumidor Final'
     const finalClienteApellido = pedido.clienteApellido || ''
     const finalClienteCI = clienteCI || pedido.clienteCI || ''
+    const finalClienteCIComplemento = pedido.clienteCIComplemento || ''
     const finalClienteExtensionCI = pedido.clienteExtensionCI || ''
     const finalClienteNIT = pedido.clienteNIT || 'S/N'
 
@@ -951,6 +980,7 @@ export class PagoService {
       clienteNombre: finalClienteNombre,
       clienteApellido: finalClienteApellido,
       clienteCI: finalClienteCI,
+      clienteCIComplemento: finalClienteCIComplemento,
       clienteExtensionCI: finalClienteExtensionCI,
       clienteNIT: finalClienteNIT,
       subtotal,

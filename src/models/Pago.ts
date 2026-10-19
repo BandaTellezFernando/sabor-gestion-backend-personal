@@ -14,6 +14,7 @@ export interface IPago extends Document {
   apellidoCliente?: string
   ci?: string
   extensionCI?: string
+  complementoCI?: string
   nit?: string
   subtotal: number
   propina: number
@@ -52,6 +53,7 @@ const PagoSchema = new Schema(
     apellidoCliente: { type: String, default: '' },
     ci: { type: String, default: '' },
     extensionCI: { type: String, default: '' },
+    complementoCI: { type: String, default: '', trim: true, uppercase: true },
     nit: { type: String, default: '' },
 
     // 💰 Datos financieros

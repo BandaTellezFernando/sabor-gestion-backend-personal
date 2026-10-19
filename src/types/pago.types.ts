@@ -78,6 +78,7 @@ export interface ProcesarPagoDTO {
   clienteNombre?: string
   clienteApellido?: string
   clienteCI?: string
+  clienteCIComplemento?: string
   clienteExtensionCI?: string
   clienteNIT?: string
 }
@@ -97,6 +98,7 @@ export interface PagoCrearDatos {
   apellidoCliente?: string
   ci?: string
   extensionCI?: string
+  complementoCI?: string
   nit?: string
   subtotal: number
   propina: number
@@ -127,6 +129,7 @@ export interface ComprobantePago {
   clienteNombre?: string
   clienteApellido?: string
   clienteCI?: string
+  clienteCIComplemento?: string
   clienteExtensionCI?: string
   clienteNIT?: string
   fechaBolivia: string
@@ -155,6 +158,7 @@ export interface EnviarReciboCorreoDTO {
   clienteNombre?: string
   clienteApellido?: string
   clienteCI?: string
+  clienteCIComplemento?: string
   clienteExtensionCI?: string
   clienteNIT?: string
 }

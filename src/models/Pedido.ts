@@ -109,6 +109,7 @@ export interface IPedido extends Document {
   clienteNombre?: string
   clienteApellido?: string
   clienteCI?: string
+  clienteCIComplemento?: string
   clienteExtensionCI?: string
   clienteNIT?: string
   cajeroAsignado?: mongoose.Types.ObjectId
@@ -161,7 +162,8 @@ const PedidoSchema = new Schema(
     clienteNombre: { type: String, required: false },
     clienteApellido: { type: String, required: false },
     clienteCI: { type: String, required: false },
-    clienteExtensionCI: { type: String, required: false },
+    clienteCIComplemento: { type: String, required: false, trim: true, uppercase: true },
+    clienteExtensionCI: { type: String, required: false, trim: true, uppercase: true },
     clienteNIT: { type: String, required: false },
     cajeroAsignado: { type: Schema.Types.ObjectId, ref: 'Usuario', required: false },
     fechaHora: { type: Date, default: obtenerFechaBolivia },

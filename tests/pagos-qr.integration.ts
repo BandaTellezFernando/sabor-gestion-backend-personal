@@ -266,11 +266,43 @@ async function main(): Promise<void> {
     )
 
     await debeRechazar(
-      'La CI rechaza más de doce dígitos',
+      'La CI rechaza más de diez dígitos',
       () => pagoService.confirmarPagoQR(token1, {
         clienteNombre: 'Ana',
         clienteApellido: 'Pérez',
-        clienteCI: '1234567890123'
+        clienteCI: '12345678901'
+      }),
+      400
+    )
+
+    await debeRechazar(
+      'La CI rechaza letras',
+      () => pagoService.confirmarPagoQR(token1, {
+        clienteNombre: 'Ana',
+        clienteApellido: 'Pérez',
+        clienteCI: '1234ABCD'
+      }),
+      400
+    )
+
+    await debeRechazar(
+      'El complemento requiere una CI',
+      () => pagoService.confirmarPagoQR(token1, {
+        clienteNombre: 'Ana',
+        clienteApellido: 'Pérez',
+        clienteCIComplemento: '1A',
+        clienteNIT: '12345678'
+      }),
+      400
+    )
+
+    await debeRechazar(
+      'El complemento de CI rechaza formato incorrecto',
+      () => pagoService.confirmarPagoQR(token1, {
+        clienteNombre: 'Ana',
+        clienteApellido: 'Pérez',
+        clienteCI: '12345678',
+        clienteCIComplemento: 'ABC'
       }),
       400
     )
@@ -359,6 +391,7 @@ async function main(): Promise<void> {
       clienteNombre: 'Ana',
       clienteApellido: 'Pérez',
       clienteCI: '12345678',
+      clienteCIComplemento: '1a',
       clienteExtensionCI: 'CB'
     })
 
@@ -377,15 +410,33 @@ async function main(): Promise<void> {
       resultadoTarjeta.nuevoPago.extensionCI,
       'CB'
     )
+    comprobarIgual(
+      'El complemento CI se guarda en el pago y normaliza mayúsculas',
+      resultadoTarjeta.nuevoPago.complementoCI,
+      '1A'
+    )
+    comprobarIgual(
+      'El complemento CI se guarda en el pedido',
+      resultadoTarjeta.pedidoActualizado.clienteCIComplemento,
+      '1A'
+    )
+    comprobarIgual(
+      'El complemento CI se guarda en el comprobante',
+      resultadoTarjeta.comprobante.clienteCIComplemento,
+      '1A'
+    )
 
     // 2. Confirmación exitosa y reutilización.
     const resultado1 = await pagoService.confirmarPagoQR(token1, {
       clienteNombre: 'Ana',
       clienteApellido: 'Pérez',
       clienteCI: '12345678',
+      clienteCIComplemento: '1A',
       clienteExtensionCI: 'CB'
     })
     comprobarIgual('La primera confirmación registra el pago QR', resultado1.nuevoPago.estadoPago, 'Pagado')
+    comprobarIgual('El complemento CI se conserva en el pago QR', resultado1.nuevoPago.complementoCI, '1A')
+    comprobarIgual('La extensión departamental se conserva por separado', resultado1.nuevoPago.extensionCI, 'CB')
     comprobarIgual(
       'El pago confirmado queda asociado al cajero del QR',
       String(resultado1.nuevoPago.cajero),

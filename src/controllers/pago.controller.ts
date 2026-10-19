@@ -45,11 +45,13 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
       clienteApellido,
       clienteExtensionCI,
       clienteCI,
+      clienteCIComplemento,
       clienteNIT,
       nombreCliente,
       apellidoCliente,
       extensionCI,
       ci,
+      ciComplemento,
       nit
     } = req.body
 
@@ -68,6 +70,7 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
       clienteExtensionCI:
         clienteExtensionCI !== undefined ? clienteExtensionCI : extensionCI,
       clienteCI: clienteCI !== undefined ? clienteCI : ci,
+      clienteCIComplemento: clienteCIComplemento !== undefined ? clienteCIComplemento : ciComplemento,
       clienteNIT: clienteNIT !== undefined ? clienteNIT : nit
     })
 
@@ -161,6 +164,8 @@ export const confirmarPagoQR = async (
       clienteApellido:
         body.clienteApellido !== undefined ? body.clienteApellido : body.apellidoCliente,
       clienteCI: body.clienteCI !== undefined ? body.clienteCI : body.ci,
+      clienteCIComplemento:
+        body.clienteCIComplemento !== undefined ? body.clienteCIComplemento : body.ciComplemento,
       clienteExtensionCI:
         body.clienteExtensionCI !== undefined ? body.clienteExtensionCI : body.extensionCI,
       clienteNIT: body.clienteNIT !== undefined ? body.clienteNIT : body.nit
