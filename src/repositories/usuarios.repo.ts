@@ -1,7 +1,6 @@
 // src/repositories/usuarios.repo.ts
 import { Types } from 'mongoose'
 import Usuario, { IUsuario } from '../models/Usuario'
-import CierreCaja, { ICierreCaja } from '../models/CierreCaja'
 
 export { IUsuario } from '../models/Usuario'
 
@@ -25,20 +24,6 @@ export interface UsuarioActualizarDatos {
   rol?: string
   estado?: boolean
   verificado?: boolean
-}
-
-export interface CierreCajaCrearDatos {
-  cajeroId: string
-  cajeroNombre: string
-  totalDia?: number
-  efectivo?: number
-  tarjeta?: number
-  qr?: number
-  descuentos?: number
-  propinas?: number
-  pagosProcesados?: number
-  fechaCierreBolivia?: string
-  fechaCierre?: Date
 }
 
 export class UsuarioRepository {
@@ -179,13 +164,6 @@ export class UsuarioRepository {
     return await Usuario.findByIdAndDelete(id)
   }
 
-  /**
-   * Registra un nuevo documento de cierre de caja en la base de datos
-   */
-  async registrarCierreCaja(datos: CierreCajaCrearDatos): Promise<ICierreCaja> {
-    const nuevoCierre = new CierreCaja(datos)
-    return await nuevoCierre.save()
-  }
 }
 
 export const usuarioRepository = new UsuarioRepository()

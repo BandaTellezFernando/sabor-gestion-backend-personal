@@ -1,8 +1,8 @@
 // src/types/pago.types.ts
 import { Types } from 'mongoose'
-import { DatosFactura, ItemFactura } from '../utils/facturaTemplate'
+import { DatosRecibo, ItemRecibo } from '../utils/reciboTemplate'
 
-export { DatosFactura, ItemFactura }
+export { DatosRecibo, ItemRecibo }
 
 /**
  * Parámetros de entrada para el procesamiento del pago final
@@ -11,9 +11,7 @@ export { DatosFactura, ItemFactura }
 export interface ProcesarPagoDTO {
   pedidoId: string
   metodoPago?: string
-  porcentajeDescuento?: number
   porcentajePropina?: number
-  montoDescuento?: number
   montoPropina?: number
   /**
    * @deprecated Ignorado por el backend. Por autoridad financiera, el subtotal
@@ -23,7 +21,9 @@ export interface ProcesarPagoDTO {
   cajeroAsignado?: string | Types.ObjectId | null
   cajeroId?: string | Types.ObjectId | null
   clienteNombre?: string
+  clienteApellido?: string
   clienteCI?: string
+  clienteExtensionCI?: string
   clienteNIT?: string
 }
 
@@ -39,10 +39,11 @@ export interface PagoCrearDatos {
   mesero: Types.ObjectId | string
   cajero?: Types.ObjectId | string | null
   nombreCliente?: string
+  apellidoCliente?: string
   ci?: string
+  extensionCI?: string
   nit?: string
   subtotal: number
-  descuento: number
   propina: number
   totalFinal: number
   metodoPago?: string
@@ -62,16 +63,16 @@ export interface ComprobantePago {
   pedidoId: Types.ObjectId | string
   meseroNombre: string
   subtotal: number
-  montoDescuento: number
   montoPropina: number
-  descuentoAplicado: number
   propinaAplicada: number
   total: number
   totalPagado: number
   metodoPago: string
   cajeroAsignado?: Types.ObjectId | string | null
   clienteNombre?: string
+  clienteApellido?: string
   clienteCI?: string
+  clienteExtensionCI?: string
   clienteNIT?: string
   fechaBolivia: string
   fecha: Date
@@ -97,5 +98,8 @@ export interface EnviarReciboCorreoDTO {
   pedidoId: string
   email: string
   clienteNombre?: string
+  clienteApellido?: string
   clienteCI?: string
+  clienteExtensionCI?: string
+  clienteNIT?: string
 }

@@ -11,10 +11,11 @@ export interface IPago extends Document {
   mesero: mongoose.Types.ObjectId
   cajero?: mongoose.Types.ObjectId // Opcional porque se asigna cuando se procesa
   nombreCliente?: string
+  apellidoCliente?: string
   ci?: string
+  extensionCI?: string
   nit?: string
   subtotal: number
-  descuento: number
   propina: number
   totalFinal: number
   metodoPago?: string // Opcional al crear, obligatorio al pagar
@@ -36,19 +37,25 @@ const PagoSchema = new Schema(
     // 🔗 Relaciones
     // Nota: Asegúrate de que los nombres en "ref" coincidan con tus otros modelos exportados
     codigoPedido: { type: String, required: true },
-    pedido: { type: Schema.Types.ObjectId, ref: 'Pedido', required: true },
+    pedido: {
+      type: Schema.Types.ObjectId,
+      ref: 'Pedido',
+      required: true,
+      unique: true
+    },
     mesa: { type: Schema.Types.ObjectId, ref: 'Mesa', required: true },
     mesero: { type: Schema.Types.ObjectId, ref: 'Usuario', required: true }, // Asumo que el mesero viene de la tabla usuarios
     cajero: { type: Schema.Types.ObjectId, ref: 'Usuario', default: null },
 
     // 👤 Datos cliente
     nombreCliente: { type: String, default: 'Consumidor Final' },
+    apellidoCliente: { type: String, default: '' },
     ci: { type: String, default: '' },
+    extensionCI: { type: String, default: '' },
     nit: { type: String, default: '' },
 
     // 💰 Datos financieros
     subtotal: { type: Number, required: true, min: 0 },
-    descuento: { type: Number, default: 0, min: 0 },
     propina: { type: Number, default: 0, min: 0 },
     totalFinal: { type: Number, required: true, min: 0 },
 

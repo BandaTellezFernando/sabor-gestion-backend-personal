@@ -1,7 +1,6 @@
 // src/repositories/pedido.repo.ts
 import { Types, ClientSession, type QueryFilter } from 'mongoose'
 import Pedido, { IDetallePedido, IPedido, ITandaCocina } from '../models/Pedido'
-import CierreCaja from '../models/CierreCaja'
 import {
   ESTADOS_CUENTA,
   ESTADOS_PEDIDO,
@@ -23,7 +22,6 @@ export interface PedidoCrearDatos {
   tandas?: ITandaCocina[]
   total: number
   subtotalCierre?: number
-  montoDescuento?: number
   montoPropina?: number
   mesa?: string | Types.ObjectId
   usuario: string | Types.ObjectId
@@ -42,7 +40,6 @@ export interface PedidoActualizarDatos {
   estado?: string
   total?: number
   subtotalCierre?: number
-  montoDescuento?: number
   montoPropina?: number
   clienteNombre?: string
   clienteCI?: string
@@ -467,16 +464,6 @@ export class PedidoRepository {
       .populate('usuario', 'nombre apellido apellidos')
       .populate('detalles.plato', 'nombre precio')
       .sort({ updatedAt: -1 })
-  }
-
-  /**
-   * Consulta los reportes de cierre de caja recientes (últimas 48h)
-   * Encapsulada temporalmente aquí para preservar GET /api/pedidos?reportesCierre=true
-   */
-  async buscarReportesCierre(desdeFecha: Date): Promise<any[]> {
-    return await CierreCaja.find({
-      fechaCierre: { $gte: desdeFecha }
-    }).sort({ fechaCierre: -1 })
   }
 
   /**

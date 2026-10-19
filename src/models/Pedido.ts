@@ -102,14 +102,14 @@ export interface IPedido extends Document {
   mesa?: mongoose.Types.ObjectId
   usuario: mongoose.Types.ObjectId
   detalles: IDetallePedido[]
-  qrUrl?: string
   // Campos para el cierre de caja y comprobante
   metodoPago?: string
-  montoDescuento?: number
   montoPropina?: number
   subtotalCierre?: number
   clienteNombre?: string
+  clienteApellido?: string
   clienteCI?: string
+  clienteExtensionCI?: string
   clienteNIT?: string
   cajeroAsignado?: mongoose.Types.ObjectId
   // Operativa de recojo por mesero (pedido listo)
@@ -149,7 +149,6 @@ const PedidoSchema = new Schema(
     mesa: { type: Schema.Types.ObjectId, ref: 'Mesa', required: false },
     usuario: { type: Schema.Types.ObjectId, ref: 'Usuario', required: true },
     detalles: [DetallePedidoSchema],
-    qrUrl: { type: String, required: false },
 
     // Información del pago final (Texto plano para simulación)
     metodoPago: {
@@ -157,11 +156,12 @@ const PedidoSchema = new Schema(
       enum: METODOS_PAGO,
       required: false
     },
-    montoDescuento: { type: Number, default: 0, min: 0 },
     montoPropina: { type: Number, default: 0, min: 0 },
     subtotalCierre: { type: Number, default: 0, min: 0 },
     clienteNombre: { type: String, required: false },
+    clienteApellido: { type: String, required: false },
     clienteCI: { type: String, required: false },
+    clienteExtensionCI: { type: String, required: false },
     clienteNIT: { type: String, required: false },
     cajeroAsignado: { type: Schema.Types.ObjectId, ref: 'Usuario', required: false },
     fechaHora: { type: Date, default: obtenerFechaBolivia },

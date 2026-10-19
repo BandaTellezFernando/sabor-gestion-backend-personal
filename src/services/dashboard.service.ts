@@ -11,6 +11,10 @@ import {
   OrdenRecienteDTO,
   VentasHoyRaw
 } from '../types/dashboard.types'
+import {
+  obtenerFechaISO_Bolivia,
+  obtenerRangoInclusivoBolivia
+} from '../utils/fechaBolivia'
 
 /**
  * Error de dominio tipado para operaciones del módulo Dashboard
@@ -58,12 +62,11 @@ export class DashboardService {
    * calculando KPIs financieros y operativos, y formateando los DTOs de salida.
    */
   async obtenerResumen(): Promise<ResumenDashboardDTO> {
-    // 1. Rango temporal: Hoy (00:00:00 a 23:59:59)
-    const inicioHoy = new Date()
-    inicioHoy.setHours(0, 0, 0, 0)
-
-    const finHoy = new Date()
-    finHoy.setHours(23, 59, 59, 999)
+    // 1. Rango temporal de hoy según el calendario de Bolivia.
+    // El límite superior es exclusivo: medianoche del día siguiente.
+    const hoyBolivia = obtenerFechaISO_Bolivia()
+    const { desde: inicioHoy, hastaExclusivo: finHoy } =
+      obtenerRangoInclusivoBolivia(hoyBolivia, hoyBolivia)
 
     // 2. Consultas en paralelo a través del DashboardRepository
     const [
@@ -76,8 +79,8 @@ export class DashboardService {
     ] = await Promise.all([
       this.dashboardRepo.obtenerVentasYOrdenesDia(inicioHoy, finHoy),
       this.dashboardRepo.contarMesasActivas(),
-      this.dashboardRepo.obtenerPlatosMasVendidos(5),
-      this.dashboardRepo.obtenerCategoriasPopulares(),
+      this.dashboardRepo.obtenerPlatosMasVendidos(inicioHoy, finHoy, 5),
+      this.dashboardRepo.obtenerCategoriasPopulares(inicioHoy, finHoy),
       this.dashboardRepo.obtenerOrdenesRecientes(5),
       this.dashboardRepo.contarTotalMesas()
     ])

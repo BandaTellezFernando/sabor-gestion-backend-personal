@@ -6,11 +6,7 @@ import {
   usuarioRepository,
   UsuarioActualizarDatos
 } from '../repositories/usuarios.repo'
-import {
-  obtenerFechaBolivia,
-  formatearFechaBolivia,
-  formatearFechaHoraBolivia
-} from '../utils/fechaBolivia'
+import { formatearFechaHoraBolivia } from '../utils/fechaBolivia'
 import { getIO } from '../socket/socket'
 
 export class UsuarioServiceError extends Error {
@@ -46,19 +42,8 @@ export interface UsuarioActualizarDTO {
   rol?: string
 }
 
-export interface ReporteCierreCajaDTO {
-  totalDia?: number
-  efectivo?: number
-  tarjeta?: number
-  qr?: number
-  descuentos?: number
-  propinas?: number
-  pagosProcesados?: number
-}
-
 export interface UsuarioCambioEstadoDTO {
   estado: boolean | string
-  reporte?: ReporteCierreCajaDTO
 }
 
 export interface UsuarioNormalizado {
@@ -319,24 +304,6 @@ export class UsuarioService {
     const usuarioActualizado = await this.usuarioRepo.actualizarEstado(id, estadoBool)
     if (!usuarioActualizado) {
       throw new UsuarioServiceError(404, 'Usuario no encontrado')
-    }
-
-    // 3. Registro automático de cierre de caja en MongoDB si aplica
-    if (estadoBool === false && dto.reporte) {
-      const fechaCierre = obtenerFechaBolivia()
-      await this.usuarioRepo.registrarCierreCaja({
-        cajeroId: id,
-        cajeroNombre: `${usuarioActualizado.nombre} ${usuarioActualizado.apellido || ''}`.trim(),
-        totalDia: dto.reporte.totalDia || 0,
-        efectivo: dto.reporte.efectivo || 0,
-        tarjeta: dto.reporte.tarjeta || 0,
-        qr: dto.reporte.qr || 0,
-        descuentos: dto.reporte.descuentos || 0,
-        propinas: dto.reporte.propinas || 0,
-        pagosProcesados: dto.reporte.pagosProcesados || 0,
-        fechaCierreBolivia: formatearFechaBolivia(fechaCierre),
-        fechaCierre
-      })
     }
 
     // 4. Notificar vía socket si el usuario es desactivado

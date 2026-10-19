@@ -1,40 +1,44 @@
-// src/utils/facturaTemplate.ts
+// src/utils/reciboTemplate.ts
 
-export interface ItemFactura {
+export interface ItemRecibo {
   nombre: string
   cantidad: number
   precioUnitario: number
   subtotal: number
 }
 
-export interface DatosFactura {
+export interface DatosRecibo {
   codigo: string
   mesaNombre: string
   meseroNombre: string
   clienteNombre: string
+  clienteApellido?: string
   clienteCI: string
+  clienteExtensionCI?: string
+  clienteNIT?: string
   subtotal: number
-  descuento: number
   propina: number
   totalFinal: number
   metodoPago?: string
   fecha?: string
-  items: ItemFactura[]
+  items: ItemRecibo[]
 }
 
 /**
  * Función pura que genera la plantilla HTML con estilos CSS inline para el comprobante
  * de pago (ticket estilo impresora térmica) enviado por correo electrónico.
  */
-export function generarPlantillaFacturaHTML(datos: DatosFactura): string {
+export function generarPlantillaReciboHTML(datos: DatosRecibo): string {
   const {
     codigo,
     mesaNombre,
     meseroNombre,
     clienteNombre,
+    clienteApellido = '',
     clienteCI,
+    clienteExtensionCI = '',
+    clienteNIT = '',
     subtotal,
-    descuento,
     propina,
     totalFinal,
     metodoPago = 'Efectivo',
@@ -75,8 +79,9 @@ export function generarPlantillaFacturaHTML(datos: DatosFactura): string {
           <div style="font-size: 13px; line-height: 1.6; margin-bottom: 20px;">
             <p style="margin: 0;"><strong>Mesa:</strong> ${mesaNombre}</p>
             <p style="margin: 0;"><strong>Mesero:</strong> ${meseroNombre}</p>
-            <p style="margin: 0;"><strong>Cliente:</strong> ${clienteNombre}</p>
-            <p style="margin: 0;"><strong>CI/NIT:</strong> ${clienteCI}</p>
+            <p style="margin: 0;"><strong>Cliente:</strong> ${(clienteNombre + " " + clienteApellido).trim()}</p>
+            <p style="margin: 0;"><strong>CI:</strong> ${clienteCI || "S/N"}${clienteCI && clienteExtensionCI ? "-" + clienteExtensionCI : ""}</p>
+            <p style="margin: 0;"><strong>NIT:</strong> ${clienteNIT || "S/N"}</p>
           </div>
 
           <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
@@ -95,7 +100,6 @@ export function generarPlantillaFacturaHTML(datos: DatosFactura): string {
 
           <div style="text-align: right; font-size: 13px; border-bottom: 2px solid #e5e7eb; padding-bottom: 15px; margin-bottom: 15px;">
             <p style="margin: 3px 0;">Subtotal: <span style="display: inline-block; width: 80px;">Bs. ${subtotal.toFixed(2)}</span></p>
-            ${descuento > 0 ? `<p style="margin: 3px 0; color: #059669;">Descuento: <span style="display: inline-block; width: 80px;">- Bs. ${descuento.toFixed(2)}</span></p>` : ''}
             ${propina > 0 ? `<p style="margin: 3px 0; color: #D96C4A;">Propina: <span style="display: inline-block; width: 80px;">+ Bs. ${propina.toFixed(2)}</span></p>` : ''}
             <h3 style="margin: 10px 0 0 0; color: #111827; font-size: 18px;">TOTAL FINAL: <span style="display: inline-block; width: 100px;">Bs. ${totalFinal.toFixed(2)}</span></h3>
           </div>

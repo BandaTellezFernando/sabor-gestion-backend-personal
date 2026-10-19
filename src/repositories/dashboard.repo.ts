@@ -1,7 +1,9 @@
 // src/repositories/dashboard.repo.ts
 import { Types } from 'mongoose'
 import Pedido from '../models/Pedido'
+import Pago from '../models/Pago'
 import Mesa from '../models/Mesa'
+import { ESTADOS_MESA, ESTADOS_TANDA_COCINA } from '../utils/constants'
 import {
   VentasHoyRaw,
   PlatoPopularRaw,
@@ -22,22 +24,33 @@ export {
  * Repositorio de consultas y agregaciones analíticas para el módulo Dashboard
  */
 export class DashboardRepository {
-  /**
-   * Consulta A: Agregación de ventas totales y cantidad de órdenes cerradas dentro de un rango de fechas
+/**
+   * Consulta A: resume pagos confirmados en el intervalo recibido.
+   * Cuenta cada pedido una sola vez, según el modelo de pago completo.
    */
-  async obtenerVentasYOrdenesDia(inicio: Date, fin: Date): Promise<VentasHoyRaw> {
-    const resultado = await Pedido.aggregate<VentasHoyRaw>([
+  async obtenerVentasYOrdenesDia(
+    inicio: Date,
+    hastaExclusivo: Date
+  ): Promise<VentasHoyRaw> {
+    const resultado = await Pago.aggregate<VentasHoyRaw>([
       {
         $match: {
-          createdAt: { $gte: inicio, $lte: fin },
-          estado: 'CERRADO'
+          estadoPago: 'Pagado',
+          fechaPago: { $gte: inicio, $lt: hastaExclusivo }
+        }
+      },
+      { $sort: { fechaPago: 1, _id: 1 } },
+      {
+        $group: {
+          _id: '$pedido',
+          totalFinal: { $first: '$totalFinal' }
         }
       },
       {
         $group: {
           _id: null,
-          totalVentas: { $sum: '$total' },
-          totalOrdenes: { $count: {} }
+          totalVentas: { $sum: '$totalFinal' },
+          totalOrdenes: { $sum: 1 }
         }
       }
     ])
@@ -45,24 +58,95 @@ export class DashboardRepository {
     return resultado[0] || { totalVentas: 0, totalOrdenes: 0 }
   }
 
-  /**
-   * Consulta B: Conteo de mesas activas (cuyo estado sea distinto a 'Libre')
+/**
+   * Consulta B: cuenta mesas que están ocupadas o esperando el cobro.
    */
   async contarMesasActivas(): Promise<number> {
-    return await Mesa.countDocuments({ estado: { $ne: 'Libre' } })
+    return await Mesa.countDocuments({
+      estado: {
+        $in: [
+          ESTADOS_MESA.OCUPADA,
+          ESTADOS_MESA.CUENTA_SOLICITADA
+        ]
+      }
+    })
   }
 
-  /**
-   * Consulta C: Agregación de los platos más vendidos históricos en pedidos cerrados
+/**
+   * Consulta C: platos más vendidos en pedidos pagados durante el período.
+   * Excluye detalles vinculados a tandas canceladas.
    */
-  async obtenerPlatosMasVendidos(limite: number = 5): Promise<PlatoPopularRaw[]> {
-    return await Pedido.aggregate<PlatoPopularRaw>([
-      { $match: { estado: 'CERRADO' } },
-      { $unwind: '$detalles' },
+  async obtenerPlatosMasVendidos(
+    inicio: Date,
+    hastaExclusivo: Date,
+    limite: number = 5
+  ): Promise<PlatoPopularRaw[]> {
+    return await Pago.aggregate<PlatoPopularRaw>([
+      {
+        $match: {
+          estadoPago: 'Pagado',
+          fechaPago: { $gte: inicio, $lt: hastaExclusivo }
+        }
+      },
+      // Un pedido se analiza una sola vez aunque existan pagos duplicados.
+      { $group: { _id: '$pedido' } },
+      {
+        $lookup: {
+          from: 'pedidos',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'pedido'
+        }
+      },
+      { $unwind: '$pedido' },
+      { $match: { 'pedido.estado': 'CERRADO' } },
+      {
+        $addFields: {
+          _tandasCanceladasIds: {
+            $map: {
+              input: {
+                $filter: {
+                  input: { $ifNull: ['$pedido.tandas', []] },
+                  as: 'tanda',
+                  cond: {
+                    $eq: [
+                      '$$tanda.estado',
+                      ESTADOS_TANDA_COCINA.CANCELADA
+                    ]
+                  }
+                }
+              },
+              as: 'tandaCancelada',
+              in: '$$tandaCancelada._id'
+            }
+          }
+        }
+      },
+      { $unwind: '$pedido.detalles' },
+      {
+        $match: {
+          $or: [
+            { 'pedido.detalles.tandaId': { $exists: false } },
+            { 'pedido.detalles.tandaId': null },
+            {
+              $expr: {
+                $not: [
+                  {
+                    $in: [
+                      '$pedido.detalles.tandaId',
+                      '$_tandasCanceladasIds'
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
       {
         $group: {
-          _id: '$detalles.plato',
-          cantidadVendida: { $sum: '$detalles.cantidad' }
+          _id: '$pedido.detalles.plato',
+          cantidadVendida: { $sum: '$pedido.detalles.cantidad' }
         }
       },
       { $sort: { cantidadVendida: -1 } },
@@ -79,17 +163,79 @@ export class DashboardRepository {
     ])
   }
 
-  /**
-   * Consulta D: Agregación de popularidad de categorías con doble lookup (Pedido -> Plato -> Categoria)
+/**
+   * Consulta D: categorías populares según las cantidades vendidas
+   * en pedidos pagados durante el período, excluyendo tandas canceladas.
    */
-  async obtenerCategoriasPopulares(): Promise<CategoriaPopularRaw[]> {
-    return await Pedido.aggregate<CategoriaPopularRaw>([
-      { $match: { estado: 'CERRADO' } },
-      { $unwind: '$detalles' },
+  async obtenerCategoriasPopulares(
+    inicio: Date,
+    hastaExclusivo: Date
+  ): Promise<CategoriaPopularRaw[]> {
+    return await Pago.aggregate<CategoriaPopularRaw>([
+      {
+        $match: {
+          estadoPago: 'Pagado',
+          fechaPago: { $gte: inicio, $lt: hastaExclusivo }
+        }
+      },
+      { $group: { _id: '$pedido' } },
+      {
+        $lookup: {
+          from: 'pedidos',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'pedido'
+        }
+      },
+      { $unwind: '$pedido' },
+      { $match: { 'pedido.estado': 'CERRADO' } },
+      {
+        $addFields: {
+          _tandasCanceladasIds: {
+            $map: {
+              input: {
+                $filter: {
+                  input: { $ifNull: ['$pedido.tandas', []] },
+                  as: 'tanda',
+                  cond: {
+                    $eq: [
+                      '$$tanda.estado',
+                      ESTADOS_TANDA_COCINA.CANCELADA
+                    ]
+                  }
+                }
+              },
+              as: 'tandaCancelada',
+              in: '$$tandaCancelada._id'
+            }
+          }
+        }
+      },
+      { $unwind: '$pedido.detalles' },
+      {
+        $match: {
+          $or: [
+            { 'pedido.detalles.tandaId': { $exists: false } },
+            { 'pedido.detalles.tandaId': null },
+            {
+              $expr: {
+                $not: [
+                  {
+                    $in: [
+                      '$pedido.detalles.tandaId',
+                      '$_tandasCanceladasIds'
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
       {
         $lookup: {
           from: 'platos',
-          localField: 'detalles.plato',
+          localField: 'pedido.detalles.plato',
           foreignField: '_id',
           as: 'plato'
         }
@@ -107,7 +253,7 @@ export class DashboardRepository {
       {
         $group: {
           _id: '$categoria.nombre',
-          totalPedidos: { $sum: '$detalles.cantidad' }
+          totalPedidos: { $sum: '$pedido.detalles.cantidad' }
         }
       },
       { $sort: { totalPedidos: -1 } }

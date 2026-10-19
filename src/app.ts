@@ -11,7 +11,9 @@ import ubicacionRoutes from './routes/ubicacion.routes'
 import platoRoutes from './routes/plato.routes'
 import pedidoRoutes from './routes/pedido.routes'
 import pagoRoutes from './routes/pago.routes'
+import cierreCajaRoutes from './routes/cierreCaja.routes'
 import dashboardRoutes from './routes/dashboard.routes'
+import reportesRoutes from './routes/reportes.routes'
 import uploadRouters from './routes/upload.routes' // <-- Sin el .js
 import inventarioRoutes from './routes/inventario.routes'
 
@@ -43,7 +45,9 @@ app.use('/api/ubicaciones', ubicacionRoutes)
 app.use('/api/platos', platoRoutes)
 app.use('/api/pedidos', pedidoRoutes)
 app.use('/api/pagos', pagoRoutes)
+app.use('/api/cierres-caja', cierreCajaRoutes)
 app.use('/api/dashboard', dashboardRoutes)
+app.use('/api/reportes', reportesRoutes)
 app.use('/api/inventario', inventarioRoutes)
 // Health check / Ruta de prueba
 app.get('/api/health', (req: Request, res: Response) => {

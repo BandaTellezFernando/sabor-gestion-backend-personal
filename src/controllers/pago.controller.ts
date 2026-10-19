@@ -9,10 +9,14 @@ import { mesaService } from '../services/mesa.service'
 /**
  * 1. Generador de QR estático con ID y total del pedido
  */
-export const generarPagoQR = async (req: Request, res: Response): Promise<void> => {
+export const generarPagoQR = async (req: CustomRequest, res: Response): Promise<void> => {
   try {
     const pedidoId = String(req.params.pedidoId)
-    const resultado = await pagoService.generarPagoQR(pedidoId)
+    const cajeroId =
+      req.usuario?.rol.toLowerCase() === 'cajero'
+        ? req.usuario.id
+        : undefined
+    const resultado = await pagoService.generarPagoQR(pedidoId, cajeroId)
     res.json(resultado)
   } catch (error) {
     if (error instanceof PagoServiceError) {
@@ -32,16 +36,18 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
     const pedidoId = String(req.params.pedidoId)
     const {
       metodoPago,
-      porcentajeDescuento = 0,
       porcentajePropina = 0,
-      montoDescuento,
       montoPropina,
       subtotalCierre,
       cajeroAsignado,
       clienteNombre,
+      clienteApellido,
+      clienteExtensionCI,
       clienteCI,
       clienteNIT,
       nombreCliente,
+      apellidoCliente,
+      extensionCI,
       ci,
       nit
     } = req.body
@@ -51,14 +57,15 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
     const resultado = await pagoService.procesarPagoFinal({
       pedidoId,
       metodoPago,
-      porcentajeDescuento,
       porcentajePropina,
-      montoDescuento,
       montoPropina,
       subtotalCierre,
       cajeroAsignado,
       cajeroId,
       clienteNombre: clienteNombre !== undefined ? clienteNombre : nombreCliente,
+      clienteApellido: clienteApellido !== undefined ? clienteApellido : apellidoCliente,
+      clienteExtensionCI:
+        clienteExtensionCI !== undefined ? clienteExtensionCI : extensionCI,
       clienteCI: clienteCI !== undefined ? clienteCI : ci,
       clienteNIT: clienteNIT !== undefined ? clienteNIT : nit
     })
@@ -106,46 +113,134 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
   }
 }
 
-/**
- * 3. Simulador de Pago desde Celular (QR Dinámico)
- */
-export const simularPagoQR = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const pedidoId = String(req.params.pedidoId)
-    const pedido = await pagoService.obtenerPedidoParaSimulacion(pedidoId)
 
-    // Emitimos los WebSockets correspondientes
+/**
+ * Consulta el estado del QR sin consumirlo.
+ * El token se recibe en el cuerpo JSON, no en la URL de la API.
+ */
+export const consultarEstadoPagoQR = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  res.set('Cache-Control', 'no-store')
+
+  try {
+    const token = typeof req.body?.token === 'string' ? req.body.token : ''
+    const estado = await pagoService.consultarEstadoPagoQR(token)
+    res.status(200).json(estado)
+  } catch (error) {
+    if (error instanceof PagoServiceError) {
+      res.status(error.statusCode).json({ mensaje: error.message })
+      return
+    }
+
+    console.error('Error al consultar estado QR:', error)
+    res.status(500).json({ mensaje: 'Error al consultar el estado del QR' })
+  }
+}
+
+/**
+ * Confirma el pago simulado. Los eventos se emiten únicamente después
+ * de que el servicio haya confirmado la transacción en la base de datos.
+ */
+export const confirmarPagoQR = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  res.set('Cache-Control', 'no-store')
+
+  try {
+    const body = req.body ?? {}
+    const token = typeof body.token === 'string' ? body.token : ''
+    const resultado = await pagoService.confirmarPagoQR(token, {
+      clienteNombre:
+        body.clienteNombre !== undefined ? body.clienteNombre : body.nombreCliente,
+      clienteApellido:
+        body.clienteApellido !== undefined ? body.clienteApellido : body.apellidoCliente,
+      clienteCI: body.clienteCI !== undefined ? body.clienteCI : body.ci,
+      clienteExtensionCI:
+        body.clienteExtensionCI !== undefined ? body.clienteExtensionCI : body.extensionCI,
+      clienteNIT: body.clienteNIT !== undefined ? body.clienteNIT : body.nit
+    })
+    const pedidoId = String(resultado.pedidoActualizado._id)
+
     try {
       const io = getIO()
 
-      // 1. Avisar a la caja
+      io.emit('cocina:actualizar_tablero', resultado.pedidoActualizado)
+
+      if (resultado.pedidoActualizado.mesa) {
+        const mesaIdStr = (
+          (resultado.pedidoActualizado.mesa as any)._id ||
+          resultado.pedidoActualizado.mesa
+        ).toString()
+
+        const mesaNombre = resultado.mesaLiberada?.numero || 'Mesa'
+
+        try {
+          const mesaDTO = await mesaService.obtenerMesaPorId(mesaIdStr)
+          io.emit('mesas:updated', mesaDTO)
+        } catch (mesaErr) {
+          console.warn('No se pudo actualizar la mesa por WebSocket:', mesaErr)
+        }
+
+        io.emit('mesas:pago_completado', {
+          mesaId: mesaIdStr,
+          mesaNombre,
+          pedidoId,
+          mensaje: 'Pago procesado exitosamente'
+        })
+      }
+
       io.emit('caja:pago_confirmado', {
         pedidoId,
-        mensaje: 'Transferencia QR recibida',
+        mensaje: 'Pago QR simulado confirmado',
         fecha: obtenerFechaBolivia()
       })
 
-      // 2. Avisar al cliente en tiempo real
       io.emit(`pedido:pago_recibido:${pedidoId}`, {
         pedidoId,
         mensaje: 'Pago QR recibido correctamente',
-        pedido
+        pedido: resultado.pedidoActualizado
       })
     } catch (socketError) {
-      console.warn('Falló la emisión del WebSocket de simulación:', socketError)
+      console.warn(
+        'Pago registrado, pero falló la emisión de WebSocket:',
+        socketError
+      )
     }
 
     res.status(200).json({
       exito: true,
-      mensaje: 'Simulación de pago exitosa. Notificando a la caja...'
+      estado: 'UTILIZADO',
+      mensaje: 'Pago QR simulado confirmado.',
+      comprobante: resultado.comprobante
     })
   } catch (error) {
     if (error instanceof PagoServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message })
       return
     }
-    res.status(500).json({ mensaje: 'Error al simular el pago' })
+
+    console.error('Error al confirmar pago QR:', error)
+    res.status(500).json({ mensaje: 'Error al confirmar el pago QR' })
   }
+}
+
+/**
+ * Compatibilidad temporal con la ruta antigua.
+ * No se debe marcar un pago como confirmado usando únicamente el pedidoId.
+ */
+export const simularPagoQR = async (
+  _req: Request,
+  res: Response
+): Promise<void> => {
+  res.set('Cache-Control', 'no-store')
+  res.status(410).json({
+    exito: false,
+    mensaje:
+      'La confirmación antigua fue deshabilitada. Utiliza un QR vigente para confirmar el pago.'
+  })
 }
 
 /**
@@ -171,5 +266,79 @@ export const enviarReciboCorreo = async (req: Request, res: Response): Promise<v
     }
     console.error('Error al enviar recibo:', error)
     res.status(500).json({ mensaje: 'Error al enviar el correo' })
+  }
+}
+
+
+/**
+ * Valida que cada parámetro de consulta aparezca como un único valor.
+ */
+const leerParametroQuery = (
+  valor: unknown,
+  nombre: string
+): string | undefined => {
+  if (valor === undefined) return undefined
+  if (typeof valor !== 'string') {
+    throw new PagoServiceError(
+      400,
+      `El parámetro "${nombre}" debe enviarse una sola vez como texto.`
+    )
+  }
+  return valor
+}
+
+/**
+ * GET /api/pagos
+ * Historial paginado. Solo accesible por Administrador (controlado en la ruta).
+ */
+export const listarPagos = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const resultado = await pagoService.listarPagos({
+      desde: leerParametroQuery(req.query.desde, 'desde'),
+      hasta: leerParametroQuery(req.query.hasta, 'hasta'),
+      estadoPago: leerParametroQuery(req.query.estadoPago, 'estadoPago'),
+      metodoPago: leerParametroQuery(req.query.metodoPago, 'metodoPago'),
+      pagina: leerParametroQuery(req.query.pagina, 'pagina'),
+      limite: leerParametroQuery(req.query.limite, 'limite')
+    })
+
+    res.status(200).json(resultado)
+  } catch (error) {
+    if (error instanceof PagoServiceError) {
+      res.status(error.statusCode).json({ mensaje: error.message })
+      return
+    }
+
+    console.error('Error al consultar historial de pagos:', error)
+    res.status(500).json({ mensaje: 'Error al consultar el historial de pagos.' })
+  }
+}
+
+/**
+ * GET /api/pagos/:id
+ * Detalle individual de un pago. Solo accesible por Administrador.
+ */
+export const obtenerDetallePago = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const pago = await pagoService.obtenerDetallePago(String(req.params.id))
+    res.status(200).json({
+      sinDatos: false,
+      mensaje: 'Pago encontrado.',
+      datos: pago
+    })
+  } catch (error) {
+    if (error instanceof PagoServiceError) {
+      res.status(error.statusCode).json({ mensaje: error.message })
+      return
+    }
+
+    console.error('Error al consultar el detalle del pago:', error)
+    res.status(500).json({ mensaje: 'Error al consultar el detalle del pago.' })
   }
 }

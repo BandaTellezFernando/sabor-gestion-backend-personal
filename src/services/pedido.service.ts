@@ -119,7 +119,6 @@ interface ActualizarPedidoEntrada {
   clienteCI?: string
   clienteNIT?: string
   cajeroAsignado?: string | Types.ObjectId
-  montoDescuento?: number | string
   montoPropina?: number | string
   subtotalCierre?: number | string
   estado?: string
@@ -136,7 +135,6 @@ interface CrearPedidoEntrada {
   mesa?: MesaReferenciaEntrada | null
   usuario?: PlatoIdEntrada
   detalles: DetallePedidoEntrada[]
-  montoDescuento?: number | string
   montoPropina?: number | string
   clienteNombre?: string
   clienteCI?: string
@@ -283,9 +281,8 @@ export class PedidoService {
         : pedido.subtotalCierre || pedido.total || 0
 
     const subtotalBase = Number(pedido.subtotalCierre || itemsSubtotal || 0)
-    const montoDesc = Number(pedido.montoDescuento || 0)
     const montoProp = Number(pedido.montoPropina || 0)
-    const totalCalc = Number(Math.max(0, subtotalBase - montoDesc + montoProp).toFixed(2))
+    const totalCalc = Number((subtotalBase + montoProp).toFixed(2))
 
     return {
       pedidoId: pedido._id,
@@ -297,8 +294,6 @@ export class PedidoService {
         : 'Sin mesero',
       subtotal: subtotalBase,
       subtotalCierre: subtotalBase,
-      descuento: montoDesc,
-      montoDescuento: montoDesc,
       propina: montoProp,
       montoPropina: montoProp,
       total: totalCalc,
@@ -524,22 +519,18 @@ export class PedidoService {
     // 2. Procesar detalles con precios reales de Plato, calcular subtotales y validar recetas/ingredientes
     const { detallesCalculados, subtotal } = await this.procesarDetallesPedido(datos.detalles)
 
-    // 3. Validar montos de descuento y propina (no negativos)
-    const montoDescuento = Number(datos.montoDescuento || 0)
+    // 3. Validar propina. Los descuentos monetarios ya no se aplican.
     const montoPropina = Number(datos.montoPropina || 0)
 
-    if (montoDescuento < 0) {
-      throw new PedidoServiceError(400, 'El monto de descuento no puede ser negativo')
+    if (!Number.isFinite(montoPropina) || montoPropina < 0) {
+      throw new PedidoServiceError(
+        400,
+        'El monto de propina debe ser un número válido y no negativo'
+      )
     }
 
-    if (montoPropina < 0) {
-      throw new PedidoServiceError(400, 'El monto de propina no puede ser negativo')
-    }
-
-    // 4. Calcular total final en backend (ignorando cualquier total manipulado por el frontend)
-    const totalCalculado = Number(
-      Math.max(0, subtotal - montoDescuento + montoPropina).toFixed(2)
-    )
+    // 4. El total se calcula exclusivamente con subtotal más propina.
+    const totalCalculado = Number((subtotal + montoPropina).toFixed(2))
 
     // 5. Generar código diario secuencial y fechas Bolivia.
     const pedidoId = new Types.ObjectId()
@@ -684,7 +675,6 @@ export class PedidoService {
             detalles: detallesConTanda,
             total: totalCalculado,
             subtotalCierre: subtotal,
-            montoDescuento,
             montoPropina,
             mesa: mesaIdString || undefined,
             usuario: usuarioResponsableId,
@@ -862,47 +852,17 @@ export class PedidoService {
     const activo = obtenerTextoQuery(query.activo)
     const cajero = obtenerTextoQuery(query.cajero)
     const mesero = obtenerTextoQuery(query.mesero)
-    const reportesCierre = obtenerTextoQuery(query.reportesCierre)
+    if (obtenerTextoQuery(query.reportesCierre) === 'true') {
+      throw new PedidoServiceError(
+        410,
+        'El contrato de cierres de 48 horas fue retirado. Usa GET /api/cierres-caja?desde=YYYY-MM-DD&hasta=YYYY-MM-DD.'
+      )
+    }
     const recogido = obtenerTextoQuery(query.recogido)
     const incluirRecogidos = obtenerTextoQuery(query.incluirRecogidos)
 
-    const esAdmin =
-      usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
-
     const esMesero = usuarioRol === 'Mesero'
     const esCocinero = usuarioRol === 'Cocinero'
-
-    // Reportes de Cierre de las últimas 48 horas (Solo Administradores)
-    if (reportesCierre === 'true') {
-      if (usuarioRol && !esAdmin) {
-        throw new PedidoServiceError(
-          403,
-          'Acceso denegado: solo Administradores pueden consultar reportes de cierre.'
-        )
-      }
-
-      const limite = obtenerFechaBolivia()
-      limite.setHours(limite.getHours() - 48)
-
-      const cierres = await this.pedidoRepo.buscarReportesCierre(limite)
-
-      return cierres.map((cierre: any) => {
-        const cierrePlano =
-          typeof cierre.toObject === 'function' ? cierre.toObject() : cierre
-
-        const { fechaCierreBolivia, fechaCierre, ...restoCierre } = cierrePlano
-
-        delete restoCierre.__v
-
-        return {
-          ...restoCierre,
-          fechaCierreBolivia:
-            fechaCierreBolivia ||
-            (fechaCierre ? formatearFechaBolivia(fechaCierre) : undefined),
-          fechaCierre
-        }
-      })
-    }
 
     const filtro: QueryFilter<IPedido> = {}
     const andClauses: QueryFilter<IPedido>[] = []
@@ -1184,10 +1144,17 @@ export class PedidoService {
     const subtotalActualizado = Number(
       (subtotalAnterior + subtotal).toFixed(2)
     )
-    const descuento = Number(pedido.montoDescuento || 0)
     const propina = Number(pedido.montoPropina || 0)
+
+    if (!Number.isFinite(propina) || propina < 0) {
+      throw new PedidoServiceError(
+        400,
+        'El monto de propina debe ser un número válido y no negativo'
+      )
+    }
+
     const totalActualizado = Number(
-      Math.max(0, subtotalActualizado - descuento + propina).toFixed(2)
+      (subtotalActualizado + propina).toFixed(2)
     )
 
     const pedidoActualizado = await this.pedidoRepo.agregarTandaBorrador(
@@ -1808,13 +1775,10 @@ export class PedidoService {
                 .toFixed(2)
             )
 
-        const descuento = Number(pedido.montoDescuento || 0)
         const propina = Number(pedido.montoPropina || 0)
         const total = cuentaCancelada || subtotalCierre <= 0
           ? 0
-          : Number(
-              Math.max(0, subtotalCierre - descuento + propina).toFixed(2)
-            )
+          : Number((subtotalCierre + propina).toFixed(2))
 
         const pedidoActualizado = await this.pedidoRepo.cancelarTanda(
           pedidoId,
@@ -2080,7 +2044,7 @@ export class PedidoService {
   }
 
   /**
-   * Actualiza el contenido de un pedido existente (platos, totales, descuentos, propinas).
+   * Actualiza el contenido de un pedido existente (platos, totales y propinas).
    * Reabre a 'ABIERTO' si estaba en 'ENTREGADO' y se agregan detalles.
    */
   async actualizarPedido(
@@ -2096,7 +2060,6 @@ export class PedidoService {
       clienteCI,
       clienteNIT,
       cajeroAsignado,
-      montoDescuento,
       montoPropina,
       subtotalCierre,
       estado
@@ -2173,16 +2136,6 @@ export class PedidoService {
     }
 
     if (
-      montoDescuento !== undefined &&
-      Number(montoDescuento) < 0
-    ) {
-      throw new PedidoServiceError(
-        400,
-        'El monto de descuento no puede ser negativo'
-      )
-    }
-
-    if (
       montoPropina !== undefined &&
       Number(montoPropina) < 0
     ) {
@@ -2250,10 +2203,6 @@ export class PedidoService {
       updates.cajeroAsignado = cajeroAsignado
     }
 
-    if (montoDescuento !== undefined) {
-      updates.montoDescuento = Number(montoDescuento)
-    }
-
     if (montoPropina !== undefined) {
       updates.montoPropina = Number(montoPropina)
     }
@@ -2268,11 +2217,6 @@ export class PedidoService {
               0
           )
 
-    const finalDesc =
-      updates.montoDescuento !== undefined
-        ? updates.montoDescuento
-        : Number(pedidoAnterior?.montoDescuento || 0)
-
     const finalProp =
       updates.montoPropina !== undefined
         ? updates.montoPropina
@@ -2280,15 +2224,9 @@ export class PedidoService {
 
     if (
       updates.detalles !== undefined ||
-      updates.montoDescuento !== undefined ||
       updates.montoPropina !== undefined
     ) {
-      updates.total = Number(
-        Math.max(
-          0,
-          finalSub - finalDesc + finalProp
-        ).toFixed(2)
-      )
+      updates.total = Number((finalSub + finalProp).toFixed(2))
 
       if (
         !updates.subtotalCierre &&

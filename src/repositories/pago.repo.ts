@@ -20,6 +20,31 @@ export class PagoRepository {
    * Busca un pago por su identificador único (_id)
    * con populate de mesa, mesero, cajero y pedido.
    */
+  /**
+   * Lista pagos con filtros y paginación.
+   * Las fechas de este historial se aplican sobre createdAt.
+   */
+  async listarPaginado(
+    filtros: Record<string, any>,
+    pagina: number,
+    limite: number
+  ): Promise<{ datos: any[]; total: number }> {
+    const [datos, total] = await Promise.all([
+      Pago.find(filtros)
+        .populate('mesa', 'numero ubicacion')
+        .populate('mesero', 'nombre apellido')
+        .populate('cajero', 'nombre apellido')
+        .populate('pedido', 'codigo total estado')
+        .sort({ createdAt: -1, _id: -1 })
+        .skip((pagina - 1) * limite)
+        .limit(limite)
+        .exec(),
+      Pago.countDocuments(filtros).exec()
+    ])
+
+    return { datos, total }
+  }
+
   async buscarPorId(id: string | Types.ObjectId): Promise<IPago | null> {
     return await Pago.findById(id)
       .populate('mesa', 'numero ubicacion')
@@ -66,9 +91,58 @@ export class PagoRepository {
   /**
    * Cuenta la cantidad de pagos que coinciden con un criterio de búsqueda.
    */
+  async resumirPagosParaCierreCaja(
+    cajeroId: string,
+    desde: Date,
+    hastaExclusivo: Date,
+    session?: ClientSession
+  ): Promise<
+    Array<{
+      metodoPago: string | null
+      totalRecaudado: number
+      propinas: number
+      cantidad: number
+    }>
+  > {
+    if (!Types.ObjectId.isValid(cajeroId)) {
+      throw new Error('El identificador del cajero no es válido.')
+    }
+
+    return await Pago.aggregate<{
+      metodoPago: string | null
+      totalRecaudado: number
+      propinas: number
+      cantidad: number
+    }>([
+      {
+        $match: {
+          cajero: new Types.ObjectId(cajeroId),
+          estadoPago: 'Pagado',
+          fechaPago: { $gte: desde, $lt: hastaExclusivo }
+        }
+      },
+      {
+        $group: {
+          _id: '$metodoPago',
+          totalRecaudado: { $sum: '$totalFinal' },
+          propinas: { $sum: '$propina' },
+          cantidad: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          metodoPago: '$_id',
+          totalRecaudado: 1,
+          propinas: 1,
+          cantidad: 1
+        }
+      }
+    ]).session(session ?? null)
+  }
+
   async contar(filtros: Record<string, any> = {}): Promise<number> {
     return await Pago.countDocuments(filtros)
-  }
-}
+  }}
 
 export const pagoRepository = new PagoRepository()

@@ -75,7 +75,7 @@ export const actualizarUsuario = async (
 }
 
 /**
- * Cambiar el estado activo/inactivo de un usuario (y registrar CierreCaja si aplica)
+ * Cambiar el estado activo/inactivo de un usuario, independientemente del cierre financiero.
  */
 export const cambiarEstadoUsuario = async (
   req: CustomRequest,

@@ -3,13 +3,32 @@ import { Router } from 'express'
 import {
   generarPagoQR,
   procesarPagoFinal,
+  consultarEstadoPagoQR,
+  confirmarPagoQR,
   simularPagoQR,
-  enviarReciboCorreo
+  enviarReciboCorreo,
+  listarPagos,
+  obtenerDetallePago
 } from '../controllers/pago.controller'
 import { verificarToken } from '../middlewares/auth.middleware'
 import { permitirRoles } from '../middlewares/rol.middleware'
 
 const router = Router()
+
+// Consultas globales de pagos: acceso exclusivo al Administrador.
+router.get(
+  '/',
+  verificarToken,
+  permitirRoles('Administrador'),
+  listarPagos
+)
+
+router.get(
+  '/:id',
+  verificarToken,
+  permitirRoles('Administrador'),
+  obtenerDetallePago
+)
 
 // 1. Ruta para cuando el cliente quiere pagar con QR estático (Opcional si mantienes el anterior)
 router.post(
@@ -27,7 +46,12 @@ router.post(
   procesarPagoFinal
 )
 
-// 3. NUEVA RUTA PÚBLICA: Escucha la señal del celular simulado (Sin verificarToken)
+// El token aleatorio actúa como credencial temporal del QR.
+// Se envía en JSON para no exponerlo en la URL de la API.
+router.post('/qr/estado', consultarEstadoPagoQR)
+router.post('/qr/confirmar', confirmarPagoQR)
+
+// Endpoint heredado deshabilitado: ya no se confirma un pago solo con el ID.
 router.post('/notificar-qr/:pedidoId', simularPagoQR)
 
 router.post(
