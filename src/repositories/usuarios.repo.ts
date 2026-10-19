@@ -2,12 +2,18 @@
 import { Types, type QueryFilter } from 'mongoose'
 import Usuario, { type IUsuario } from '../models/Usuario'
 
+function emailRegexExacto(email: string): RegExp {
+  const escapado = email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`^${escapado}$`, 'i')
+}
+
 export { IUsuario } from '../models/Usuario'
 
 export interface UsuarioCrearDatos {
   nombre: string
   apellido: string
   ci: string
+  ciComplemento?: string | null
   email: string
   password: string
   rol: string
@@ -19,6 +25,7 @@ export interface UsuarioActualizarDatos {
   nombre?: string
   apellido?: string
   ci?: string
+  ciComplemento?: string | null
   email?: string
   password?: string
   rol?: string
@@ -52,14 +59,14 @@ export class UsuarioRepository {
    * Busca un usuario por su correo electrónico
    */
   async buscarPorEmail(email: string): Promise<IUsuario | null> {
-    return await Usuario.findOne({ email })
+    return await Usuario.findOne({ email: emailRegexExacto(email) })
   }
 
   /**
    * Busca un usuario por su correo electrónico incluyendo su hash de contraseña para autenticación
    */
   async buscarPorEmailConPassword(email: string): Promise<IUsuario | null> {
-    return await Usuario.findOne({ email })
+    return await Usuario.findOne({ email: emailRegexExacto(email) })
   }
 
   /**
@@ -72,33 +79,51 @@ export class UsuarioRepository {
   /**
    * Busca si existe algún usuario que coincida con el email o el CI indicados
    */
-  async buscarPorEmailOCi(email: string, ci: string): Promise<IUsuario | null> {
+
+  async buscarPorEmailOCi(
+    email: string,
+    ci: string,
+    ciComplemento: string | null = null
+  ): Promise<IUsuario | null> {
     return await Usuario.findOne({
-      $or: [{ email }, { ci }]
+      $or: [
+        { email: emailRegexExacto(email) },
+        { ci, ciComplemento }
+      ]
     })
   }
+
 
   /**
    * Busca si otro usuario (con ID diferente) ya está usando el email o el CI
    */
+
   async buscarDuplicadoEnActualizacion(
     id: string,
     email?: string,
-    ci?: string
+    ci?: string,
+    ciComplemento: string | null = null
   ): Promise<IUsuario | null> {
-    const orConditions: Array<{ email: string } | { ci: string }> = []
-    if (email !== undefined) orConditions.push({ email })
-    if (ci !== undefined) orConditions.push({ ci })
+    const orConditions: QueryFilter<IUsuario>[] = []
 
+    if (email !== undefined) {
+      orConditions.push({ email: emailRegexExacto(email) })
+    }
+    if (ci !== undefined) {
+      orConditions.push({ ci, ciComplemento })
+    }
     if (orConditions.length === 0) return null
 
-    const objectId = Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : id
+    const objectId = Types.ObjectId.isValid(id)
+      ? new Types.ObjectId(id)
+      : id
 
     return await Usuario.findOne({
       $or: orConditions,
       _id: { $ne: objectId }
     })
   }
+
 
   /**
    * Cuenta cuántos cajeros con estado activo existen, con opción de excluir un usuario
@@ -131,6 +156,7 @@ export class UsuarioRepository {
   /**
    * Actualiza los datos de un usuario por su ID y devuelve el documento actualizado sin contraseña
    */
+
   async actualizar(
     id: string,
     datos: UsuarioActualizarDatos
@@ -138,11 +164,12 @@ export class UsuarioRepository {
     return await Usuario.findByIdAndUpdate(
       id,
       { $set: datos },
-      { returnDocument: 'after' }
+      { returnDocument: 'after', runValidators: true }
     )
       .select('-password')
       .lean()
   }
+
 
   /**
    * Actualiza exclusivamente el estado activo/inactivo de un usuario

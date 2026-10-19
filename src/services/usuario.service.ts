@@ -54,6 +54,109 @@ export class UsuarioServiceError extends Error {
   }
 }
 
+
+const ROLES_USUARIO = ['Administrador', 'Mesero', 'Cocinero', 'Cajero'] as const
+const CI_MAX_DIGITOS = 20 // Límite técnico, no longitud oficial del SEGIP.
+const EMAIL_MAX_CARACTERES = 254
+const PASSWORD_MIN_CARACTERES = 8
+const PASSWORD_MAX_BYTES = 72
+
+const EMAIL_REGEX_USUARIO =
+  /^[a-z0-9_%+-]+(?:\.[a-z0-9_%+-]+)*@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,63}$/i
+
+function textoObligatorio(valor: unknown, campo: string): string {
+  if (typeof valor !== 'string' || valor.trim() === '') {
+    throw new UsuarioServiceError(400, `${campo} es obligatorio.`)
+  }
+  return valor.trim()
+}
+
+function validarNombreUsuario(valor: unknown, campo: string): string {
+  const nombre = textoObligatorio(valor, campo)
+  const regex = /^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]+$/
+  if (!regex.test(nombre) || nombre.length > 30) {
+    throw new UsuarioServiceError(
+      400,
+      `${campo} solo debe contener letras y espacios y tener máximo 30 caracteres.`
+    )
+  }
+  return nombre
+}
+
+function normalizarCIUsuario(valor: unknown): string {
+  const ci = textoObligatorio(valor, 'El número de CI')
+  if (!/^\d+$/.test(ci) || ci.length > CI_MAX_DIGITOS) {
+    throw new UsuarioServiceError(
+      400,
+      `El CI debe contener únicamente dígitos y no superar ${CI_MAX_DIGITOS} dígitos.`
+    )
+  }
+  return ci
+}
+
+function normalizarComplementoCI(valor: unknown): string | null {
+  if (valor === undefined || valor === null) return null
+  if (typeof valor !== 'string') {
+    throw new UsuarioServiceError(400, 'El complemento de CI debe ser texto.')
+  }
+  const complemento = valor.trim().toUpperCase()
+  if (complemento === '') return null
+  if (!/^\d[A-Z]$/.test(complemento)) {
+    throw new UsuarioServiceError(
+      400,
+      'El complemento debe tener el formato de un dígito seguido de una letra, por ejemplo 1A.'
+    )
+  }
+  return complemento
+}
+
+function normalizarCorreoUsuario(valor: unknown): string {
+  const email = textoObligatorio(valor, 'El correo electrónico').toLowerCase()
+  const parteLocal = email.split('@')[0] ?? ''
+  if (
+    email.length > EMAIL_MAX_CARACTERES ||
+    parteLocal.length > 64 ||
+    !EMAIL_REGEX_USUARIO.test(email)
+  ) {
+    throw new UsuarioServiceError(400, 'El correo electrónico no tiene un formato válido.')
+  }
+  return email
+}
+
+function validarPasswordUsuario(valor: unknown): string {
+  if (typeof valor !== 'string' || valor.trim() === '') {
+    throw new UsuarioServiceError(400, 'La contraseña es obligatoria.')
+  }
+  if (Array.from(valor).length < PASSWORD_MIN_CARACTERES) {
+    throw new UsuarioServiceError(
+      400,
+      `La contraseña debe tener al menos ${PASSWORD_MIN_CARACTERES} caracteres.`
+    )
+  }
+  if (Buffer.byteLength(valor, 'utf8') > PASSWORD_MAX_BYTES) {
+    throw new UsuarioServiceError(
+      400,
+      `La contraseña no puede superar ${PASSWORD_MAX_BYTES} bytes en UTF-8.`
+    )
+  }
+  return valor
+}
+
+function normalizarRolUsuario(valor: unknown): string {
+  const rol = textoObligatorio(valor, 'El rol')
+  const canonico = ROLES_USUARIO.find(
+    permitido => permitido.toLowerCase() === rol.toLowerCase()
+  )
+  if (!canonico) {
+    throw new UsuarioServiceError(400, 'El rol indicado no es válido.')
+  }
+  return canonico
+}
+
+function esDuplicadoMongo(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 11000
+}
+
 export interface ContextoAutenticacionUsuario {
   id: string
   rol: string
@@ -63,6 +166,7 @@ export interface UsuarioCrearDTO {
   nombre?: string
   apellido?: string
   ci?: string
+  ciComplemento?: string | null
   email?: string
   password?: string
   rol?: string
@@ -72,6 +176,7 @@ export interface UsuarioActualizarDTO {
   nombre?: string
   apellido?: string
   ci?: string
+  ciComplemento?: string | null
   email?: string
   password?: string
   rol?: string
@@ -86,6 +191,7 @@ export interface UsuarioNormalizado {
   nombre: string
   apellido: string
   ci: string
+  ciComplemento?: string
   email: string
   rol: string
   estado: boolean
@@ -124,6 +230,7 @@ export class UsuarioService {
       nombre: textoUsuario(raw.nombre),
       apellido: textoUsuario(raw.apellido),
       ci: textoUsuario(raw.ci),
+      ciComplemento: textoUsuario(raw.ciComplemento) || undefined,
       email: textoUsuario(raw.email),
       rol: textoUsuario(raw.rol),
       estado: raw.estado !== undefined ? Boolean(raw.estado) : true,
@@ -160,143 +267,113 @@ export class UsuarioService {
   /**
    * Valida reglas de formato, unicidad dual (CI/Email), encripta la contraseña y crea el usuario
    */
+
   async crearUsuario(dto: UsuarioCrearDTO): Promise<UsuarioNormalizado> {
-    const nombre = dto.nombre ? String(dto.nombre).trim() : ''
-    const apellido = dto.apellido ? String(dto.apellido).trim() : ''
-    const ci = dto.ci ? String(dto.ci).trim() : ''
-    const email = dto.email ? String(dto.email).trim() : ''
-    const password = dto.password ? String(dto.password) : ''
-    const rol = dto.rol ? String(dto.rol).trim() : ''
-
-    const regexNombres = /^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]+$/
-    if (!regexNombres.test(nombre) || nombre.length > 30) {
-      throw new UsuarioServiceError(
-        400,
-        'El nombre solo debe contener letras y máximo 30 caracteres.'
-      )
-    }
-    if (!regexNombres.test(apellido) || apellido.length > 30) {
-      throw new UsuarioServiceError(
-        400,
-        'Los apellidos solo deben contener letras y máximo 30 caracteres.'
-      )
-    }
-    if (!/^\d+$/.test(ci) || ci.length > 8) {
-      throw new UsuarioServiceError(
-        400,
-        'El CI solo debe contener números y máximo 8 dígitos.'
-      )
+    if (!dto || typeof dto !== 'object' || Array.isArray(dto)) {
+      throw new UsuarioServiceError(400, 'Los datos del usuario deben ser un objeto.')
     }
 
-    // 1. Verificación de unicidad dual
-    const usuarioExistente = await this.usuarioRepo.buscarPorEmailOCi(email, ci)
-    if (usuarioExistente) {
-      if (usuarioExistente.ci === ci) {
-        throw new UsuarioServiceError(
-          400,
-          'Ya existe un usuario registrado con este Carnet de Identidad'
-        )
+    const nombre = validarNombreUsuario(dto.nombre, 'El nombre')
+    const apellido = validarNombreUsuario(dto.apellido, 'El apellido')
+    const ci = normalizarCIUsuario(dto.ci)
+    const ciComplemento = normalizarComplementoCI(dto.ciComplemento)
+    const email = normalizarCorreoUsuario(dto.email)
+    const password = validarPasswordUsuario(dto.password)
+    const rol = normalizarRolUsuario(dto.rol)
+
+    const existente = await this.usuarioRepo.buscarPorEmailOCi(email, ci, ciComplemento)
+    if (existente) {
+      if (String(existente.email).trim().toLowerCase() === email) {
+        throw new UsuarioServiceError(400, 'El correo electrónico ya está registrado.')
       }
-      throw new UsuarioServiceError(
-        400,
-        'El correo electrónico ya está registrado'
-      )
+      throw new UsuarioServiceError(400, 'La combinación de CI y complemento ya está registrada.')
     }
 
-    // 2. Hasheo seguro de contraseña con salt 10
-    const salt = await bcrypt.genSalt(10)
-    const passwordHasheada = await bcrypt.hash(password, salt)
+    const passwordHasheada = await bcrypt.hash(password, await bcrypt.genSalt(10))
+    let nuevoUsuario
+    try {
+      nuevoUsuario = await this.usuarioRepo.crear({
+        nombre, apellido, ci, ciComplemento, email,
+        password: passwordHasheada,
+        rol
+      })
+    } catch (error: unknown) {
+      if (esDuplicadoMongo(error)) {
+        throw new UsuarioServiceError(400, 'El correo o la combinación de CI y complemento ya están registrados.')
+      }
+      throw error
+    }
 
-    // 3. Crear en la base de datos
-    const nuevoUsuario = await this.usuarioRepo.crear({
-      nombre,
-      apellido,
-      ci,
-      email,
-      password: passwordHasheada,
-      rol
-    })
-
-    const usuarioCreado = await this.usuarioRepo.buscarPorId(nuevoUsuario._id.toString())
+    const usuarioCreado = await this.usuarioRepo.buscarPorId(String(nuevoUsuario._id))
     return this.normalizarUsuario(usuarioCreado)
   }
 
   /**
    * Valida existencia, reglas de formato, unicidad y actualiza datos (incluyendo contraseña si viene definida)
    */
+
   async actualizarUsuario(
     id: string,
     dto: UsuarioActualizarDTO
   ): Promise<UsuarioNormalizado> {
+    if (!dto || typeof dto !== 'object' || Array.isArray(dto)) {
+      throw new UsuarioServiceError(400, 'Los datos de actualización deben ser un objeto.')
+    }
+
     const usuarioActual = await this.usuarioRepo.buscarPorIdConPassword(id)
-    if (!usuarioActual) {
-      throw new UsuarioServiceError(404, 'Usuario no encontrado')
+    if (!usuarioActual) throw new UsuarioServiceError(404, 'Usuario no encontrado')
+
+    const datosActualizados: UsuarioActualizarDatos = {}
+    if (dto.nombre !== undefined) datosActualizados.nombre = validarNombreUsuario(dto.nombre, 'El nombre')
+    if (dto.apellido !== undefined) datosActualizados.apellido = validarNombreUsuario(dto.apellido, 'El apellido')
+    if (dto.ci !== undefined) datosActualizados.ci = normalizarCIUsuario(dto.ci)
+    if (dto.ciComplemento !== undefined) datosActualizados.ciComplemento = normalizarComplementoCI(dto.ciComplemento)
+    if (dto.email !== undefined) datosActualizados.email = normalizarCorreoUsuario(dto.email)
+    if (dto.rol !== undefined) datosActualizados.rol = normalizarRolUsuario(dto.rol)
+    if (dto.password !== undefined) {
+      const password = validarPasswordUsuario(dto.password)
+      datosActualizados.password = await bcrypt.hash(password, await bcrypt.genSalt(10))
     }
 
-    const regexNombres = /^[a-zA-ZáéíóúÁÉÍÓÚüÜñÑ\s]+$/
-    if (dto.nombre && (!regexNombres.test(dto.nombre) || dto.nombre.length > 30)) {
-      throw new UsuarioServiceError(
-        400,
-        'El nombre solo debe contener letras y máximo 30 caracteres.'
-      )
-    }
-    if (dto.apellido && (!regexNombres.test(dto.apellido) || dto.apellido.length > 30)) {
-      throw new UsuarioServiceError(
-        400,
-        'Los apellidos solo deben contener letras y máximo 30 caracteres.'
-      )
-    }
-    if (dto.ci && (!/^\d+$/.test(dto.ci) || dto.ci.length > 8)) {
-      throw new UsuarioServiceError(
-        400,
-        'El CI solo debe contener números y máximo 8 dígitos.'
-      )
-    }
+    const emailOriginal = String(usuarioActual.email).trim()
+    const emailNuevo = datosActualizados.email
+    const emailAChequear = emailNuevo !== undefined && emailNuevo !== emailOriginal ? emailNuevo : undefined
+    const ciAnterior = String(usuarioActual.ci)
+    const complementoAnterior = typeof usuarioActual.ciComplemento === 'string' && usuarioActual.ciComplemento.trim() !== ''
+      ? usuarioActual.ciComplemento.trim().toUpperCase()
+      : null
+    const ciNuevo = datosActualizados.ci ?? ciAnterior
+    const complementoNuevo = dto.ciComplemento !== undefined
+      ? datosActualizados.ciComplemento ?? null
+      : complementoAnterior
+    const identidadCambio = ciNuevo !== ciAnterior || complementoNuevo !== complementoAnterior
 
-    // Comprobación de duplicados excluyendo el propio ID
-    const emailAChequear = dto.email !== undefined && dto.email !== usuarioActual.email ? dto.email : undefined
-    const ciAChequear = dto.ci !== undefined && dto.ci !== usuarioActual.ci ? dto.ci : undefined
-
-    if (emailAChequear !== undefined || ciAChequear !== undefined) {
+    if (emailAChequear !== undefined || identidadCambio) {
       const duplicado = await this.usuarioRepo.buscarDuplicadoEnActualizacion(
         id,
         emailAChequear,
-        ciAChequear
+        identidadCambio ? ciNuevo : undefined,
+        complementoNuevo
       )
-
       if (duplicado) {
-        if (ciAChequear !== undefined && duplicado.ci === ciAChequear) {
-          throw new UsuarioServiceError(
-            400,
-            'El CI ya está en uso por otro usuario'
-          )
+        if (emailAChequear !== undefined && String(duplicado.email).trim().toLowerCase() === emailAChequear) {
+          throw new UsuarioServiceError(400, 'El correo ya está en uso por otro usuario.')
         }
-        throw new UsuarioServiceError(
-          400,
-          'El correo ya está en uso por otro usuario'
-        )
+        throw new UsuarioServiceError(400, 'La combinación de CI y complemento ya está en uso por otro usuario.')
       }
     }
 
-    const datosActualizados: UsuarioActualizarDatos = {}
-    if (dto.nombre !== undefined) datosActualizados.nombre = dto.nombre
-    if (dto.apellido !== undefined) datosActualizados.apellido = dto.apellido
-    if (dto.ci !== undefined) datosActualizados.ci = dto.ci
-    if (dto.email !== undefined) datosActualizados.email = dto.email
-    if (dto.rol !== undefined) datosActualizados.rol = dto.rol
-
-    // Si viene nueva contraseña no vacía, se hashea con salt 10
-    if (dto.password && typeof dto.password === 'string' && dto.password.trim() !== '') {
-      const salt = await bcrypt.genSalt(10)
-      datosActualizados.password = await bcrypt.hash(dto.password, salt)
+    try {
+      const usuarioActualizado = await this.usuarioRepo.actualizar(id, datosActualizados)
+      if (!usuarioActualizado) throw new UsuarioServiceError(404, 'Usuario no encontrado tras actualizar')
+      return this.normalizarUsuario(usuarioActualizado)
+    } catch (error: unknown) {
+      if (error instanceof UsuarioServiceError) throw error
+      if (esDuplicadoMongo(error)) {
+        throw new UsuarioServiceError(400, 'El correo o la combinación de CI y complemento ya están registrados.')
+      }
+      throw error
     }
-
-    const usuarioActualizado = await this.usuarioRepo.actualizar(id, datosActualizados)
-    if (!usuarioActualizado) {
-      throw new UsuarioServiceError(404, 'Usuario no encontrado tras actualizar')
-    }
-
-    return this.normalizarUsuario(usuarioActualizado)
   }
 
   /**

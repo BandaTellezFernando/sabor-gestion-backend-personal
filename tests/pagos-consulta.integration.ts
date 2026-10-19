@@ -286,21 +286,21 @@ async function main(): Promise<void> {
         _id: idMesero,
         nombre: 'Mesero',
         apellido: 'QA',
-        ci: `QA-MES-${sufijo}`,
+        ci: '990000011',
         email: `qa-mes-${sufijo}@example.invalid`
       },
       {
         _id: idCajero,
         nombre: 'Cajero',
         apellido: 'QA',
-        ci: `QA-CAJ-${sufijo}`,
+        ci: '990000012',
         email: `qa-caj-${sufijo}@example.invalid`
       },
       {
         _id: idOtroCajero,
         nombre: 'Otro Cajero',
         apellido: 'QA',
-        ci: `QA-CAJ2-${sufijo}`,
+        ci: '990000013',
         email: `qa-caj2-${sufijo}@example.invalid`
       }
     ])

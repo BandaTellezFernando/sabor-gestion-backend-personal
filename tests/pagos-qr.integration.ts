@@ -84,7 +84,8 @@ async function crearPedidoDePrueba(): Promise<{
   const usuario = await Usuario.create({
     nombre: 'QA',
     apellido: 'Cajero de prueba',
-    ci: `QA-PAGO-CI-${identificador}`,
+    // CI ficticia numérica y única dentro de esta ejecución de pruebas.
+    ci: String(900000000 + contadorDatos),
     email: `qa-pago-${identificador}@example.invalid`,
     password: 'SOLO_PARA_PRUEBAS',
     rol: 'Mesero',
@@ -182,7 +183,7 @@ async function main(): Promise<void> {
     const cajeroPrueba = await Usuario.create({
       nombre: 'QA',
       apellido: 'Cajero QR',
-      ci: `QA-PAGO-CAJERO-${sufijo}`,
+      ci: String(910000000 + contadorDatos),
       email: `qa-pago-cajero-${sufijo}@example.invalid`,
       password: 'SOLO_PARA_PRUEBAS',
       rol: 'Cajero',
@@ -542,7 +543,7 @@ async function main(): Promise<void> {
     const pagoOriginal = await Pago.findOne({ pedido: pedido1.pedidoId }).lean()
     assert.ok(pagoOriginal)
 
-    let errorDuplicado: any
+    let errorDuplicado: unknown
     try {
       await Pago.create({
         codigoPago: `PAG-DUP-${sufijo}`,
@@ -567,8 +568,15 @@ async function main(): Promise<void> {
 
     comprobar(
       'El índice único impide insertar un segundo pago para el mismo pedido',
-      errorDuplicado?.code === 11000 &&
-      errorDuplicado?.keyPattern?.pedido === 1
+      typeof errorDuplicado === 'object' &&
+      errorDuplicado !== null &&
+      'code' in errorDuplicado &&
+      errorDuplicado.code === 11000 &&
+      'keyPattern' in errorDuplicado &&
+      typeof errorDuplicado.keyPattern === 'object' &&
+      errorDuplicado.keyPattern !== null &&
+      'pedido' in errorDuplicado.keyPattern &&
+      errorDuplicado.keyPattern.pedido === 1
     )
     comprobarIgual(
       'La cantidad de pagos del primer pedido permanece en uno',

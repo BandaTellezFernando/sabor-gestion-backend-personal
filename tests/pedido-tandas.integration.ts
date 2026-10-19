@@ -251,7 +251,7 @@ async function main(): Promise<void> {
     const mesero = await Usuario.create({
       nombre: 'QA',
       apellido: 'Mesero',
-      ci: `QA-${sufijo}-M`,
+      ci: '990000021',
       email: `qa-${sufijo}-mesero@example.invalid`,
       password: 'CONTRASENA_SOLO_PARA_PRUEBAS',
       rol: 'Mesero',
@@ -262,7 +262,7 @@ async function main(): Promise<void> {
     const otroMesero = await Usuario.create({
       nombre: 'QA',
       apellido: 'No autorizado',
-      ci: `QA-${sufijo}-N`,
+      ci: '990000022',
       email: `qa-${sufijo}-otro@example.invalid`,
       password: 'CONTRASENA_SOLO_PARA_PRUEBAS',
       rol: 'Mesero',
@@ -273,7 +273,7 @@ async function main(): Promise<void> {
     const cocinero = await Usuario.create({
       nombre: 'QA',
       apellido: 'Cocinero',
-      ci: `QA-${sufijo}-C`,
+      ci: '990000023',
       email: `qa-${sufijo}-cocinero@example.invalid`,
       password: 'CONTRASENA_SOLO_PARA_PRUEBAS',
       rol: 'Cocinero',
@@ -286,7 +286,7 @@ async function main(): Promise<void> {
     await Usuario.create({
       nombre: 'QA',
       apellido: 'Cajero',
-      ci: `QA-${sufijo}-J`,
+      ci: '990000024',
       email: `qa-${sufijo}-cajero@example.invalid`,
       password: 'CONTRASENA_SOLO_PARA_PRUEBAS',
       rol: 'Cajero',

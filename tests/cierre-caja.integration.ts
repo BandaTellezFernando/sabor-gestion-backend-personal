@@ -68,14 +68,19 @@ function desplazarDia(fecha: string, cantidad: number): string {
   return dia.toISOString().slice(0, 10)
 }
 
+let secuenciaCiPrueba = 0
+
 async function crearUsuarioPrueba(
   rol: string,
   etiqueta: string
-): Promise<any> {
+) {
+  secuenciaCiPrueba += 1
+
   return await Usuario.create({
     nombre: 'QA',
     apellido: `Caja ${etiqueta}`,
-    ci: `QA-CJ-${sufijo}-${etiqueta}`,
+    // CI numérica ficticia y única para esta ejecución de pruebas.
+    ci: String(Date.now() * 1000 + secuenciaCiPrueba),
     email: `qa-caja-${sufijo}-${etiqueta}@example.invalid`,
     password: 'SOLO_PARA_PRUEBAS',
     rol,
