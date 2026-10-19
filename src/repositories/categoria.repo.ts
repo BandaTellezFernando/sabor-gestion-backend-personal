@@ -1,5 +1,6 @@
 // src/repositories/categoria.repo.ts
-import Categoria, { ICategoria } from '../models/Categoria'
+import { type QueryFilter } from 'mongoose'
+import Categoria, { type ICategoria } from '../models/Categoria'
 export { ICategoria } from '../models/Categoria'
 
 export class CategoriaRepository {
@@ -23,7 +24,7 @@ export class CategoriaRepository {
    */
   async buscarPorNombre(nombre: string, excluirId?: string): Promise<ICategoria | null> {
     const escaped = nombre.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const filtro: any = {
+    const filtro: QueryFilter<ICategoria> = {
       nombre: { $regex: new RegExp(`^${escaped}$`, 'i') }
     }
     if (excluirId) {
@@ -35,7 +36,7 @@ export class CategoriaRepository {
   /**
    * Crea y guarda una nueva categoría en MongoDB
    */
-  async crear(datos: { nombre: string; [key: string]: any }): Promise<ICategoria> {
+  async crear(datos: Pick<ICategoria, 'nombre'>): Promise<ICategoria> {
     const nuevaCategoria = new Categoria(datos)
     return await nuevaCategoria.save()
   }
@@ -45,7 +46,7 @@ export class CategoriaRepository {
    */
   async actualizar(
     id: string,
-    datos: { nombre: string; [key: string]: any }
+    datos: Pick<ICategoria, 'nombre'>
   ): Promise<ICategoria | null> {
     return await Categoria.findByIdAndUpdate(id, datos, { returnDocument: 'after' })
   }

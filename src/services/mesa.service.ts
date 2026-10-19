@@ -302,9 +302,9 @@ export class MesaService {
       }
 
       return this.mapMesa(mesaActualizada)!
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof MesaServiceError) throw err
-      if (err?.name === 'ValidationError' || err?.name === 'CastError') {
+      if (err instanceof Error && (err.name === 'ValidationError' || err.name === 'CastError')) {
         throw new MesaServiceError(400, err.message)
       }
       throw err
@@ -316,7 +316,7 @@ export class MesaService {
    */
   async actualizarEstadoMesa(
     id: string,
-    estado: any,
+    estado: unknown,
     usuarioAuthId?: string,
     usuarioRol?: string
   ): Promise<MesaResponseDTO> {
@@ -384,9 +384,9 @@ export class MesaService {
       }
 
       return this.mapMesa(mesaActualizada)!
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof MesaServiceError) throw err
-      if (err?.name === 'ValidationError' || err?.name === 'CastError') {
+      if (err instanceof Error && (err.name === 'ValidationError' || err.name === 'CastError')) {
         throw new MesaServiceError(400, err.message)
       }
       throw err

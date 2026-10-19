@@ -7,6 +7,37 @@ import {
 import { RecetaRepository, recetaRepository } from '../repositories/receta.repo'
 import { esUnidadMedida, validarCantidadParaUnidad } from '../utils/unidades'
 
+function esRegistroIngrediente(
+  valor: unknown
+): valor is Record<string, unknown> {
+  return typeof valor === 'object' && valor !== null
+}
+
+function obtenerRegistroIngrediente(valor: unknown): Record<string, unknown> {
+  if (!esRegistroIngrediente(valor)) return {}
+
+  const documento = valor as Record<string, unknown> & {
+    toObject?: () => unknown
+    _doc?: unknown
+  }
+
+  if (typeof documento.toObject === 'function') {
+    const plano = documento.toObject()
+    if (esRegistroIngrediente(plano)) return plano
+  }
+
+  if (esRegistroIngrediente(documento._doc)) return documento._doc
+  return documento
+}
+
+function fechaIngrediente(valor: unknown): Date | undefined {
+  if (valor instanceof Date) return valor
+  if (typeof valor !== 'string' && typeof valor !== 'number') return undefined
+
+  const fecha = new Date(valor)
+  return Number.isNaN(fecha.getTime()) ? undefined : fecha
+}
+
 export class IngredienteServiceError extends Error {
   constructor(
     public statusCode: number,
@@ -48,24 +79,22 @@ export class IngredienteService {
     this.recetaRepo = recetaRepo || recetaRepository
   }
 
-  private toDTO(i: any): IngredienteResponseDTO {
-    const raw =
-      i && typeof i.toObject === 'function'
-        ? i.toObject()
-        : i && i._doc
-          ? i._doc
-          : i || {}
-    const id = raw._id ? raw._id.toString() : raw.id ? raw.id.toString() : ''
+  private toDTO(i: unknown): IngredienteResponseDTO {
+    const raw = obtenerRegistroIngrediente(i)
+    const id = String(raw._id ?? raw.id ?? '')
+
     return {
       id,
       _id: id,
-      nombre: raw.nombre || '',
-      unidadMedida: raw.unidadMedida || '',
-      disponible: raw.disponible !== undefined ? Boolean(raw.disponible) : true,
+      nombre: typeof raw.nombre === 'string' ? raw.nombre : '',
+      unidadMedida:
+        typeof raw.unidadMedida === 'string' ? raw.unidadMedida : '',
+      disponible:
+        raw.disponible !== undefined ? Boolean(raw.disponible) : true,
       stockActual: Number(raw.stockActual || 0),
-      fechaRegistro: raw.fechaRegistro,
-      createdAt: raw.createdAt,
-      updatedAt: raw.updatedAt
+      fechaRegistro: fechaIngrediente(raw.fechaRegistro),
+      createdAt: fechaIngrediente(raw.createdAt),
+      updatedAt: fechaIngrediente(raw.updatedAt)
     }
   }
 
@@ -161,7 +190,7 @@ export class IngredienteService {
         )
       }
       const duplicado = await this.ingredienteRepo.buscarPorNombre(nombreNormalizado)
-      const duplicadoId = duplicado ? (duplicado._id ? duplicado._id.toString() : (duplicado as any).id) : null
+      const duplicadoId = duplicado ? String(duplicado._id) : null
       if (duplicado && duplicadoId !== id) {
         throw new IngredienteServiceError(
           400,

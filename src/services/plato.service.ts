@@ -1,13 +1,92 @@
 // src/services/plato.service.ts
 import { Types } from 'mongoose'
 import { PlatoRepository } from '../repositories/plato.repo'
-import { RecetaRepository, recetaRepository } from '../repositories/receta.repo'
+import { RecetaRepository, recetaRepository, IRecetaIngredienteInput } from '../repositories/receta.repo'
+import IngredienteModel, { IIngrediente } from '../models/Ingrediente'
 import { eliminarDeCloudinary } from '../configs/cloudinary'
 import {
   esUnidadMedida,
   obtenerFamiliaUnidad,
   validarCantidadParaUnidad,
 } from '../utils/unidades'
+
+type RegistroPlato = Record<string, unknown>
+
+export interface CategoriaPlatoResponseDTO {
+  id: string
+  _id: string
+  nombre: string
+  createdAt?: Date
+  updatedAt?: Date
+}
+
+export interface IngredientePlatoInput {
+  ingrediente: string | Types.ObjectId
+  cantidadNecesaria: number
+  unidadMedida: string
+}
+
+export interface CrearPlatoDTO {
+  nombre?: string
+  descripcion?: string
+  precio?: number
+  imagenUrl?: string
+  imagenPublicId?: string
+  categoria?: string | Types.ObjectId
+  ingredientes?: IRecetaIngredienteInput[]
+}
+
+export interface ActualizarPlatoDTO {
+  nombre?: string
+  descripcion?: string
+  precio?: number
+  imagenUrl?: string
+  imagenPublicId?: string
+  categoria?: string | Types.ObjectId
+  disponible?: boolean
+  [campo: string]: unknown
+}
+
+function esRegistroPlato(valor: unknown): valor is RegistroPlato {
+  return typeof valor === 'object' && valor !== null
+}
+
+function aRegistroPlato(valor: unknown): RegistroPlato {
+  if (!esRegistroPlato(valor)) return {}
+
+  const documento = valor as RegistroPlato & {
+    toObject?: () => unknown
+    _doc?: unknown
+  }
+
+  if (typeof documento.toObject === 'function') {
+    const plano = documento.toObject()
+    if (esRegistroPlato(plano)) return plano
+  }
+
+  if (esRegistroPlato(documento._doc)) return documento._doc
+  return documento
+}
+
+function aIdPlato(valor: unknown): string {
+  if (typeof valor === 'string') return valor
+  if (typeof valor === 'number') return String(valor)
+  if (valor instanceof Types.ObjectId) return valor.toString()
+
+  if (esRegistroPlato(valor) && typeof valor.toString === 'function') {
+    return valor.toString()
+  }
+
+  return ''
+}
+
+function aFechaPlato(valor: unknown): Date | undefined {
+  return valor instanceof Date ? valor : undefined
+}
+
+function aTextoPlato(valor: unknown): string {
+  return typeof valor === 'string' ? valor : ''
+}
 
 export class PlatoServiceError extends Error {
   constructor(
@@ -28,7 +107,7 @@ export interface PlatoResponseDTO {
   imagenUrl: string
   imagenPublicId: string
   disponible: boolean
-  categoria: any
+  categoria: string | CategoriaPlatoResponseDTO | null | undefined
   createdAt?: Date
   updatedAt?: Date
 }
@@ -45,65 +124,65 @@ export class PlatoService {
     this.recetaRepo = recetaRepo || recetaRepository
   }
 
-  private toDTO(p: any): PlatoResponseDTO {
-    const raw =
-      p && typeof p.toObject === 'function'
-        ? p.toObject()
-        : p && p._doc
-          ? p._doc
-          : p || {}
-    const id = raw._id ? raw._id.toString() : raw.id ? raw.id.toString() : ''
+  private toDTO(p: unknown): PlatoResponseDTO {
+    const raw = aRegistroPlato(p)
+    const id = aIdPlato(raw._id) || aIdPlato(raw.id)
 
-    let categoria = raw.categoria
-    if (categoria) {
-      const catRaw =
-        typeof categoria.toObject === 'function'
-          ? categoria.toObject()
-          : categoria._doc || categoria
+    let categoria: PlatoResponseDTO['categoria']
+    const categoriaValor = raw.categoria
 
-      const esPoblado =
-        catRaw &&
-        typeof catRaw === 'object' &&
-        !(catRaw instanceof Types.ObjectId) &&
+    if (categoriaValor === null) {
+      categoria = null
+    } else if (
+      categoriaValor !== undefined &&
+      categoriaValor !== ''
+    ) {
+      const catRaw = aRegistroPlato(categoriaValor)
+      const esPoblada =
+        !(categoriaValor instanceof Types.ObjectId) &&
         typeof catRaw.nombre === 'string'
 
-      if (esPoblado) {
-        const catId = catRaw._id ? catRaw._id.toString() : catRaw.id ? catRaw.id.toString() : ''
+      if (esPoblada) {
+        const catId =
+          aIdPlato(catRaw._id) || aIdPlato(catRaw.id)
+
         categoria = {
           id: catId,
           _id: catId,
-          nombre: catRaw.nombre,
-          createdAt: catRaw.createdAt,
-          updatedAt: catRaw.updatedAt
+          nombre: aTextoPlato(catRaw.nombre),
+          createdAt: aFechaPlato(catRaw.createdAt),
+          updatedAt: aFechaPlato(catRaw.updatedAt)
         }
       } else {
-        const catId =
-          catRaw && (catRaw._id || catRaw.id)
-            ? (catRaw._id || catRaw.id).toString()
-            : categoria.toString()
-        categoria = catId
+        categoria =
+          aIdPlato(catRaw._id) ||
+          aIdPlato(catRaw.id) ||
+          aIdPlato(categoriaValor)
       }
     }
 
     return {
       id,
       _id: id,
-      nombre: raw.nombre || '',
-      descripcion: raw.descripcion || '',
+      nombre: aTextoPlato(raw.nombre),
+      descripcion: aTextoPlato(raw.descripcion),
       precio: Number(raw.precio || 0),
-      imagenUrl: raw.imagenUrl || '',
-      imagenPublicId: raw.imagenPublicId || '',
-      disponible: raw.disponible !== undefined ? Boolean(raw.disponible) : true,
+      imagenUrl: aTextoPlato(raw.imagenUrl),
+      imagenPublicId: aTextoPlato(raw.imagenPublicId),
+      disponible:
+        raw.disponible !== undefined
+          ? Boolean(raw.disponible)
+          : true,
       categoria,
-      createdAt: raw.createdAt,
-      updatedAt: raw.updatedAt
+      createdAt: aFechaPlato(raw.createdAt),
+      updatedAt: aFechaPlato(raw.updatedAt)
     }
   }
 
   /**
    * Valida reglas de negocio y crea un nuevo plato
    */
-  async crearPlato(datos: any): Promise<PlatoResponseDTO> {
+  async crearPlato(datos: CrearPlatoDTO): Promise<PlatoResponseDTO> {
     const { nombre, descripcion, precio, imagenUrl, imagenPublicId, categoria, ingredientes } = datos
 
     if (!imagenUrl || !imagenPublicId) {
@@ -169,13 +248,12 @@ export class PlatoService {
         uniqueIds.add(ingId)
       }
 
-      const IngredienteModel = mongoose.model('Ingrediente')
       const foundIngredients = await IngredienteModel.find({ _id: { $in: Array.from(uniqueIds) } }).session(session)
       if (foundIngredients.length !== uniqueIds.size) {
         throw new Error('Uno o más ingredientes especificados no existen')
       }
 
-      const ingredientesPorId = new Map<string, any>()
+      const ingredientesPorId = new Map<string, IIngrediente>()
       for (const ingrediente of foundIngredients) {
         ingredientesPorId.set(String(ingrediente._id), ingrediente)
       }
@@ -220,10 +298,9 @@ export class PlatoService {
    * Obtiene la lista de platos con filtros opcionales (ej: categoría)
    */
   async obtenerPlatos(category?: string): Promise<PlatoResponseDTO[]> {
-    let filtro: Record<string, any> = {}
-    if (category) {
-      filtro = { categoria: category }
-    }
+    const filtro: Record<string, string> = category
+      ? { categoria: category }
+      : {}
     const platos = await this.platoRepo.buscarTodos(filtro)
     return platos.map((p) => this.toDTO(p))
   }
@@ -242,7 +319,7 @@ export class PlatoService {
   /**
    * Actualiza los datos de un plato y limpia la imagen anterior en Cloudinary si fue sustituida
    */
-  async actualizarPlato(id: string, datos: any): Promise<PlatoResponseDTO> {
+  async actualizarPlato(id: string, datos: ActualizarPlatoDTO): Promise<PlatoResponseDTO> {
     const plato = await this.platoRepo.buscarPorId(id)
     if (!plato) {
       throw new PlatoServiceError(404, 'Plato no encontrado')

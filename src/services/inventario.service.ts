@@ -1,5 +1,7 @@
 // src/services/inventario.service.ts
 import { PlatoRepository, platoRepository } from '../repositories/plato.repo'
+import type { ClientSession } from 'mongoose'
+import IngredienteModel from '../models/Ingrediente'
 import { RecetaRepository, recetaRepository } from '../repositories/receta.repo'
 import {
   convertirCantidad,
@@ -47,6 +49,19 @@ export interface IngredientePoblado {
   unidadMedida?: string
   disponible?: boolean
 }
+
+export type FaltanteInventarioStock =
+  | {
+      plato: string
+      mensaje: string
+    }
+  | {
+      ingrediente: string
+      disponible: number
+      requerido: number
+      faltante: number
+      unidad: string
+    }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -134,18 +149,15 @@ export class InventarioService {
    */
   async verificarYDescontarStock(
     items: ItemValidacionInventario[],
-    session?: any,
+    session?: ClientSession,
   ): Promise<{
     success: boolean
     errores: string[]
-    faltantes: any[]
+    faltantes: FaltanteInventarioStock[]
     consumos: ConsumoIngredientePedido[]
   }> {
-    const mongoose = require('mongoose')
-    const IngredienteModel = mongoose.model('Ingrediente')
-
     const errores: string[] = []
-    const faltantes: any[] = []
+    const faltantes: FaltanteInventarioStock[] = []
 
     const consumoPorIngrediente = new Map<
       string,
@@ -183,7 +195,7 @@ export class InventarioService {
       }
 
       for (const reqIng of receta.ingredientes) {
-        const ingredienteDoc: any = reqIng.ingrediente
+        const ingredienteDoc: unknown = reqIng.ingrediente
 
         if (!esIngredientePoblado(ingredienteDoc) || !ingredienteDoc.nombre) {
           errores.push(`No se pudo identificar un ingrediente de "${nombrePlato}".`)
@@ -278,9 +290,9 @@ export class InventarioService {
     const ingredienteIds = Array.from(consumoPorIngrediente.keys())
     const ingredientesDB = await IngredienteModel.find({
       _id: { $in: ingredienteIds },
-    }).session(session)
+    }).session(session ?? null)
 
-    const mapIngredientes = new Map<string, any>()
+    const mapIngredientes = new Map<string, (typeof ingredientesDB)[number]>()
     for (const ing of ingredientesDB) {
       mapIngredientes.set(String(ing._id), ing)
     }

@@ -9,6 +9,41 @@ import {
 import { formatearFechaHoraBolivia } from '../utils/fechaBolivia'
 import { getIO } from '../socket/socket'
 
+function esRegistroUsuario(
+  valor: unknown
+): valor is Record<string, unknown> {
+  return typeof valor === 'object' && valor !== null
+}
+
+function obtenerRegistroUsuario(valor: unknown): Record<string, unknown> {
+  if (!esRegistroUsuario(valor)) return {}
+
+  const documento = valor as Record<string, unknown> & {
+    toObject?: () => unknown
+    _doc?: unknown
+  }
+
+  if (typeof documento.toObject === 'function') {
+    const plano = documento.toObject()
+    if (esRegistroUsuario(plano)) return plano
+  }
+
+  if (esRegistroUsuario(documento._doc)) return documento._doc
+  return documento
+}
+
+function fechaUsuario(valor: unknown): Date | undefined {
+  if (valor instanceof Date) return valor
+  if (typeof valor !== 'string' && typeof valor !== 'number') return undefined
+
+  const fecha = new Date(valor)
+  return Number.isNaN(fecha.getTime()) ? undefined : fecha
+}
+
+function textoUsuario(valor: unknown): string {
+  return typeof valor === 'string' ? valor : ''
+}
+
 export class UsuarioServiceError extends Error {
   constructor(
     public statusCode: number,
@@ -61,7 +96,7 @@ export interface UsuarioNormalizado {
 
 export interface ResultadoCambioEstado {
   estado: boolean
-  usuario: any
+  usuario: UsuarioNormalizado
 }
 
 export interface ResultadoLoginUsuario {
@@ -80,26 +115,26 @@ export class UsuarioService {
    * Mapea un documento de usuario de MongoDB al formato requerido por el frontend,
    * exponiendo únicamente id (sin _id) y con fechas formateadas en hora de Bolivia.
    */
-  private normalizarUsuario(u: any): UsuarioNormalizado {
-    const raw =
-      u && typeof u.toObject === 'function'
-        ? u.toObject()
-        : u && u._doc
-          ? u._doc
-          : u || {}
-    const id = raw._id ? raw._id.toString() : raw.id ? raw.id.toString() : ''
+  private normalizarUsuario(u: unknown): UsuarioNormalizado {
+    const raw = obtenerRegistroUsuario(u)
+    const id = String(raw._id ?? raw.id ?? '')
 
     return {
       id,
-      nombre: raw.nombre || '',
-      apellido: raw.apellido || '',
-      ci: raw.ci || '',
-      email: raw.email || '',
-      rol: raw.rol || '',
-      estado: raw.estado !== undefined ? raw.estado : true,
-      verificado: raw.verificado !== undefined ? raw.verificado : true,
-      createdAt: raw.createdAt ? formatearFechaHoraBolivia(raw.createdAt) : undefined,
-      updatedAt: raw.updatedAt ? formatearFechaHoraBolivia(raw.updatedAt) : undefined
+      nombre: textoUsuario(raw.nombre),
+      apellido: textoUsuario(raw.apellido),
+      ci: textoUsuario(raw.ci),
+      email: textoUsuario(raw.email),
+      rol: textoUsuario(raw.rol),
+      estado: raw.estado !== undefined ? Boolean(raw.estado) : true,
+      verificado:
+        raw.verificado !== undefined ? Boolean(raw.verificado) : true,
+      createdAt: fechaUsuario(raw.createdAt)
+        ? formatearFechaHoraBolivia(fechaUsuario(raw.createdAt)!)
+        : undefined,
+      updatedAt: fechaUsuario(raw.updatedAt)
+        ? formatearFechaHoraBolivia(fechaUsuario(raw.updatedAt)!)
+        : undefined
     }
   }
 

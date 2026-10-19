@@ -1,8 +1,65 @@
 // src/types/pago.types.ts
 import { Types } from 'mongoose'
+import type { IPago } from '../models/Pago'
+import type { IDetallePedido, IPedido } from '../models/Pedido'
 import { DatosRecibo, ItemRecibo } from '../utils/reciboTemplate'
 
 export { DatosRecibo, ItemRecibo }
+
+export interface MesaPagoResumen {
+  _id: Types.ObjectId
+  numero?: string
+  estado?: string
+  ubicacion?: string
+}
+
+export interface UsuarioPagoResumen {
+  _id: Types.ObjectId
+  nombre?: string
+  apellido?: string
+  apellidos?: string
+}
+
+export interface PedidoPagoResumen {
+  _id: Types.ObjectId
+  codigo?: string
+  total?: number
+  estado?: string
+}
+
+export type PagoConRelaciones = Omit<
+  IPago,
+  'mesa' | 'mesero' | 'cajero' | 'pedido'
+> & {
+  mesa: Types.ObjectId | MesaPagoResumen | null
+  mesero: Types.ObjectId | UsuarioPagoResumen
+  cajero?: Types.ObjectId | UsuarioPagoResumen | null
+  pedido: Types.ObjectId | PedidoPagoResumen
+}
+
+export interface PlatoPagoResumen {
+  _id: Types.ObjectId
+  nombre?: string
+  precio?: number
+}
+
+export type DetallePedidoPago = Omit<IDetallePedido, 'plato'> & {
+  nombre?: string
+  plato: Types.ObjectId | PlatoPagoResumen | null
+}
+
+export type PedidoPagoConRelaciones = Omit<
+  IPedido,
+  'mesa' | 'usuario' | 'recogidoPor' | 'detalles'
+> & {
+  mesa?: Types.ObjectId | MesaPagoResumen | null
+  usuario: Types.ObjectId | UsuarioPagoResumen
+  recogidoPor?: Types.ObjectId | UsuarioPagoResumen | null
+  detalles: DetallePedidoPago[]
+  items?: DetallePedidoPago[]
+}
+
+export type PedidoActualizadoPago = PedidoPagoConRelaciones
 
 /**
  * Parámetros de entrada para el procesamiento del pago final
@@ -83,9 +140,9 @@ export interface ComprobantePago {
  * Incluye los datos persistidos y los valores necesarios para emitir WebSockets
  */
 export interface ResultadoProcesarPago {
-  pedidoActualizado: any
-  nuevoPago: any
-  mesaLiberada?: any
+  pedidoActualizado: PedidoActualizadoPago
+  nuevoPago: IPago
+  mesaLiberada?: MesaPagoResumen | null
   nuevoEstadoMesa: string
   statusSocketMesa: string
   comprobante: ComprobantePago

@@ -1,5 +1,6 @@
 // src/controllers/pago.controller.ts
 import { Request, Response } from 'express'
+import { Types } from 'mongoose'
 import { CustomRequest } from '../middlewares/auth.middleware'
 import { getIO } from '../socket/socket'
 import { obtenerFechaBolivia } from '../utils/fechaBolivia'
@@ -52,7 +53,7 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
       nit
     } = req.body
 
-    const cajeroId = (req as any).usuario?.id
+    const cajeroId = req.usuario?.id
 
     const resultado = await pagoService.procesarPagoFinal({
       pedidoId,
@@ -75,10 +76,12 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
       const io = getIO()
       io.emit('cocina:actualizar_tablero', resultado.pedidoActualizado)
 
-      if (resultado.pedidoActualizado.mesa) {
-        const mesaIdStr = (
-          (resultado.pedidoActualizado.mesa as any)._id || resultado.pedidoActualizado.mesa
-        ).toString()
+      const mesaRelacion = resultado.pedidoActualizado.mesa
+      if (mesaRelacion) {
+        const mesaIdStr =
+          mesaRelacion instanceof Types.ObjectId
+            ? mesaRelacion.toString()
+            : mesaRelacion._id.toString()
         const mesaNombre = resultado.mesaLiberada?.numero || 'Mesa'
 
         try {
@@ -169,11 +172,12 @@ export const confirmarPagoQR = async (
 
       io.emit('cocina:actualizar_tablero', resultado.pedidoActualizado)
 
-      if (resultado.pedidoActualizado.mesa) {
-        const mesaIdStr = (
-          (resultado.pedidoActualizado.mesa as any)._id ||
-          resultado.pedidoActualizado.mesa
-        ).toString()
+      const mesaRelacion = resultado.pedidoActualizado.mesa
+      if (mesaRelacion) {
+        const mesaIdStr =
+          mesaRelacion instanceof Types.ObjectId
+            ? mesaRelacion.toString()
+            : mesaRelacion._id.toString()
 
         const mesaNombre = resultado.mesaLiberada?.numero || 'Mesa'
 

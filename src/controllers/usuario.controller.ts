@@ -36,7 +36,7 @@ export const crearUsuario = async (
       mensaje: 'Usuario creado exitosamente',
       usuario
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof UsuarioServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message })
       return
@@ -62,7 +62,7 @@ export const actualizarUsuario = async (
       mensaje: 'Usuario actualizado',
       usuario
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof UsuarioServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message })
       return
@@ -97,7 +97,7 @@ export const cambiarEstadoUsuario = async (
       mensaje: `Usuario marcado como ${resultado.estado ? 'Activo' : 'Inactivo'}`,
       usuario: resultado.usuario
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof UsuarioServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message })
       return
@@ -120,7 +120,7 @@ export const eliminarUsuario = async (
     res.status(200).json({
       mensaje: 'Usuario eliminado del sistema exitosamente'
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof UsuarioServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message })
       return
@@ -150,7 +150,7 @@ export const loginUsuario = async (
       token: resultado.token,
       usuario: resultado.usuario
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof UsuarioServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message })
       return

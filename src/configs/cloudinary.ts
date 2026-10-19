@@ -57,7 +57,7 @@ export const uploadToCloudinary = (
 }
 
 // Función para eliminar imagen de Cloudinary
-export const eliminarDeCloudinary = async (publicId: string): Promise<any> => {
+export const eliminarDeCloudinary = async (publicId: string) => {
   return await cloudinary.uploader.destroy(publicId)
 }
 

@@ -19,7 +19,7 @@ export const crearMesa = async (req: Request, res: Response): Promise<void> => {
     }
 
     res.status(201).json(resultado)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof MesaServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message })
       return
@@ -34,7 +34,7 @@ export const obtenerMesas = async (req: Request, res: Response): Promise<void> =
     const location = req.query.location ? String(req.query.location) : undefined
     const mesas = await mesaService.obtenerMesas(location)
     res.status(200).json(mesas)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof MesaServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message })
       return
@@ -49,7 +49,7 @@ export const obtenerMesaPorId = async (req: Request, res: Response): Promise<voi
     const id = String(req.params.id)
     const mesa = await mesaService.obtenerMesaPorId(id)
     res.status(200).json(mesa)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof MesaServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message })
       return
@@ -71,7 +71,7 @@ export const actualizarMesa = async (req: Request, res: Response): Promise<void>
     }
 
     res.status(200).json(mesaActualizada)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof MesaServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message })
       return
@@ -101,7 +101,7 @@ export const actualizarEstadoMesa = async (req: CustomRequest, res: Response): P
     }
 
     res.status(200).json(mesaActualizada)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof MesaServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message })
       return
@@ -122,7 +122,7 @@ export const ocuparMesaTemporal = async (req: CustomRequest, res: Response): Pro
 
     const resultado = await mesaOcupacionService.ocuparMesaTemporal(id, usuarioId)
     res.status(201).json(resultado)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof MesaOcupacionServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message })
       return
@@ -151,7 +151,7 @@ export const cancelarOcupacionTemporal = async (
       usuarioRol
     )
     res.status(200).json(resultado)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof MesaOcupacionServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message })
       return
@@ -176,7 +176,7 @@ export const consultarOcupacionTemporal = async (
       usuarioRol
     )
     res.status(200).json(resultado)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof MesaOcupacionServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message })
       return
@@ -198,7 +198,7 @@ export const eliminarMesa = async (req: Request, res: Response): Promise<void> =
     }
 
     res.status(200).json({ mensaje: 'Mesa eliminada', mesa: mesaEliminada })
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof MesaServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message })
       return

@@ -1,12 +1,25 @@
 // src/repositories/plato.repo.ts
-import Plato, { IPlato } from '../models/Plato'
+import { Types, type QueryFilter } from 'mongoose'
+import Plato, { type IPlato } from '../models/Plato'
 export { IPlato } from '../models/Plato'
+
+export interface PlatoCrearDatos {
+  nombre: string
+  descripcion: string
+  precio: number
+  categoria: Types.ObjectId | string
+  imagenUrl?: string
+  imagenPublicId?: string
+  disponible?: boolean
+}
+
+export type PlatoActualizarDatos = Partial<PlatoCrearDatos>
 
 export class PlatoRepository {
   /**
    * Obtiene todos los platos con su categoría poblada, aplicando filtros opcionales
    */
-  async buscarTodos(filtro: Record<string, any> = {}): Promise<IPlato[]> {
+  async buscarTodos(filtro: QueryFilter<IPlato> = {}): Promise<IPlato[]> {
     return await Plato.find(filtro).populate('categoria', 'nombre')
   }
 
@@ -27,7 +40,7 @@ export class PlatoRepository {
   /**
    * Crea y guarda un nuevo plato en MongoDB
    */
-  async crear(datos: Record<string, any>): Promise<IPlato> {
+  async crear(datos: PlatoCrearDatos): Promise<IPlato> {
     const nuevoPlato = new Plato(datos)
     return await nuevoPlato.save()
   }
@@ -35,7 +48,7 @@ export class PlatoRepository {
   /**
    * Actualiza los datos de un plato por su ID ejecutando validadores de esquema
    */
-  async actualizar(id: string, datos: Record<string, any>): Promise<IPlato | null> {
+  async actualizar(id: string, datos: PlatoActualizarDatos): Promise<IPlato | null> {
     return await Plato.findByIdAndUpdate(id, datos, {
       returnDocument: 'after',
       runValidators: true

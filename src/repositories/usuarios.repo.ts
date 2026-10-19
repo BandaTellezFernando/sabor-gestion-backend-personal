@@ -1,6 +1,6 @@
 // src/repositories/usuarios.repo.ts
-import { Types } from 'mongoose'
-import Usuario, { IUsuario } from '../models/Usuario'
+import { Types, type QueryFilter } from 'mongoose'
+import Usuario, { type IUsuario } from '../models/Usuario'
 
 export { IUsuario } from '../models/Usuario'
 
@@ -30,14 +30,14 @@ export class UsuarioRepository {
   /**
    * Obtiene todos los usuarios de la base de datos sin incluir sus contraseñas
    */
-  async buscarTodos(): Promise<any[]> {
+  async buscarTodos() {
     return await Usuario.find().select('-password').lean()
   }
 
   /**
    * Busca un usuario por su identificador único excluyendo la contraseña
    */
-  async buscarPorId(id: string): Promise<any | null> {
+  async buscarPorId(id: string) {
     return await Usuario.findById(id).select('-password').lean()
   }
 
@@ -86,7 +86,7 @@ export class UsuarioRepository {
     email?: string,
     ci?: string
   ): Promise<IUsuario | null> {
-    const orConditions: any[] = []
+    const orConditions: Array<{ email: string } | { ci: string }> = []
     if (email !== undefined) orConditions.push({ email })
     if (ci !== undefined) orConditions.push({ ci })
 
@@ -104,7 +104,7 @@ export class UsuarioRepository {
    * Cuenta cuántos cajeros con estado activo existen, con opción de excluir un usuario
    */
   async contarCajerosActivos(excluirId?: string): Promise<number> {
-    const filtro: any = {
+    const filtro: QueryFilter<IUsuario> = {
       rol: { $regex: /^cajero$/i },
       estado: true
     }
@@ -134,7 +134,7 @@ export class UsuarioRepository {
   async actualizar(
     id: string,
     datos: UsuarioActualizarDatos
-  ): Promise<any | null> {
+  ) {
     return await Usuario.findByIdAndUpdate(
       id,
       { $set: datos },
@@ -147,7 +147,7 @@ export class UsuarioRepository {
   /**
    * Actualiza exclusivamente el estado activo/inactivo de un usuario
    */
-  async actualizarEstado(id: string, estado: boolean): Promise<any | null> {
+  async actualizarEstado(id: string, estado: boolean) {
     return await Usuario.findByIdAndUpdate(
       id,
       { estado },

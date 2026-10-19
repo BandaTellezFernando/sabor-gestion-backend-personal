@@ -1,5 +1,6 @@
 // src/services/categoria.service.ts
 import { CategoriaRepository } from '../repositories/categoria.repo'
+import type { ICategoria } from '../models/Categoria'
 import { PlatoRepository, platoRepository } from '../repositories/plato.repo'
 
 export class CategoriaServiceError extends Error {
@@ -10,6 +11,11 @@ export class CategoriaServiceError extends Error {
     super(message)
     this.name = 'CategoriaServiceError'
   }
+}
+
+export interface CategoriaInputDTO {
+  nombre?: string
+  [key: string]: unknown
 }
 
 export interface CategoriaResponseDTO {
@@ -32,14 +38,14 @@ export class CategoriaService {
     this.platoRepo = platoRepo || platoRepository
   }
 
-  private toDTO(c: any): CategoriaResponseDTO {
-    const raw =
-      c && typeof c.toObject === 'function'
-        ? c.toObject()
-        : c && c._doc
-          ? c._doc
-          : c || {}
-    const id = raw._id ? raw._id.toString() : raw.id ? raw.id.toString() : ''
+  private toDTO(c: ICategoria): CategoriaResponseDTO {
+    const raw = c.toObject() as {
+      nombre?: string
+      createdAt?: Date
+      updatedAt?: Date
+    }
+    const id = String(c._id)
+
     return {
       id,
       _id: id,
@@ -71,7 +77,7 @@ export class CategoriaService {
   /**
    * Valida las reglas de negocio y crea una nueva categoría
    */
-  async crearCategoria(datos: { nombre?: string; [key: string]: any }): Promise<CategoriaResponseDTO> {
+  async crearCategoria(datos: CategoriaInputDTO): Promise<CategoriaResponseDTO> {
     const { nombre } = datos
 
     if (!nombre || typeof nombre !== 'string' || nombre.trim() === '') {
@@ -108,7 +114,7 @@ export class CategoriaService {
    */
   async actualizarCategoria(
     id: string,
-    datos: { nombre?: string; [key: string]: any }
+    datos: CategoriaInputDTO
   ): Promise<CategoriaResponseDTO> {
     const { nombre } = datos
 

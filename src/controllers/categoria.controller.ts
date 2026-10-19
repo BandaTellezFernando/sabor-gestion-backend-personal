@@ -2,11 +2,11 @@
 import { Request, Response } from 'express'
 import { categoriaService, CategoriaServiceError } from '../services/categoria.service'
 
-export const crearCategoria = async (req: Request, res: Response): Promise<any> => {
+export const crearCategoria = async (req: Request, res: Response) => {
   try {
     const nuevaCategoria = await categoriaService.crearCategoria(req.body)
     return res.status(201).json(nuevaCategoria)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof CategoriaServiceError) {
       return res.status(error.statusCode).json({ mensaje: error.message })
     }
@@ -15,11 +15,11 @@ export const crearCategoria = async (req: Request, res: Response): Promise<any> 
   }
 }
 
-export const obtenerCategorias = async (req: Request, res: Response): Promise<any> => {
+export const obtenerCategorias = async (req: Request, res: Response) => {
   try {
     const categorias = await categoriaService.obtenerCategorias()
     return res.status(200).json(categorias)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof CategoriaServiceError) {
       return res.status(error.statusCode).json({ mensaje: error.message })
     }
@@ -28,12 +28,12 @@ export const obtenerCategorias = async (req: Request, res: Response): Promise<an
   }
 }
 
-export const actualizarCategoria = async (req: Request, res: Response): Promise<any> => {
+export const actualizarCategoria = async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id)
     const categoriaActualizada = await categoriaService.actualizarCategoria(id, req.body)
     return res.status(200).json(categoriaActualizada)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof CategoriaServiceError) {
       return res.status(error.statusCode).json({ mensaje: error.message })
     }
@@ -42,12 +42,12 @@ export const actualizarCategoria = async (req: Request, res: Response): Promise<
   }
 }
 
-export const eliminarCategoria = async (req: Request, res: Response): Promise<any> => {
+export const eliminarCategoria = async (req: Request, res: Response) => {
   try {
     const id = String(req.params.id)
     await categoriaService.eliminarCategoria(id)
     return res.status(200).json({ mensaje: 'Categoría eliminada correctamente' })
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof CategoriaServiceError) {
       return res.status(error.statusCode).json({ mensaje: error.message })
     }

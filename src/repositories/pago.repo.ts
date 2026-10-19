@@ -1,10 +1,30 @@
 // src/repositories/pago.repo.ts
 import { Types, ClientSession } from 'mongoose'
 import Pago, { IPago } from '../models/Pago'
-import { PagoCrearDatos } from '../types/pago.types'
+import type { PagoCrearDatos, PagoConRelaciones } from '../types/pago.types'
 
 export { IPago } from '../models/Pago'
 export { PagoCrearDatos } from '../types/pago.types'
+
+export interface FiltrosPagoConsulta {
+  _id?: Types.ObjectId | string
+  codigoPago?: string
+  codigoPedido?: string
+  pedido?: Types.ObjectId | string
+  mesa?: Types.ObjectId | string
+  mesero?: Types.ObjectId | string
+  cajero?: Types.ObjectId | string | null
+  estadoPago?: IPago['estadoPago'] | string
+  metodoPago?: IPago['metodoPago'] | string | null
+  createdAt?: {
+    $gte?: Date
+    $lt?: Date
+  }
+  fechaPago?: {
+    $gte?: Date
+    $lt?: Date
+  }
+}
 
 export class PagoRepository {
   /**
@@ -25,10 +45,10 @@ export class PagoRepository {
    * Las fechas de este historial se aplican sobre createdAt.
    */
   async listarPaginado(
-    filtros: Record<string, any>,
+    filtros: FiltrosPagoConsulta,
     pagina: number,
     limite: number
-  ): Promise<{ datos: any[]; total: number }> {
+  ): Promise<{ datos: PagoConRelaciones[]; total: number }> {
     const [datos, total] = await Promise.all([
       Pago.find(filtros)
         .populate('mesa', 'numero ubicacion')
@@ -45,7 +65,9 @@ export class PagoRepository {
     return { datos, total }
   }
 
-  async buscarPorId(id: string | Types.ObjectId): Promise<IPago | null> {
+  async buscarPorId(
+    id: string | Types.ObjectId
+  ): Promise<PagoConRelaciones | null> {
     return await Pago.findById(id)
       .populate('mesa', 'numero ubicacion')
       .populate('mesero', 'nombre apellido')
@@ -63,7 +85,9 @@ export class PagoRepository {
   /**
    * Busca el pago registrado para un pedido determinado.
    */
-  async buscarPorPedidoId(pedidoId: string | Types.ObjectId): Promise<IPago | null> {
+  async buscarPorPedidoId(
+    pedidoId: string | Types.ObjectId
+  ): Promise<PagoConRelaciones | null> {
     return await Pago.findOne({ pedido: pedidoId })
       .populate('mesa', 'numero ubicacion')
       .populate('mesero', 'nombre apellido')
@@ -80,7 +104,9 @@ export class PagoRepository {
   /**
    * Obtiene todos los pagos aplicando filtros opcionales, ordenados por fecha de creación descendente.
    */
-  async buscarTodos(filtros: Record<string, any> = {}): Promise<IPago[]> {
+  async buscarTodos(
+    filtros: FiltrosPagoConsulta = {}
+  ): Promise<PagoConRelaciones[]> {
     return await Pago.find(filtros)
       .populate('mesa', 'numero')
       .populate('mesero', 'nombre apellido')
@@ -141,7 +167,7 @@ export class PagoRepository {
     ]).session(session ?? null)
   }
 
-  async contar(filtros: Record<string, any> = {}): Promise<number> {
+  async contar(filtros: FiltrosPagoConsulta = {}): Promise<number> {
     return await Pago.countDocuments(filtros)
   }}
 

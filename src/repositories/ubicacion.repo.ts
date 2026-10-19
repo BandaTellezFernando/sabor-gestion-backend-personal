@@ -1,4 +1,5 @@
 // src/repositories/ubicacion.repo.ts
+import type { QueryFilter } from 'mongoose'
 import Ubicacion, { IUbicacion } from '../models/Ubicacion'
 
 export { IUbicacion } from '../models/Ubicacion'
@@ -29,7 +30,7 @@ export class UbicacionRepository {
    * excluyendo opcionalmente un ID específico para validaciones al actualizar.
    */
   async buscarPorNombreOAlias(regex: RegExp, excluirId?: string): Promise<IUbicacion | null> {
-    const filtro: Record<string, any> = {
+    const filtro: QueryFilter<IUbicacion> = {
       $or: [{ nombre: regex }, { name: regex }]
     }
     if (excluirId) {

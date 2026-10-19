@@ -1,5 +1,6 @@
 // src/services/receta.service.ts
 import { Types } from 'mongoose'
+import IngredienteModel, { IIngrediente } from '../models/Ingrediente'
 import {
   RecetaRepository,
   recetaRepository,
@@ -11,6 +12,76 @@ import {
   obtenerFamiliaUnidad,
   validarCantidadParaUnidad,
 } from '../utils/unidades'
+
+type RegistroReceta = Record<string, unknown>
+
+export interface PlatoRecetaResumenDTO {
+  id: string
+  _id: string
+  nombre: string
+  precio?: number
+  createdAt?: Date
+  updatedAt?: Date
+}
+
+export interface IngredienteRecetaResumenDTO {
+  id: string
+  _id: string
+  nombre: string
+  unidadMedida: string
+  disponible: boolean
+}
+
+export interface IngredienteRecetaResponseDTO {
+  ingrediente:
+    | string
+    | IngredienteRecetaResumenDTO
+    | null
+    | undefined
+  cantidadNecesaria: number
+  unidadMedida: string
+}
+
+function esRegistroReceta(valor: unknown): valor is RegistroReceta {
+  return typeof valor === 'object' && valor !== null
+}
+
+function aRegistroReceta(valor: unknown): RegistroReceta {
+  if (!esRegistroReceta(valor)) return {}
+
+  const documento = valor as RegistroReceta & {
+    toObject?: () => unknown
+    _doc?: unknown
+  }
+
+  if (typeof documento.toObject === 'function') {
+    const plano = documento.toObject()
+    if (esRegistroReceta(plano)) return plano
+  }
+
+  if (esRegistroReceta(documento._doc)) return documento._doc
+  return documento
+}
+
+function aIdReceta(valor: unknown): string {
+  if (typeof valor === 'string') return valor
+  if (typeof valor === 'number') return String(valor)
+  if (valor instanceof Types.ObjectId) return valor.toString()
+
+  if (esRegistroReceta(valor) && typeof valor.toString === 'function') {
+    return valor.toString()
+  }
+
+  return ''
+}
+
+function aFechaReceta(valor: unknown): Date | undefined {
+  return valor instanceof Date ? valor : undefined
+}
+
+function aTextoReceta(valor: unknown): string {
+  return typeof valor === 'string' ? valor : ''
+}
 
 export class RecetaServiceError extends Error {
   constructor(
@@ -30,8 +101,8 @@ export interface GuardarRecetaDTO {
 export interface RecetaResponseDTO {
   id: string
   _id: string
-  plato: any
-  ingredientes: any[]
+  plato: string | PlatoRecetaResumenDTO | null | undefined
+  ingredientes: IngredienteRecetaResponseDTO[]
   createdAt?: Date
   updatedAt?: Date
 }
@@ -53,100 +124,105 @@ export class RecetaService {
     this.platoRepo = platoRepo || platoRepository
   }
 
-  private toDTO(r: any): RecetaResponseDTO {
-    const raw =
-      r && typeof r.toObject === 'function'
-        ? r.toObject()
-        : r && r._doc
-          ? r._doc
-          : r || {}
-    const id = raw._id ? raw._id.toString() : raw.id ? raw.id.toString() : ''
+  private toDTO(r: unknown): RecetaResponseDTO {
+    const raw = aRegistroReceta(r)
+    const id = aIdReceta(raw._id) || aIdReceta(raw.id)
 
-    let plato = raw.plato
-    if (plato) {
-      const platoRaw =
-        typeof plato.toObject === 'function'
-          ? plato.toObject()
-          : plato._doc || plato
+    let plato: RecetaResponseDTO['plato'] =
+      raw.plato === undefined
+        ? undefined
+        : raw.plato === null
+          ? null
+          : typeof raw.plato === 'string'
+            ? raw.plato
+            : undefined
 
+    const platoValor = raw.plato
+    if (platoValor) {
+      const platoRaw = aRegistroReceta(platoValor)
       const esPlatoPoblado =
-        platoRaw &&
-        typeof platoRaw === 'object' &&
-        !(platoRaw instanceof Types.ObjectId) &&
+        !(platoValor instanceof Types.ObjectId) &&
         typeof platoRaw.nombre === 'string'
 
       if (esPlatoPoblado) {
-        const platoId = platoRaw._id ? platoRaw._id.toString() : platoRaw.id ? platoRaw.id.toString() : ''
+        const platoId =
+          aIdReceta(platoRaw._id) || aIdReceta(platoRaw.id)
+
         plato = {
           id: platoId,
           _id: platoId,
-          nombre: platoRaw.nombre,
-          precio: platoRaw.precio !== undefined ? Number(platoRaw.precio) : undefined,
-          createdAt: platoRaw.createdAt,
-          updatedAt: platoRaw.updatedAt
+          nombre: aTextoReceta(platoRaw.nombre),
+          precio:
+            platoRaw.precio !== undefined
+              ? Number(platoRaw.precio)
+              : undefined,
+          createdAt: aFechaReceta(platoRaw.createdAt),
+          updatedAt: aFechaReceta(platoRaw.updatedAt)
         }
       } else {
-        const platoId =
-          platoRaw && (platoRaw._id || platoRaw.id)
-            ? (platoRaw._id || platoRaw.id).toString()
-            : plato.toString()
-        plato = platoId
+        plato =
+          aIdReceta(platoRaw._id) ||
+          aIdReceta(platoRaw.id) ||
+          aIdReceta(platoValor)
       }
     }
 
-    const ingredientes = Array.isArray(raw.ingredientes)
-      ? raw.ingredientes.map((item: any) => {
-          const itemRaw =
-            item && typeof item.toObject === 'function'
-              ? item.toObject()
-              : item && item._doc
-                ? item._doc
-                : item || {}
-          let ing = itemRaw.ingrediente
-          if (ing) {
-            const ingRaw =
-              typeof ing.toObject === 'function'
-                ? ing.toObject()
-                : ing._doc || ing
+    const ingredientes: IngredienteRecetaResponseDTO[] =
+      Array.isArray(raw.ingredientes)
+        ? raw.ingredientes.map((item: unknown) => {
+            const itemRaw = aRegistroReceta(item)
+            const ingredienteValor = itemRaw.ingrediente
 
-            const esIngPoblado =
-              ingRaw &&
-              typeof ingRaw === 'object' &&
-              !(ingRaw instanceof Types.ObjectId) &&
-              typeof ingRaw.nombre === 'string'
+            let ingrediente: IngredienteRecetaResponseDTO['ingrediente'] =
+              ingredienteValor === undefined
+                ? undefined
+                : ingredienteValor === null
+                  ? null
+                  : ''
 
-            if (esIngPoblado) {
-              const ingId = ingRaw._id ? ingRaw._id.toString() : ingRaw.id ? ingRaw.id.toString() : ''
-              ing = {
-                id: ingId,
-                _id: ingId,
-                nombre: ingRaw.nombre,
-                unidadMedida: ingRaw.unidadMedida || '',
-                disponible: ingRaw.disponible !== undefined ? Boolean(ingRaw.disponible) : true
+            if (ingredienteValor) {
+              const ingRaw = aRegistroReceta(ingredienteValor)
+              const esIngredientePoblado =
+                !(ingredienteValor instanceof Types.ObjectId) &&
+                typeof ingRaw.nombre === 'string'
+
+              if (esIngredientePoblado) {
+                const ingId =
+                  aIdReceta(ingRaw._id) || aIdReceta(ingRaw.id)
+
+                ingrediente = {
+                  id: ingId,
+                  _id: ingId,
+                  nombre: aTextoReceta(ingRaw.nombre),
+                  unidadMedida: aTextoReceta(ingRaw.unidadMedida),
+                  disponible:
+                    ingRaw.disponible !== undefined
+                      ? Boolean(ingRaw.disponible)
+                      : true
+                }
+              } else {
+                ingrediente =
+                  aIdReceta(ingRaw._id) ||
+                  aIdReceta(ingRaw.id) ||
+                  aIdReceta(ingredienteValor)
               }
-            } else {
-              const ingId =
-                ingRaw && (ingRaw._id || ingRaw.id)
-                  ? (ingRaw._id || ingRaw.id).toString()
-                  : ing.toString()
-              ing = ingId
             }
-          }
-          return {
-            ingrediente: ing,
-            cantidadNecesaria: Number(itemRaw.cantidadNecesaria || 0),
-            unidadMedida: itemRaw.unidadMedida || '',
-          }
-        })
-      : []
+
+            return {
+              ingrediente,
+              cantidadNecesaria: Number(itemRaw.cantidadNecesaria || 0),
+              unidadMedida: aTextoReceta(itemRaw.unidadMedida)
+            }
+          })
+        : []
 
     return {
       id,
       _id: id,
       plato,
       ingredientes,
-      createdAt: raw.createdAt,
-      updatedAt: raw.updatedAt
+      createdAt: aFechaReceta(raw.createdAt),
+      updatedAt: aFechaReceta(raw.updatedAt)
     }
   }
 
@@ -221,14 +297,14 @@ export class RecetaService {
 
     // Validar existencia de ingredientes
     // Import ingredienteRepo to do this (I will just use mongoose.model)
-    const mongoose = require('mongoose')
-    const Ingrediente = mongoose.model('Ingrediente')
-    const foundIngredients = await Ingrediente.find({ _id: { $in: Array.from(uniqueIds) } })
+    const foundIngredients = await IngredienteModel.find({
+      _id: { $in: Array.from(uniqueIds) }
+    })
     if (foundIngredients.length !== uniqueIds.size) {
       throw new RecetaServiceError(404, 'Uno o más ingredientes especificados no existen')
     }
 
-    const ingredientesPorId = new Map<string, any>()
+    const ingredientesPorId = new Map<string, IIngrediente>()
     for (const ingrediente of foundIngredients) {
       ingredientesPorId.set(String(ingrediente._id), ingrediente)
     }

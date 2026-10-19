@@ -1,5 +1,5 @@
-import mongoose, { Types } from 'mongoose'
-import CierreCaja from '../models/CierreCaja'
+import mongoose, { Types, type QueryFilter } from 'mongoose'
+import CierreCaja, { type ICierreCaja } from '../models/CierreCaja'
 import CierreCajaLock from '../models/CierreCajaLock'
 import { pagoRepository } from '../repositories/pago.repo'
 import { usuarioRepository } from '../repositories/usuarios.repo'
@@ -8,6 +8,28 @@ import {
   obtenerFechaISO_Bolivia,
   formatearFechaBolivia
 } from '../utils/fechaBolivia'
+
+export interface CierreCajaListadoDTO {
+  _id: Types.ObjectId
+  cajeroId: string
+  cajeroNombre: string
+  totalDia: number
+  efectivo: number
+  tarjeta: number
+  qr: number
+  propinas: number
+  pagosProcesados: number
+  periodoDesde?: string
+  periodoHasta?: string
+  totalRecaudado?: number
+  efectivoEsperado?: number
+  efectivoContado?: number
+  diferenciaEfectivo?: number
+  fechaCierreBolivia?: string
+  fechaCierre: Date
+  createdAt?: Date
+  updatedAt?: Date
+}
 
 export class CierreCajaServiceError extends Error {
   constructor(
@@ -38,7 +60,7 @@ export class CierreCajaService {
   async listarCierres(
     usuarioAuth: ContextoCierreCaja,
     filtros: { desde?: string; hasta?: string; cajeroId?: string } = {}
-  ): Promise<any[]> {
+  ): Promise<CierreCajaListadoDTO[]> {
     if (!usuarioAuth?.id || !Types.ObjectId.isValid(usuarioAuth.id)) {
       throw new CierreCajaServiceError(401, 'Usuario no autenticado.')
     }
@@ -54,7 +76,7 @@ export class CierreCajaService {
       )
     }
 
-    const filtro: Record<string, any> = {}
+    const filtro: QueryFilter<ICierreCaja> = {}
 
     if (esCajero) {
       if (filtros.cajeroId && filtros.cajeroId !== usuarioAuth.id) {
@@ -103,7 +125,7 @@ export class CierreCajaService {
   async cerrarCaja(
     dto: CerrarCajaDTO,
     usuarioAuth: ContextoCierreCaja
-  ): Promise<any> {
+  ): Promise<ICierreCaja> {
     if (!usuarioAuth?.id || !Types.ObjectId.isValid(usuarioAuth.id)) {
       throw new CierreCajaServiceError(401, 'Usuario no autenticado.')
     }

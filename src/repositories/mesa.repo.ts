@@ -1,5 +1,5 @@
 // src/repositories/mesa.repo.ts
-import mongoose, { Types, ClientSession } from 'mongoose'
+import mongoose, { Types, type ClientSession, type QueryFilter } from 'mongoose'
 import Mesa, { IMesa } from '../models/Mesa'
 
 export { IMesa } from '../models/Mesa'
@@ -33,12 +33,17 @@ export interface MesaActualizarDatos {
   location?: string
 }
 
+type MesaMongoUpdate =
+  Partial<Pick<IMesa, 'numero' | 'capacidad' | 'estado' | 'ubicacion' | 'ubicacionId'>> & {
+    $unset?: Partial<Record<'ubicacion' | 'ubicacionId', 1>>
+  }
+
 export class MesaRepository {
   /**
    * Obtiene todas las mesas con su ubicación poblada, aplicando filtro opcional de ubicación.
    */
   async buscarTodos(location?: string): Promise<MesaPobladaDoc[]> {
-    let filtro: Record<string, any> = {}
+    let filtro: QueryFilter<IMesa> = {}
 
     if (location) {
       if (mongoose.Types.ObjectId.isValid(location)) {
@@ -71,7 +76,7 @@ export class MesaRepository {
     numeroRegex: RegExp,
     excluirId?: string
   ): Promise<IMesa | null> {
-    const filtro: Record<string, any> = { numero: numeroRegex }
+    const filtro: QueryFilter<IMesa> = { numero: numeroRegex }
     if (excluirId) {
       filtro._id = { $ne: excluirId }
     }
@@ -141,7 +146,7 @@ export class MesaRepository {
     datos: MesaActualizarDatos,
     session?: ClientSession
   ): Promise<MesaPobladaDoc | null> {
-    const update: Record<string, any> = {}
+    const update: MesaMongoUpdate = {}
 
     if (datos.numero !== undefined) update.numero = datos.numero
     if (datos.capacidad !== undefined) update.capacidad = datos.capacidad

@@ -236,6 +236,89 @@ export interface ResultadoSolicitarCuenta {
 
 // ─── Clase Principal PedidoService ───────────────────────────────────────────
 
+interface CajaRelacionPoblada {
+  _id?: Types.ObjectId | string
+  numero?: string | number
+  nombre?: string
+  apellido?: string
+  precio?: number
+}
+
+type CajaReferencia =
+  | Types.ObjectId
+  | string
+  | CajaRelacionPoblada
+  | null
+  | undefined
+
+interface DetallePedidoCaja {
+  plato?: CajaReferencia
+  cantidad: number
+  precioUnitario: number
+  subtotal: number
+  observacion: string
+}
+
+interface PedidoCajaEntrada {
+  _id: Types.ObjectId | string
+  codigo: string
+  mesa?: CajaReferencia
+  usuario?: CajaReferencia
+  detalles?: DetallePedidoCaja[]
+  subtotalCierre?: number
+  total?: number
+  montoPropina?: number
+  clienteNombre?: string
+  clienteCI?: string
+  clienteNIT?: string
+  updatedAt?: Date
+  createdAt?: Date
+  fechaHora?: Date
+}
+
+interface ItemPayloadCaja {
+  platoId: CajaReferencia
+  nombre: string
+  cantidad: number
+  precioUnitario: number
+  subtotal: number
+  observacion: string
+}
+
+interface PedidoPayloadCaja {
+  pedidoId: Types.ObjectId | string
+  codigo: string
+  mesaId: CajaReferencia
+  mesaNombre: string | number
+  meseroNombre: string
+  subtotal: number
+  subtotalCierre: number
+  propina: number
+  montoPropina: number
+  total: number
+  clienteNombre?: string
+  clienteCI?: string
+  clienteNIT?: string
+  tiempoEsperaMinutos: number
+  items: ItemPayloadCaja[]
+  fechaHoraBolivia?: string
+}
+
+const obtenerReferenciaPobladaCaja = (
+  referencia: CajaReferencia
+): CajaRelacionPoblada | undefined => {
+  if (
+    referencia !== null &&
+    referencia !== undefined &&
+    typeof referencia === 'object' &&
+    !(referencia instanceof Types.ObjectId)
+  ) {
+    return referencia
+  }
+
+  return undefined
+}
+
 export class PedidoService {
   constructor(
     private pedidoRepo: PedidoRepository = pedidoRepository,
@@ -269,13 +352,20 @@ export class PedidoService {
    * Formatea un pedido poblado para enviar su estructura completa
    * a los websockets o endpoints de la Caja.
    */
-  static formatearPayloadCaja(pedido: any, mesaOverride?: any) {
+  static formatearPayloadCaja(
+    pedido: PedidoCajaEntrada,
+    mesaOverride?: CajaReferencia
+  ): PedidoPayloadCaja {
     const mesa = mesaOverride || pedido.mesa
+    const mesaPoblada = obtenerReferenciaPobladaCaja(mesa)
+
     const itemsSubtotal =
       pedido.detalles && pedido.detalles.length > 0
         ? pedido.detalles.reduce(
-            (sum: number, d: any) =>
-              sum + Number(d.precioUnitario || 0) * Number(d.cantidad || 1),
+            (sum, detalle) =>
+              sum +
+              Number(detalle.precioUnitario || 0) *
+                Number(detalle.cantidad || 1),
             0
           )
         : pedido.subtotalCierre || pedido.total || 0
@@ -284,13 +374,16 @@ export class PedidoService {
     const montoProp = Number(pedido.montoPropina || 0)
     const totalCalc = Number((subtotalBase + montoProp).toFixed(2))
 
+    const usuarioPoblado = obtenerReferenciaPobladaCaja(pedido.usuario)
+    const fechaBase = pedido.updatedAt || pedido.createdAt || pedido.fechaHora
+
     return {
       pedidoId: pedido._id,
       codigo: pedido.codigo,
-      mesaId: mesa?._id || mesa,
-      mesaNombre: mesa?.numero || 'Mesa sin asignar',
+      mesaId: mesaPoblada?._id || mesa,
+      mesaNombre: mesaPoblada?.numero || 'Mesa sin asignar',
       meseroNombre: pedido.usuario
-        ? `${pedido.usuario.nombre || ''} ${pedido.usuario.apellido || ''}`.trim()
+        ? `${usuarioPoblado?.nombre || ''} ${usuarioPoblado?.apellido || ''}`.trim()
         : 'Sin mesero',
       subtotal: subtotalBase,
       subtotalCierre: subtotalBase,
@@ -300,23 +393,21 @@ export class PedidoService {
       clienteNombre: pedido.clienteNombre,
       clienteCI: pedido.clienteCI,
       clienteNIT: pedido.clienteNIT,
-      tiempoEsperaMinutos:
-        pedido.updatedAt || pedido.createdAt || pedido.fechaHora
-          ? Math.floor(
-              (Date.now() -
-                new Date(pedido.updatedAt || pedido.createdAt || pedido.fechaHora).getTime()) /
-                60000
-            )
-          : 0,
+      tiempoEsperaMinutos: fechaBase
+        ? Math.floor((Date.now() - fechaBase.getTime()) / 60000)
+        : 0,
       items:
-        pedido.detalles?.map((detalle: any) => ({
-          platoId: detalle.plato?._id || detalle.plato,
-          nombre: detalle.plato?.nombre || 'Plato no disponible',
-          cantidad: detalle.cantidad,
-          precioUnitario: detalle.precioUnitario,
-          subtotal: detalle.subtotal,
-          observacion: detalle.observacion
-        })) || []
+        pedido.detalles?.map((detalle) => {
+          const platoPoblado = obtenerReferenciaPobladaCaja(detalle.plato)
+          return {
+            platoId: platoPoblado?._id || detalle.plato,
+            nombre: platoPoblado?.nombre || 'Plato no disponible',
+            cantidad: detalle.cantidad,
+            precioUnitario: detalle.precioUnitario,
+            subtotal: detalle.subtotal,
+            observacion: detalle.observacion
+          }
+        }) || []
     }
   }
 
@@ -2288,7 +2379,7 @@ export class PedidoService {
    */
   async obtenerPedidosPendientesCobro(
     cajero?: string
-  ): Promise<any[]> {
+  ): Promise<PedidoPayloadCaja[]> {
     const todasLasMesas =
       await this.mesaRepo.buscarTodos()
 
@@ -2309,7 +2400,7 @@ export class PedidoService {
         cajero
       )
 
-    return pedidos.map((pedido: any) => ({
+    return pedidos.map((pedido) => ({
       ...PedidoService.formatearPayloadCaja(
         pedido
       ),
@@ -2543,6 +2634,13 @@ export class PedidoService {
       await this.pedidoRepo.buscarPorIdPobladoCaja(
         id
       )
+
+    if (!pedidoPoblado) {
+      throw new PedidoServiceError(
+        404,
+        'No se encontró el pedido para preparar el payload de caja.'
+      )
+    }
 
     const payload =
       PedidoService.formatearPayloadCaja(

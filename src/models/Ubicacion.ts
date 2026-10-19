@@ -21,7 +21,7 @@ const UbicacionSchema = new Schema(
 
 // Sincronizar 'name' con 'nombre' para compatibilidad con índices legacy
 UbicacionSchema.pre('save', function () {
-  const doc: any = this
+  const doc = this as IUbicacion
   if ((!doc.name || doc.name === '') && doc.nombre) {
     doc.name = doc.nombre
   }

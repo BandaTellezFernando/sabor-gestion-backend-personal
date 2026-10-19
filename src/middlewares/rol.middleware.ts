@@ -3,7 +3,7 @@ import { Response, NextFunction } from 'express'
 import { CustomRequest } from './auth.middleware'
 
 export const permitirRoles = (...rolesPermitidos: string[]) => {
-  return (req: CustomRequest, res: Response, next: NextFunction): any => {
+  return (req: CustomRequest, res: Response, next: NextFunction) => {
     if (!req.usuario) {
       return res.status(401).json({
         mensaje: 'Acceso denegado. Usuario no autenticado.'

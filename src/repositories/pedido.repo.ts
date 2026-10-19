@@ -1,6 +1,12 @@
 // src/repositories/pedido.repo.ts
 import { Types, ClientSession, type QueryFilter } from 'mongoose'
 import Pedido, { IDetallePedido, IPedido, ITandaCocina } from '../models/Pedido'
+import type {
+  DetallePedidoPago,
+  MesaPagoResumen,
+  PedidoPagoConRelaciones,
+  UsuarioPagoResumen
+} from '../types/pago.types'
 import {
   ESTADOS_CUENTA,
   ESTADOS_PEDIDO,
@@ -80,15 +86,45 @@ export class PedidoRepository {
       .populate('recogidoPor', 'nombre apellido apellidos')
   }
 
+  async buscarPorIdPobladoRecibo(
+    id: string | Types.ObjectId
+  ): Promise<PedidoPagoConRelaciones | null> {
+    return await Pedido.findById(id)
+      .populate<{ detalles: DetallePedidoPago[] }>(
+        'detalles.plato',
+        'nombre precio'
+      )
+      .populate<{ mesa: MesaPagoResumen | null }>('mesa', 'numero estado')
+      .populate<{ usuario: UsuarioPagoResumen }>(
+        'usuario',
+        'nombre apellido apellidos'
+      )
+      .populate<{ recogidoPor: UsuarioPagoResumen | null }>(
+        'recogidoPor',
+        'nombre apellido apellidos'
+      )
+  }
+
   /**
    * Busca un pedido por ID con populate completo para la vista de caja
    */
-  async buscarPorIdPobladoCaja(id: string | Types.ObjectId): Promise<IPedido | null> {
+  async buscarPorIdPobladoCaja(
+    id: string | Types.ObjectId
+  ): Promise<PedidoPagoConRelaciones | null> {
     return await Pedido.findById(id)
-      .populate('mesa', 'numero estado')
-      .populate('usuario', 'nombre apellido apellidos')
-      .populate('recogidoPor', 'nombre apellido apellidos')
-      .populate('detalles.plato', 'nombre precio')
+      .populate<{ mesa: MesaPagoResumen | null }>('mesa', 'numero estado')
+      .populate<{ usuario: UsuarioPagoResumen }>(
+        'usuario',
+        'nombre apellido apellidos'
+      )
+      .populate<{ recogidoPor: UsuarioPagoResumen | null }>(
+        'recogidoPor',
+        'nombre apellido apellidos'
+      )
+      .populate<{ detalles: DetallePedidoPago[] }>(
+        'detalles.plato',
+        'nombre precio'
+      )
   }
 
   /**
@@ -435,8 +471,11 @@ export class PedidoRepository {
   /**
    * Guarda las modificaciones de una instancia de pedido ya existente
    */
-  async guardar(pedidoDoc: IPedido, session?: ClientSession): Promise<IPedido> {
-    return await pedidoDoc.save(session ? { session } : undefined)
+  async guardar<
+    TPedido extends IPedido | PedidoPagoConRelaciones
+  >(pedidoDoc: TPedido, session?: ClientSession): Promise<TPedido> {
+    await pedidoDoc.save(session ? { session } : undefined)
+    return pedidoDoc
   }
 
   /**

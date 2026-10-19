@@ -5,7 +5,7 @@ export class MovimientoInventarioRepository {
     filtro: Record<string, unknown>,
     pagina: number,
     limite: number,
-  ): Promise<{ movimientos: any[]; total: number }> {
+  ) {
     const [movimientos, total] = await Promise.all([
       MovimientoInventario.find(filtro)
         .populate('usuario', 'nombre apellido apellidos')

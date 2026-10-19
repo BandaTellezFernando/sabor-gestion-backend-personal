@@ -1,8 +1,14 @@
 // src/services/pago.service.ts
 import mongoose from 'mongoose'
 import { createHash, randomBytes } from 'node:crypto'
-import { PagoRepository, pagoRepository } from '../repositories/pago.repo'
+import {
+  PagoRepository,
+  pagoRepository,
+  FiltrosPagoConsulta
+} from '../repositories/pago.repo'
 import { PedidoRepository, pedidoRepository } from '../repositories/pedido.repo'
+import type { IPedido } from '../models/Pedido'
+import type { IPago } from '../models/Pago'
 import { MesaRepository, mesaRepository } from '../repositories/mesa.repo'
 import {
   QrPagoTokenRepository,
@@ -28,7 +34,8 @@ import {
 import {
   ProcesarPagoDTO,
   ComprobantePago,
-  ResultadoProcesarPago
+  ResultadoProcesarPago,
+  PagoConRelaciones
 } from '../types/pago.types'
 
 /**
@@ -38,7 +45,7 @@ export class PagoServiceError extends Error {
   constructor(
     public statusCode: number,
     message: string,
-    public extra?: Record<string, any>
+    public extra?: Record<string, unknown>
   ) {
     super(message)
     this.name = 'PagoServiceError'
@@ -72,7 +79,7 @@ export class PagoService {
   }): Promise<{
     sinDatos: boolean
     advertencia: string | null
-    datos: any[]
+    datos: PagoConRelaciones[]
     paginacion: {
       pagina: number
       limite: number
@@ -129,14 +136,13 @@ export class PagoService {
       )
     }
 
-    const filtros: Record<string, any> = {
+    const filtros: FiltrosPagoConsulta = {
       createdAt: {
+        ...(desde && rangoCompleto
+          ? { $gte: rangoCompleto.desde }
+          : {}),
         $lt: rangoHasta.hastaExclusivo
       }
-    }
-
-    if (desde && rangoCompleto) {
-      filtros.createdAt.$gte = rangoCompleto.desde
     }
 
     const estadosPermitidos = [
@@ -187,7 +193,7 @@ export class PagoService {
   /**
    * Recupera un pago por su ID con datos relacionados.
    */
-  async obtenerDetallePago(id: string): Promise<any> {
+  async obtenerDetallePago(id: string): Promise<PagoConRelaciones> {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       throw new PagoServiceError(400, 'El identificador del pago no es válido.')
     }
@@ -209,7 +215,9 @@ export class PagoService {
    * pendientes de preparación o entrega para entrar al flujo de cobro.
    * Los pedidos históricos sin tandas mantienen el comportamiento anterior.
    */
-  private validarCuentaModernaListaParaCobro(pedido: any): void {
+  private validarCuentaModernaListaParaCobro(
+    pedido: Pick<IPedido, 'tandas' | 'estadoCuenta'>
+  ): void {
     if (!Array.isArray(pedido?.tandas) || pedido.tandas.length === 0) {
       return
     }
@@ -222,7 +230,7 @@ export class PagoService {
     }
 
     const tandasPendientes = pedido.tandas.filter(
-      (tanda: any) =>
+      (tanda) =>
         tanda.estado !== ESTADOS_TANDA_COCINA.ENTREGADA &&
         tanda.estado !== ESTADOS_TANDA_COCINA.CANCELADA
     )
@@ -616,7 +624,7 @@ export class PagoService {
     })
 
     // ─── 2. CÁLCULOS FINANCIEROS (Puros, fuera de la transacción) ───────────────
-    const ped: any = pedido
+    const ped = pedido
 
     // Autoridad financiera: El subtotal proviene exclusivamente de datos confiables del Pedido.
     // El subtotalCierre provisto en el body por el cliente es completamente ignorado.
@@ -624,7 +632,7 @@ export class PagoService {
 
     if (subtotal <= 0 && Array.isArray(ped.detalles) && ped.detalles.length > 0) {
       subtotal = ped.detalles.reduce(
-        (acc: number, item: any) =>
+        (acc: number, item) =>
           acc + Number(item.subtotal || Number(item.precioUnitario || 0) * Number(item.cantidad || 1)),
         0
       )
@@ -667,13 +675,33 @@ export class PagoService {
     const totalFinal = Number((subtotal + montoPropina).toFixed(2))
     const cajeroId = authCajeroId || bodyCajeroAsignado || ped.cajeroAsignado || null
 
+    const mesaRelacion = pedido.mesa
+    if (!mesaRelacion) {
+      throw new PagoServiceError(
+        400,
+        'No se puede registrar el pago porque el pedido no tiene una mesa asociada.'
+      )
+    }
+
+    const mesaPagoId =
+      mesaRelacion instanceof mongoose.Types.ObjectId
+        ? mesaRelacion
+        : mesaRelacion._id
+
+    const meseroPagoId =
+      pedido.usuario instanceof mongoose.Types.ObjectId
+        ? pedido.usuario
+        : pedido.usuario._id
+
     // ─── 3. TRANSACCIÓN ATÓMICA MONGODB (Exclusiva de PagoService) ───────────────
     const session = await mongoose.startSession()
     session.startTransaction()
 
     let nuevoEstadoMesa = 'Libre'
-    let nuevoPago: any = null
-    let mesaLiberada: any = null
+    let nuevoPago: IPago
+    let mesaLiberada: Awaited<
+      ReturnType<MesaRepository['actualizarEstado']>
+    > = null
 
     try {
       // El token se consume dentro de esta misma transacción.
@@ -718,7 +746,10 @@ export class PagoService {
       }
       if (datosCliente.clienteNIT) ped.clienteNIT = datosCliente.clienteNIT
       if (cajeroId) {
-        ped.cajeroAsignado = cajeroId
+        ped.cajeroAsignado =
+          cajeroId instanceof mongoose.Types.ObjectId
+            ? cajeroId
+            : new mongoose.Types.ObjectId(cajeroId)
       }
 
       await this.pedidoRepo.guardar(pedido, session)
@@ -734,8 +765,8 @@ export class PagoService {
           codigoPago: `PAG-${String(pedido._id).toUpperCase()}`,
           codigoPedido: pedido.codigo,
           pedido: pedido._id,
-          mesa: (pedido.mesa as any)?._id || pedido.mesa,
-          mesero: (pedido.usuario as any)?._id || pedido.usuario,
+          mesa: mesaPagoId,
+          mesero: meseroPagoId,
           cajero: cajeroId,
           nombreCliente: ped.clienteNombre || 'Consumidor Final',
           apellidoCliente: ped.clienteApellido || '',
@@ -756,8 +787,8 @@ export class PagoService {
       )
 
       // 3.3 Liberar Mesa
-      if (pedido.mesa) {
-        const mesaId = ((pedido.mesa as any)._id || pedido.mesa).toString()
+      if (mesaPagoId) {
+        const mesaId = mesaPagoId.toString()
         nuevoEstadoMesa = 'Libre'
         mesaLiberada = await this.mesaRepo.actualizarEstado(mesaId, nuevoEstadoMesa, session)
       }
@@ -771,8 +802,13 @@ export class PagoService {
     }
 
     // ─── 4. CONSTRUCCIÓN DEL COMPROBANTE DE PAGO (Contrato Frontend) ─────────────
+    const usuarioPoblado =
+      pedido.usuario instanceof mongoose.Types.ObjectId
+        ? null
+        : pedido.usuario
+
     const meseroNombre = pedido.usuario
-      ? `${(ped.usuario as any).nombre || ''} ${(ped.usuario as any).apellido || ''}`.trim()
+      ? `${usuarioPoblado?.nombre || ''} ${usuarioPoblado?.apellido || ''}`.trim()
       : 'Sin mesero'
 
     const fechaComprobante = obtenerFechaBolivia()
@@ -820,37 +856,63 @@ export class PagoService {
       throw new PagoServiceError(400, 'Debe proporcionar un correo electrónico')
     }
 
-    const pedido = await this.pedidoRepo.buscarPorIdPoblado(pedidoId)
+    const pedido = await this.pedidoRepo.buscarPorIdPobladoRecibo(pedidoId)
 
     if (!pedido) {
       throw new PagoServiceError(404, 'Pedido no encontrado')
     }
 
-    const ped: any = pedido
-    const mesaId = (ped.mesa as any)?._id || ped.mesa
-    const mesaDoc = mesaId ? await this.mesaRepo.buscarPorId(mesaId.toString()) : null
+    const mesaRelacion = pedido.mesa
+    const mesaId =
+      mesaRelacion instanceof mongoose.Types.ObjectId
+        ? mesaRelacion
+        : mesaRelacion?._id
 
-    const codigo = ped.codigo
-    const subtotal = Number(ped.subtotalCierre || ped.total || 0)
-    const propina = Number(ped.montoPropina || 0)
+    const mesaDoc = mesaId
+      ? await this.mesaRepo.buscarPorId(mesaId.toString())
+      : null
+
+    const codigo = pedido.codigo
+    const subtotal = Number(pedido.subtotalCierre || pedido.total || 0)
+    const propina = Number(pedido.montoPropina || 0)
     const totalFinal = Number((subtotal + propina).toFixed(2))
 
-    const mesaNombre = mesaDoc?.numero || (ped.mesa as any)?.numero || 'Barra'
-    const meseroNombre = ped.usuario
-      ? `${(ped.usuario as any).nombre || ''} ${(ped.usuario as any).apellido || ''}`.trim()
+    const mesaPoblada =
+      mesaRelacion instanceof mongoose.Types.ObjectId
+        ? null
+        : mesaRelacion
+
+    const mesaNombre = String(
+      mesaDoc?.numero || mesaPoblada?.numero || 'Barra'
+    )
+
+    const usuarioPoblado =
+      pedido.usuario instanceof mongoose.Types.ObjectId
+        ? null
+        : pedido.usuario
+
+    const meseroNombre = pedido.usuario
+      ? `${usuarioPoblado?.nombre || ''} ${usuarioPoblado?.apellido || ''}`.trim()
       : 'Mesero'
+
     const fecha = new Date().toLocaleString('es-BO')
 
-    const finalClienteNombre = clienteNombre || ped.clienteNombre || 'Consumidor Final'
-    const finalClienteApellido = ped.clienteApellido || ''
-    const finalClienteCI = clienteCI || ped.clienteCI || ''
-    const finalClienteExtensionCI = ped.clienteExtensionCI || ''
-    const finalClienteNIT = ped.clienteNIT || 'S/N'
+    const finalClienteNombre =
+      clienteNombre || pedido.clienteNombre || 'Consumidor Final'
+    const finalClienteApellido = pedido.clienteApellido || ''
+    const finalClienteCI = clienteCI || pedido.clienteCI || ''
+    const finalClienteExtensionCI = pedido.clienteExtensionCI || ''
+    const finalClienteNIT = pedido.clienteNIT || 'S/N'
 
-    const items: ItemRecibo[] = (ped.detalles || ped.items || []).map((item: any) => {
-      const nombre = item.nombre || item.plato?.nombre || 'Plato'
+    const items: ItemRecibo[] = (pedido.detalles || pedido.items || []).map((item) => {
+      const platoPoblado =
+        item.plato instanceof mongoose.Types.ObjectId
+          ? null
+          : item.plato
+
+      const nombre = item.nombre || platoPoblado?.nombre || 'Plato'
       const cantidad = item.cantidad || 1
-      const pu = Number(item.precioUnitario || item.plato?.precio || 0)
+      const pu = Number(item.precioUnitario || platoPoblado?.precio || 0)
       const subt = Number(item.subtotal || pu * cantidad)
       return {
         nombre,
@@ -872,7 +934,7 @@ export class PagoService {
       subtotal,
       propina,
       totalFinal,
-      metodoPago: ped.metodoPago || 'Efectivo',
+      metodoPago: pedido.metodoPago || 'Efectivo',
       fecha,
       items
     }

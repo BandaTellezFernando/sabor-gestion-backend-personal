@@ -2,7 +2,7 @@
 import { Request, Response } from 'express'
 import { uploadToCloudinary } from '../configs/cloudinary'
 
-export const subirImagen = async (req: Request, res: Response): Promise<any> => {
+export const subirImagen = async (req: Request, res: Response) => {
   try {
     // 1. Verificamos que multer haya dejado pasar el archivo
     if (!req.file) {

@@ -6,7 +6,7 @@ export const obtenerUbicaciones = async (req: Request, res: Response): Promise<v
   try {
     const ubicaciones = await ubicacionService.obtenerUbicaciones()
     res.status(200).json(ubicaciones)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof UbicacionServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
       return
@@ -20,7 +20,7 @@ export const crearUbicacion = async (req: Request, res: Response): Promise<void>
   try {
     const nueva = await ubicacionService.crearUbicacion(req.body)
     res.status(201).json(nueva)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof UbicacionServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
       return
@@ -35,7 +35,7 @@ export const actualizarUbicacion = async (req: Request, res: Response): Promise<
     const id = String(req.params.id)
     const actualizada = await ubicacionService.actualizarUbicacion(id, req.body)
     res.status(200).json(actualizada)
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof UbicacionServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
       return
@@ -50,7 +50,7 @@ export const eliminarUbicacion = async (req: Request, res: Response): Promise<vo
     const id = String(req.params.id)
     await ubicacionService.eliminarUbicacion(id)
     res.status(200).json({ mensaje: 'Ubicación eliminada correctamente' })
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof UbicacionServiceError) {
       res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
       return
