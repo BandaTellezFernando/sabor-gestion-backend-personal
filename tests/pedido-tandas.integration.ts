@@ -12,7 +12,7 @@ import Receta from '../src/models/Receta'
 import Pedido from '../src/models/Pedido'
 import MovimientoInventario from '../src/models/MovimientoInventario'
 
-import { pedidoService } from '../src/services/pedido.service'
+import { PedidoServiceError, pedidoService } from '../src/services/pedido.service'
 import {
   ESTADOS_PEDIDO,
   ESTADOS_TANDA_COCINA
@@ -46,7 +46,7 @@ async function debeRechazar(
   nombre: string,
   operacion: () => Promise<unknown>,
   statusEsperado?: number
-): Promise<void> {
+): Promise<unknown> {
   let error: unknown
 
   try {
@@ -74,6 +74,7 @@ async function debeRechazar(
 
   totalPruebas += 1
   console.log(`✅ ${nombre}`)
+  return error
 }
 
 async function obtenerStock(id: Types.ObjectId): Promise<number> {
@@ -507,9 +508,27 @@ async function main(): Promise<void> {
       { $set: { stockActual: 0 } }
     )
 
-    await debeRechazar(
+    const errorIngredientesFaltantes = await debeRechazar(
       'Enviar una tanda falla por falta de un ingrediente',
-      () => enviarTanda(pedidoId, tanda1, ownerId)
+      () => enviarTanda(pedidoId, tanda1, ownerId),
+      400
+    )
+
+    comprobar(
+      'El mensaje identifica el nombre del ingrediente faltante sin cantidades',
+      errorIngredientesFaltantes instanceof PedidoServiceError &&
+        errorIngredientesFaltantes.message ===
+          `No se puede enviar la tanda. Faltan ingredientes: ${ingredienteB.nombre}.`
+    )
+
+    comprobarIgual(
+      'La respuesta contiene solo nombres de ingredientes, sin cantidades ni unidades',
+      JSON.stringify(
+        errorIngredientesFaltantes instanceof PedidoServiceError
+          ? errorIngredientesFaltantes.extra
+          : null
+      ),
+      JSON.stringify({ faltantes: [ingredienteB.nombre] })
     )
 
     comprobarIgual(

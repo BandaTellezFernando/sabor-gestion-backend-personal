@@ -1398,12 +1398,39 @@ export class PedidoService {
           )
 
         if (!validacion.success) {
+          const nombresIngredientesFaltantes = [
+            ...new Set(
+              validacion.faltantes.flatMap((faltante) =>
+                'ingrediente' in faltante ? [faltante.ingrediente] : []
+              )
+            )
+          ]
+
+          // Para faltas reales de stock se exponen solo los nombres, nunca cantidades ni unidades.
+          // Los errores de receta/configuración conservan la respuesta específica existente.
+          if (
+            validacion.errores.length === 0 &&
+            nombresIngredientesFaltantes.length > 0
+          ) {
+            throw new PedidoServiceError(
+              400,
+              `No se puede enviar la tanda. Faltan ingredientes: ${nombresIngredientesFaltantes.join(', ')}.`,
+              { faltantes: nombresIngredientesFaltantes }
+            )
+          }
+
+          const faltantesSinCantidades = validacion.faltantes.map((faltante) =>
+            'ingrediente' in faltante
+              ? { ingrediente: faltante.ingrediente }
+              : { plato: faltante.plato, mensaje: faltante.mensaje }
+          )
+
           throw new PedidoServiceError(
             400,
             'No se puede enviar la tanda por restricciones de receta o inventario.',
             {
               errores: validacion.errores,
-              faltantes: validacion.faltantes
+              faltantes: faltantesSinCantidades
             }
           )
         }
