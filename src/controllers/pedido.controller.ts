@@ -15,13 +15,12 @@ export const crearPedido = async (req: CustomRequest, res: Response): Promise<vo
     const resultado = await pedidoService.crearPedido(req.body, usuarioAuthId)
 
     // Notificaciones en tiempo real
+       // Notificaciones en tiempo real.
+    // La creación guarda el borrador, pero no lo envía a cocina.
     try {
       const io = getIO()
 
-      // Notificar a cocina para que aparezca el ticket en "Por hacer"
-      io.emit('cocina:nuevo_pedido', resultado.pedidoPoblado)
-
-      // Notificar a todos los meseros que la mesa ahora está ocupada (se pone roja)
+      // Notificar a los meseros si cambió el estado de la mesa.
       if (resultado.mesaActualizada) {
         try {
           const mesaDTO = await mesaService.obtenerMesaPorId(
@@ -33,7 +32,9 @@ export const crearPedido = async (req: CustomRequest, res: Response): Promise<vo
         }
       }
     } catch {
-      console.warn('Pedido guardado, pero falló la notificación en tiempo real')
+      console.warn(
+        'Pedido guardado como borrador, pero falló la notificación de la mesa'
+      )
     }
 
     res.status(201).json(resultado.nuevoPedido)
@@ -48,6 +49,63 @@ export const crearPedido = async (req: CustomRequest, res: Response): Promise<vo
     }
     console.error('Error al registrar el pedido:', error)
     res.status(500).json({ mensaje: 'Error al registrar el pedido' })
+  }
+}
+
+export const enviarPedidoCocina = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const usuarioAuthId = req.usuario?.id
+
+    if (!usuarioAuthId) {
+      res.status(401).json({
+        mensaje: 'Usuario no autenticado'
+      })
+      return
+    }
+
+    const resultado = await pedidoService.enviarPedidoCocina(
+      String(req.params.id),
+      usuarioAuthId,
+      req.usuario?.rol
+    )
+
+    // Emitir el ticket a cocina solamente en el primer envío.
+    if (!resultado.yaEnviado) {
+      try {
+        getIO().emit('cocina:nuevo_pedido', resultado.pedido)
+      } catch (socketError) {
+        console.warn(
+          'Pedido enviado, pero falló la notificación a cocina:',
+          socketError
+        )
+      }
+    }
+
+    res.status(200).json({
+      mensaje: resultado.yaEnviado
+        ? 'El pedido ya había sido enviado a cocina'
+        : 'Pedido enviado a cocina correctamente',
+      pedido: resultado.pedido,
+      yaEnviado: resultado.yaEnviado
+    })
+  } catch (error) {
+    if (error instanceof PedidoServiceError) {
+      res.status(error.statusCode).json({
+        success: false,
+        mensaje: error.message,
+        ...error.extra
+      })
+      return
+    }
+
+    console.error('Error al enviar el pedido a cocina:', error)
+
+    res.status(500).json({
+      mensaje: 'Error al enviar el pedido a cocina'
+    })
   }
 }
 
@@ -88,38 +146,60 @@ export const obtenerPedidoPorId = async (req: CustomRequest, res: Response): Pro
   }
 }
 
-export const cancelarPedido = async (req: CustomRequest, res: Response): Promise<void> => {
+export const cancelarPedido = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
   try {
     const { id } = req.params
+
     const resultado = await pedidoService.cancelarPedido(
       String(id),
       req.usuario?.id,
       req.usuario?.rol
     )
 
-    // Avisar por WebSocket que la mesa vuelve a estar disponible (verde)
     if (resultado.mesaLiberada) {
       try {
         const mesaDTO = await mesaService.obtenerMesaPorId(
           resultado.mesaLiberada._id.toString()
         )
+
         getIO().emit('mesas:updated', mesaDTO)
       } catch (socketError) {
-        console.warn('Fallo al emitir actualización de mesa por socket:', socketError)
+        console.warn(
+          'Fallo al emitir la actualización de mesa por socket:',
+          socketError
+        )
       }
     }
 
+    const mensaje =
+      resultado.nuevoEstadoMesa === 'Ocupada'
+        ? 'Pedido anulado correctamente. La mesa permanece ocupada porque tiene otras comandas activas.'
+        : resultado.mesaLiberada
+          ? 'Pedido anulado y mesa liberada correctamente.'
+          : 'Pedido anulado correctamente.'
+
     res.status(200).json({
-      mensaje: 'Pedido anulado y mesa liberada correctamente',
-      pedido: resultado.pedido
+      mensaje,
+      pedido: resultado.pedido,
+      nuevoEstadoMesa: resultado.nuevoEstadoMesa
     })
   } catch (error) {
     if (error instanceof PedidoServiceError) {
-      res.status(error.statusCode).json({ mensaje: error.message, ...error.extra })
+      res.status(error.statusCode).json({
+        mensaje: error.message,
+        ...error.extra
+      })
       return
     }
+
     console.error('Error al procesar la cancelación:', error)
-    res.status(500).json({ mensaje: 'Error al procesar la cancelación' })
+
+    res.status(500).json({
+      mensaje: 'Error al procesar la cancelación'
+    })
   }
 }
 
@@ -273,10 +353,18 @@ export const solicitarCuentaPedido = async (
         io.to('room:caja').emit('caja:solicitud_pago', payload)
       }
       try {
-        const mesaDTO = await mesaService.obtenerMesaPorId(mesaActualizada._id.toString())
-        io.emit('mesas:updated', mesaDTO)
+        if (mesaActualizada) {
+          const mesaDTO = await mesaService.obtenerMesaPorId(
+            mesaActualizada._id.toString()
+          )
+
+          io.emit('mesas:updated', mesaDTO)
+        }
       } catch (mesaErr) {
-        console.warn('Error al obtener mesa para mesas:updated en solicitarCuenta:', mesaErr)
+        console.warn(
+          'Error al obtener mesa para mesas:updated en solicitarCuenta:',
+          mesaErr
+        )
       }
     } catch (socketError) {
       console.warn('Cuenta solicitada, pero falló la notificación en tiempo real:', socketError)

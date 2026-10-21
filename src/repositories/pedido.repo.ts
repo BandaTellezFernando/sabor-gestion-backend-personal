@@ -36,9 +36,12 @@ export class PedidoRepository {
   /**
    * Busca un pedido por ID simple (sin populates)
    */
-  async buscarPorId(id: string | Types.ObjectId): Promise<IPedido | null> {
-    return await Pedido.findById(id)
-  }
+  async buscarPorId(
+  id: string | Types.ObjectId,
+  session?: ClientSession
+): Promise<IPedido | null> {
+  return await Pedido.findById(id).session(session ?? null)
+}
 
   /**
    * Busca un pedido por ID con populate completo para cocina y meseros
@@ -77,18 +80,30 @@ export class PedidoRepository {
   /**
    * Cuenta los pedidos activos vinculados a una mesa
    */
-  async contarPedidosActivosPorMesa(mesaId: string | Types.ObjectId): Promise<number> {
-    return await Pedido.countDocuments({
-      mesa: mesaId,
-      estado: {
-        $in: [
-          ESTADOS_PEDIDO.ABIERTO,
-          ESTADOS_PEDIDO.EN_PREPARACION,
-          ESTADOS_PEDIDO.ENTREGADO
-        ]
-      }
-    })
+  async contarPedidosActivosPorMesa(
+  mesaId: string | Types.ObjectId,
+  session?: ClientSession
+): Promise<number> {
+  const consulta = Pedido.countDocuments({
+    mesa: mesaId,
+    estado: {
+      $in: [
+        ESTADOS_PEDIDO.BORRADOR,
+        ESTADOS_PEDIDO.PENDIENTE,
+        ESTADOS_PEDIDO.ABIERTO,
+        ESTADOS_PEDIDO.EN_PREPARACION,
+        ESTADOS_PEDIDO.LISTO,
+        ESTADOS_PEDIDO.ENTREGADO
+      ]
+    }
+  })
+
+  if (session) {
+    consulta.session(session)
   }
+
+  return await consulta
+}
 
   /**
    * Busca pedidos aplicando filtros dinámicos con populates profundos (incluyendo categoría del plato)
@@ -170,6 +185,60 @@ export class PedidoRepository {
   }
 
   /**
+ * Cambia un pedido de BORRADOR a PENDIENTE únicamente si
+ * todavía permanece en BORRADOR dentro de la transacción.
+ */
+async marcarPendienteSiBorrador(
+  id: string | Types.ObjectId,
+  session: ClientSession
+): Promise<IPedido | null> {
+  return await Pedido.findOneAndUpdate(
+    {
+      _id: id,
+      estado: ESTADOS_PEDIDO.BORRADOR
+    },
+    {
+      $set: {
+        estado: ESTADOS_PEDIDO.PENDIENTE
+      }
+    },
+    {
+      returnDocument: 'after',
+      session,
+      runValidators: true
+    }
+  )
+}
+
+async marcarCanceladoSiCancelable(
+  id: string | Types.ObjectId,
+  session: ClientSession
+): Promise<IPedido | null> {
+  return await Pedido.findOneAndUpdate(
+    {
+      _id: id,
+      estado: {
+        $in: [
+          ESTADOS_PEDIDO.BORRADOR,
+          ESTADOS_PEDIDO.PENDIENTE,
+          ESTADOS_PEDIDO.ABIERTO
+        ]
+      }
+    },
+    {
+      $set: {
+        estado: ESTADOS_PEDIDO.CANCELADO
+      }
+    },
+    {
+      returnDocument: 'after',
+      session,
+      runValidators: true
+    }
+  )
+}
+
+  /**
    * Guarda las modificaciones de una instancia de pedido ya existente
    */
   async guardar(pedidoDoc: IPedido, session?: ClientSession): Promise<IPedido> {
@@ -240,10 +309,13 @@ export class PedidoRepository {
       mesa: mesaId,
       estado: {
         $in: [
-          ESTADOS_PEDIDO.ABIERTO,
-          ESTADOS_PEDIDO.EN_PREPARACION,
-          ESTADOS_PEDIDO.ENTREGADO
-        ]
+  ESTADOS_PEDIDO.BORRADOR,
+  ESTADOS_PEDIDO.PENDIENTE,
+  ESTADOS_PEDIDO.ABIERTO,
+  ESTADOS_PEDIDO.EN_PREPARACION,
+  ESTADOS_PEDIDO.LISTO,
+  ESTADOS_PEDIDO.ENTREGADO
+]
       }
     }).session(session || null)
   }

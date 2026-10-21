@@ -1,8 +1,7 @@
 // src/models/Pedido.ts
 import mongoose, { Schema, Document } from 'mongoose'
 import { obtenerFechaBolivia } from '../utils/fechaBolivia'
-import { METODOS_PAGO } from '../utils/constants'
-
+import { ESTADOS_PEDIDO, METODOS_PAGO } from '../utils/constants'
 // 1. Interfaz y Esquema para el Detalle
 export interface IDetallePedido {
   plato: mongoose.Types.ObjectId
@@ -31,9 +30,10 @@ export interface IPedido extends Document {
   fechaDiaBolivia?: string
   fechaHoraBolivia?: string
   fechaHora: Date
-  estado: string
-  total: number
-  mesa?: mongoose.Types.ObjectId
+ estado: string
+total: number
+mesa?: mongoose.Types.ObjectId
+cuentaMesa?: mongoose.Types.ObjectId
   usuario: mongoose.Types.ObjectId
   detalles: IDetallePedido[]
   qrUrl?: string
@@ -65,12 +65,17 @@ const PedidoSchema = new Schema(
       trim: true
     },
     estado: {
-      type: String,
-      enum: ['ABIERTO', 'EN_PREPARACION', 'ENTREGADO', 'CANCELADO', 'CERRADO'],
-      default: 'ABIERTO'
-    },
+  type: String,
+  enum: Object.values(ESTADOS_PEDIDO),
+  default: ESTADOS_PEDIDO.BORRADOR
+},
     total: { type: Number, required: true, default: 0, min: 0 },
     mesa: { type: Schema.Types.ObjectId, ref: 'Mesa', required: false },
+cuentaMesa: {
+  type: Schema.Types.ObjectId,
+  ref: 'CuentaMesa',
+  required: false
+  },
     usuario: { type: Schema.Types.ObjectId, ref: 'Usuario', required: true },
     detalles: [DetallePedidoSchema],
     qrUrl: { type: String, required: false },
@@ -109,5 +114,6 @@ PedidoSchema.index({ estado: 1, recogido: 1 })
 PedidoSchema.index({ recogido: 1 })
 PedidoSchema.index({ createdAt: -1 })
 PedidoSchema.index({ mesa: 1 })
+PedidoSchema.index({ cuentaMesa: 1, createdAt: 1 })
 
 export default mongoose.model<IPedido>('Pedido', PedidoSchema)

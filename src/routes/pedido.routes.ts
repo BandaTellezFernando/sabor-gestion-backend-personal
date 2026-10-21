@@ -3,6 +3,7 @@ import { Router } from 'express'
 import {
   cancelarPedido,
   crearPedido,
+  enviarPedidoCocina,
   obtenerPedidos,
   obtenerPedidoPorId,
   actualizarEstadoPedido,
@@ -19,6 +20,14 @@ const router = Router()
 
 // Crear un nuevo pedido (Mesero, Administrador)
 router.post('/', verificarToken, permitirRoles('Mesero', 'Administrador'), crearPedido)
+
+// Enviar un pedido en borrador a cocina (Mesero, Administrador)
+router.patch(
+  '/:id/enviar-cocina',
+  verificarToken,
+  permitirRoles('Mesero', 'Administrador'),
+  enviarPedidoCocina
+)
 
 // Listar pedidos según rol (Administrador: supervisión; Mesero: propios; Cocinero: comanda operativa)
 router.get(

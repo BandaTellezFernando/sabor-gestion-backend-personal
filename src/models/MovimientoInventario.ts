@@ -1,3 +1,4 @@
+//src/models/MovimientoInventario.ts
 import mongoose, { Schema, Document } from 'mongoose'
 import { UNIDADES_MEDIDA } from '../utils/unidades'
 
@@ -27,6 +28,9 @@ export interface IMovimientoInventario extends Document {
   fechaHora: Date
   usuario: mongoose.Types.ObjectId
   consumos: IMovimientoConsumoIngrediente[]
+  revertido?: boolean
+  fechaReversion?: Date | null
+  usuarioReversion?: mongoose.Types.ObjectId | null
 }
 
 const DetallePlatoSchema = new Schema<IMovimientoDetallePlato>(
@@ -102,6 +106,20 @@ const MovimientoInventarioSchema = new Schema<IMovimientoInventario>(
         message: 'El movimiento debe registrar al menos un consumo.',
       },
     },
+      revertido: {
+    type: Boolean,
+    default: false,
+    required: true,
+  },
+  fechaReversion: {
+    type: Date,
+    default: null,
+  },
+  usuarioReversion: {
+    type: Schema.Types.ObjectId,
+    ref: 'Usuario',
+    default: null,
+  },
   },
   {
     timestamps: true,

@@ -54,9 +54,14 @@ export class MesaRepository {
   /**
    * Busca una mesa por su ID con su ubicación poblada.
    */
-  async buscarPorId(id: string): Promise<MesaPobladaDoc | null> {
-    return (await Mesa.findById(id).populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
-  }
+  async buscarPorId(
+  id: string,
+  session?: ClientSession
+): Promise<MesaPobladaDoc | null> {
+  return (await Mesa.findById(id)
+    .session(session ?? null)
+    .populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
+}
 
   /**
    * Busca si existe una mesa con el mismo número (insensible a mayúsculas/minúsculas),

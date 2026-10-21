@@ -1,3 +1,4 @@
+//src/repositories/movimientoInventario.repo.ts
 import MovimientoInventario from '../models/MovimientoInventario'
 
 export class MovimientoInventarioRepository {
