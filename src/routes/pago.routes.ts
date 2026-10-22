@@ -1,3 +1,4 @@
+
 // src/routes/pago.routes.ts
 import { Router } from 'express'
 import {
@@ -11,7 +12,9 @@ import {
   procesarPagoCuenta,
   generarQRCuentaMesa,
   consultarEstadoQRCuenta,
-  confirmarPagoQRCuenta
+  confirmarPagoQRCuenta,
+  enviarReciboCorreoCuenta,
+  enviarReciboCorreoQRCuenta
 } from '../controllers/cuentaMesaPago.controller'
 import { verificarToken } from '../middlewares/auth.middleware'
 import { permitirRoles } from '../middlewares/rol.middleware'
@@ -60,6 +63,20 @@ router.get(
   verificarToken,
   permitirRoles('Cajero', 'Administrador'),
   generarQRCuentaMesa
+)
+
+// Envío público por token QR; solo funciona después de un pago confirmado.
+router.post(
+  '/cuentas/qr/enviar-recibo',
+  enviarReciboCorreoQRCuenta
+)
+
+// Enviar por correo el recibo consolidado de una cuenta ya pagada.
+router.post(
+  '/cuentas/:cuentaId/enviar-recibo',
+  verificarToken,
+  permitirRoles('Cajero', 'Administrador'),
+  enviarReciboCorreoCuenta
 )
 
 // Consultar el estado del QR desde la pantalla del cliente.

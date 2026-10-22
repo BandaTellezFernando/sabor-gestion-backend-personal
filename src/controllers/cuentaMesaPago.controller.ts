@@ -1,3 +1,4 @@
+
 //src/controllers/cuentaMesaPago.controller.ts
 import { Request, Response } from 'express'
 import { CustomRequest } from '../middlewares/auth.middleware'
@@ -426,6 +427,74 @@ export const confirmarPagoQRCuenta = async (
 
     res.status(500).json({
       mensaje: 'Error interno al confirmar el pago QR.'
+    })
+  }
+}
+
+
+/** Envía por correo el recibo consolidado de una cuenta pagada. */
+export const enviarReciboCorreoCuenta = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const cuentaId = String(req.params.cuentaId ?? '')
+    const email = typeof req.body?.email === 'string'
+      ? req.body.email.trim()
+      : ''
+
+    if (!email) {
+      res.status(400).json({
+        mensaje: 'Debe proporcionar un correo electrónico.'
+      })
+      return
+    }
+
+    await cuentaMesaPagoService.enviarReciboCorreoCuenta(cuentaId, email)
+
+    res.status(200).json({
+      mensaje: 'Recibo de la cuenta enviado por correo exitosamente.'
+    })
+  } catch (error: unknown) {
+    if (error instanceof CuentaMesaPagoServiceError) {
+      res.status(error.statusCode).json({ mensaje: error.message })
+      return
+    }
+
+    console.error('Error al enviar recibo de cuenta por correo:', error)
+    res.status(500).json({
+      mensaje: 'No se pudo enviar el recibo por correo. Comprueba la configuración de EmailJS.'
+    })
+  }
+}
+
+
+/** Envía por correo el recibo ya pagado desde la página pública del QR. */
+export const enviarReciboCorreoQRCuenta = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    if (!esRegistro(req.body)) {
+      throw new CuentaMesaPagoServiceError(400, 'El cuerpo de la solicitud no es válido.')
+    }
+
+    const token = obtenerTexto(req.body, 'token', true) as string
+    const email = obtenerTexto(req.body, 'email', true) as string
+    await cuentaMesaPagoService.enviarReciboCorreoQR(token, email)
+
+    res.status(200).json({
+      mensaje: 'Recibo de la cuenta enviado por correo exitosamente.'
+    })
+  } catch (error: unknown) {
+    if (error instanceof CuentaMesaPagoServiceError) {
+      res.status(error.statusCode).json({ mensaje: error.message })
+      return
+    }
+
+    console.error('Error al enviar recibo QR por correo:', error)
+    res.status(500).json({
+      mensaje: 'No se pudo enviar el recibo por correo. Comprueba la configuración de EmailJS.'
     })
   }
 }

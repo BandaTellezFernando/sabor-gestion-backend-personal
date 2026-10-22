@@ -1,5 +1,12 @@
+
 //src/services/cuentaMesaPago.service.ts
 import mongoose, { Types } from 'mongoose'
+import { enviarCorreo } from './email.service'
+import {
+  generarPlantillaFacturaHTML,
+  DatosFactura,
+  ItemFactura
+} from '../utils/facturaTemplate'
 import Usuario from '../models/Usuario'
 import { generarComprobantePdf } from '../utils/comprobantePdf'
 import type { PedidoComprobantePdf } from '../utils/comprobantePdf'
@@ -1031,6 +1038,252 @@ export class CuentaMesaPagoService {
       await session.endSession()
     }
   }
+  /**
+   * Envía el recibo HTML consolidado de una cuenta ya pagada.
+   * Reutiliza EmailJS y la plantilla que se emplea en pagos individuales.
+   */
+  async enviarReciboCorreoCuenta(
+    cuentaId: string,
+    email: string
+  ): Promise<void> {
+    const emailNormalizado = email.trim()
+
+    if (
+      emailNormalizado.length > 254 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNormalizado)
+    ) {
+      throw new CuentaMesaPagoServiceError(
+        400,
+        'Debe proporcionar un correo electrónico válido.'
+      )
+    }
+
+    if (!Types.ObjectId.isValid(cuentaId)) {
+      throw new CuentaMesaPagoServiceError(
+        400,
+        'El identificador de la cuenta no es válido.'
+      )
+    }
+
+    const cuenta = await this.cuentaRepo.buscarPorIdPoblado(cuentaId)
+
+    if (!cuenta) {
+      throw new CuentaMesaPagoServiceError(404, 'Cuenta no encontrada.')
+    }
+
+    if (cuenta.estado !== ESTADOS_CUENTA_MESA.PAGADA) {
+      throw new CuentaMesaPagoServiceError(
+        409,
+        'No se puede enviar el recibo: la cuenta todavía no está pagada.'
+      )
+    }
+
+    const pagoDocumento = await this.pagoRepo.buscarPorCuentaMesa(cuentaId)
+
+    if (!pagoDocumento || pagoDocumento.estadoPago !== 'Pagado') {
+      throw new CuentaMesaPagoServiceError(
+        409,
+        'No existe un pago confirmado para esta cuenta. No se enviará el recibo.'
+      )
+    }
+
+    interface ReferenciaPoblada {
+      _id?: Types.ObjectId | string
+      nombre?: string
+      apellido?: string
+      numero?: string
+    }
+
+    interface PagoCorreoAgrupado {
+      codigoPago: string
+      estadoPago: string
+      subtotal: number
+      propina: number
+      totalFinal: number
+      metodoPago: string
+      fechaPago?: Date | null
+      createdAt?: Date
+      nombreCliente?: string
+      ci?: string
+      nit?: string
+      mesa?: Types.ObjectId | ReferenciaPoblada | null
+      mesero?: Types.ObjectId | ReferenciaPoblada | null
+    }
+
+    interface DetallePedidoCorreo {
+      nombrePlato?: string
+      cantidad: number
+      precioUnitario: number
+      subtotal?: number
+      plato?: Types.ObjectId | ReferenciaPoblada | null
+    }
+
+    interface PedidoCorreoAgrupado {
+      codigo?: string
+      detalles?: DetallePedidoCorreo[]
+    }
+
+    const pago = pagoDocumento as unknown as PagoCorreoAgrupado
+    const items: ItemFactura[] = []
+
+    for (const referencia of cuenta.pedidos as unknown[]) {
+      let pedidoId = ''
+
+      if (referencia instanceof Types.ObjectId) {
+        pedidoId = referencia.toString()
+      } else if (typeof referencia === 'string') {
+        pedidoId = referencia
+      } else if (typeof referencia === 'object' && referencia !== null && '_id' in referencia) {
+        const idReferencia = (referencia as { _id?: unknown })._id
+        if (idReferencia instanceof Types.ObjectId) {
+          pedidoId = idReferencia.toString()
+        } else if (typeof idReferencia === 'string') {
+          pedidoId = idReferencia
+        }
+      }
+
+      if (!pedidoId || !Types.ObjectId.isValid(pedidoId)) {
+        throw new CuentaMesaPagoServiceError(
+          409,
+          'No se pudo identificar una comanda de la cuenta para generar el recibo.'
+        )
+      }
+
+      const pedidoDocumento = await this.pedidoRepo.buscarPorIdPoblado(pedidoId)
+
+      if (!pedidoDocumento) {
+        throw new CuentaMesaPagoServiceError(
+          409,
+          'Una comanda de la cuenta ya no existe. No se puede generar el recibo completo.'
+        )
+      }
+
+      const pedido = pedidoDocumento as unknown as PedidoCorreoAgrupado
+      for (const detalle of pedido.detalles ?? []) {
+        const cantidad = Number(detalle.cantidad)
+        const precioUnitario = Number(detalle.precioUnitario)
+
+        if (
+          !Number.isInteger(cantidad) || cantidad < 1 ||
+          !Number.isFinite(precioUnitario) || precioUnitario < 0
+        ) {
+          throw new CuentaMesaPagoServiceError(
+            409,
+            'Una comanda contiene cantidades o precios no válidos.'
+          )
+        }
+
+        const subtotalDetalle = Number(
+          Number(detalle.subtotal ?? cantidad * precioUnitario).toFixed(2)
+        )
+        const plato = detalle.plato
+        const platoPoblado = plato && !(plato instanceof Types.ObjectId)
+          ? plato
+          : null
+        const nombre = detalle.nombrePlato?.trim() || platoPoblado?.nombre?.trim() || 'Producto'
+
+        items.push({
+          nombre,
+          cantidad,
+          precioUnitario: Number(precioUnitario.toFixed(2)),
+          subtotal: subtotalDetalle
+        })
+      }
+    }
+
+    if (items.length === 0) {
+      throw new CuentaMesaPagoServiceError(
+        409,
+        'No se puede enviar un recibo sin productos.'
+      )
+    }
+
+    const subtotal = Number(pago.subtotal)
+    const propina = Number(pago.propina)
+    const totalFinal = Number(pago.totalFinal)
+    const subtotalDetalles = Number(
+      items.reduce((suma, item) => suma + item.subtotal, 0).toFixed(2)
+    )
+
+    if (
+      !Number.isFinite(subtotal) || subtotal < 0 ||
+      !Number.isFinite(propina) || propina < 0 ||
+      !Number.isFinite(totalFinal) || totalFinal <= 0 ||
+      Number((subtotal + propina).toFixed(2)) !== Number(totalFinal.toFixed(2)) ||
+      subtotalDetalles !== Number(subtotal.toFixed(2))
+    ) {
+      throw new CuentaMesaPagoServiceError(
+        409,
+        'Los importes del pago o los productos de la cuenta no son consistentes.'
+      )
+    }
+
+    const mesaRef = pago.mesa
+    const mesaPoblada = mesaRef && !(mesaRef instanceof Types.ObjectId)
+      ? mesaRef
+      : null
+    const cuentaPoblada = cuenta as unknown as { mesa?: Types.ObjectId | ReferenciaPoblada | null }
+    const mesaCuenta = cuentaPoblada.mesa
+    const mesaCuentaPoblada = mesaCuenta && !(mesaCuenta instanceof Types.ObjectId)
+      ? mesaCuenta
+      : null
+    const mesaNombre = mesaPoblada?.numero || mesaCuentaPoblada?.numero || 'Mesa'
+
+    const meseroRef = pago.mesero
+    const meseroPoblado = meseroRef && !(meseroRef instanceof Types.ObjectId)
+      ? meseroRef
+      : null
+    const meseroNombre = `${meseroPoblado?.nombre || ''} ${meseroPoblado?.apellido || ''}`.trim() || 'Mesero'
+
+    const clienteNombre = pago.nombreCliente?.trim() || cuenta.clienteNombre?.trim() || 'Consumidor Final'
+    const ci = pago.ci?.trim() || cuenta.clienteCI?.trim() || ''
+    const nit = pago.nit?.trim() || cuenta.clienteNIT?.trim() || ''
+    const clienteCI = [ci ? `CI: ${ci}` : '', nit ? `NIT: ${nit}` : '']
+      .filter(Boolean)
+      .join(' / ') || 'S/N'
+
+    const datosFactura: DatosFactura = {
+      codigo: cuenta.codigoCuenta,
+      mesaNombre,
+      meseroNombre,
+      clienteNombre,
+      clienteCI,
+      subtotal,
+      propina,
+      totalFinal,
+      metodoPago: pago.metodoPago,
+      fecha: formatearFechaBolivia(pago.fechaPago ?? pago.createdAt ?? new Date()),
+      items
+    }
+
+    const htmlDelRecibo = generarPlantillaFacturaHTML(datosFactura)
+    await enviarCorreo(
+      emailNormalizado,
+      `Comprobante de pago - ${cuenta.codigoCuenta}`,
+      htmlDelRecibo
+    )
+  }
+
+  /** Envía un recibo de cuenta pagada desde la página pública autenticada por token QR. */
+  async enviarReciboCorreoQR(token: string, email: string): Promise<void> {
+    const tokenNormalizado = token.trim()
+    this.validarTokenQR(tokenNormalizado)
+
+    const cuenta = await this.cuentaRepo.buscarPorTokenQR(tokenNormalizado)
+    if (!cuenta) {
+      throw new CuentaMesaPagoServiceError(404, 'El QR no existe o no es válido.')
+    }
+
+    if (cuenta.estado !== ESTADOS_CUENTA_MESA.PAGADA) {
+      throw new CuentaMesaPagoServiceError(
+        409,
+        'Solo se puede enviar el recibo cuando el pago de la cuenta está confirmado.'
+      )
+    }
+
+    await this.enviarReciboCorreoCuenta(cuenta._id.toString(), email)
+  }
+
 }
 
 export const cuentaMesaPagoService = new CuentaMesaPagoService()
