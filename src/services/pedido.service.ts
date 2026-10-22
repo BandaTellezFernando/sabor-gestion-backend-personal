@@ -80,8 +80,6 @@ interface PayloadCaja {
   meseroNombre: string
   subtotal: number
   subtotalCierre: number
-  descuento: number
-  montoDescuento: number
   propina: number
   montoPropina: number
   total: number
@@ -103,7 +101,6 @@ interface CrearPedidoEntrada {
   mesa?: unknown
   detalles?: unknown
   usuario?: unknown
-  montoDescuento?: unknown
   montoPropina?: unknown
   [key: string]: unknown
 }
@@ -115,17 +112,25 @@ interface PedidoActualizacionEntrada {
   clienteCI?: unknown
   clienteNIT?: unknown
   cajeroAsignado?: unknown
-  montoDescuento?: unknown
   montoPropina?: unknown
   subtotalCierre?: unknown
   estado?: unknown
   [key: string]: unknown
 }
-
-type PedidoUpdates = Partial<Pick<IPedido,
-  'detalles' | 'subtotalCierre' | 'estado' | 'recogido' | 'clienteNombre' |
-  'clienteCI' | 'clienteNIT' | 'montoDescuento' | 'montoPropina' | 'total'
->> & {
+type PedidoUpdates = Partial<
+  Pick<
+    IPedido,
+    | 'detalles'
+    | 'subtotalCierre'
+    | 'estado'
+    | 'recogido'
+    | 'clienteNombre'
+    | 'clienteCI'
+    | 'clienteNIT'
+    | 'montoPropina'
+    | 'total'
+  >
+> & {
   cajeroAsignado?: Types.ObjectId | null
   fechaRecogida?: Date | null
   recogidoPor?: Types.ObjectId | null
@@ -283,10 +288,9 @@ export class PedidoService {
           0
         )
       : toNumber(pedidoPlano.subtotalCierre || pedidoPlano.total)
-    const subtotalBase = toNumber(pedidoPlano.subtotalCierre || itemsSubtotal)
-    const montoDesc = toNumber(pedidoPlano.montoDescuento)
+        const subtotalBase = toNumber(pedidoPlano.subtotalCierre || itemsSubtotal)
     const montoProp = toNumber(pedidoPlano.montoPropina)
-    const totalCalc = Number(Math.max(0, subtotalBase - montoDesc + montoProp).toFixed(2))
+    const totalCalc = Number((subtotalBase + montoProp).toFixed(2))
     const usuario = toPlainRecord(pedidoPlano.usuario)
     const nombreMesero = `${toText(usuario.nombre) || ''} ${toText(usuario.apellido) || toText(usuario.apellidos) || ''}`.trim()
     const fechaEspera = toDate(pedidoPlano.updatedAt ?? pedidoPlano.createdAt ?? pedidoPlano.fechaHora)
@@ -298,10 +302,8 @@ export class PedidoService {
       mesaId,
       mesaNombre: toText(mesa.numero) || 'Mesa sin asignar',
       meseroNombre: nombreMesero || 'Sin mesero',
-      subtotal: subtotalBase,
+            subtotal: subtotalBase,
       subtotalCierre: subtotalBase,
-      descuento: montoDesc,
-      montoDescuento: montoDesc,
       propina: montoProp,
       montoPropina: montoProp,
       total: totalCalc,
@@ -431,7 +433,9 @@ export class PedidoService {
     if (!isRecord(datosEntrada)) {
       throw new PedidoServiceError(400, 'Los datos del pedido no son válidos')
     }
-    const datos: CrearPedidoEntrada = datosEntrada
+        const datos: CrearPedidoEntrada = datosEntrada
+    const datosSinDescuento = { ...datos }
+    delete datosSinDescuento.montoDescuento
 
     // 1. Validar existencia de mesa y ocupación temporal.
     const mesaIdString = toIdString(datos.mesa)
@@ -450,19 +454,73 @@ export class PedidoService {
       }
     }
 
-    // 2. Los detalles y precios se validan, pero no se descuenta inventario.
-    const { detallesCalculados, subtotal } = await this.procesarDetallesPedido(datos.detalles)
-    const montoDescuento = toNumber(datos.montoDescuento)
-    const montoPropina = toNumber(datos.montoPropina)
-    if (montoDescuento < 0) {
-      throw new PedidoServiceError(400, 'El monto de descuento no puede ser negativo')
+    // 2. Validar platos, precios, recetas y stock sin descontar inventario.
+    const { detallesCalculados, subtotal } =
+      await this.procesarDetallesPedido(datos.detalles)
+
+    const itemsParaValidarStock = detallesCalculados.map((detalle) => ({
+      platoId: detalle.plato.toString(),
+      cantidad: detalle.cantidad,
+      observacion: detalle.observacion || '',
+    }))
+
+    const validacionStock = await inventarioService.verificarYDescontarStock(
+      itemsParaValidarStock,
+      undefined,
+      false,
+    )
+
+    if (!validacionStock.success) {
+      const detallesErrores = validacionStock.errores
+        .filter((mensaje) => typeof mensaje === 'string' && mensaje.trim().length > 0)
+
+      const detallesFaltantes = validacionStock.faltantes.map((faltante: unknown) => {
+        const dato = toPlainRecord(faltante)
+        const ingrediente = toText(dato.ingrediente)
+        const unidad = toText(dato.unidad) || ''
+        const disponible = toNumber(dato.disponible, Number.NaN)
+        const requerido = toNumber(dato.requerido, Number.NaN)
+        const faltanteNumerico = toNumber(dato.faltante, Number.NaN)
+
+        if (
+          ingrediente &&
+          Number.isFinite(disponible) &&
+          Number.isFinite(requerido) &&
+          Number.isFinite(faltanteNumerico)
+        ) {
+          const sufijoUnidad = unidad ? ` ${unidad}` : ''
+          return `${ingrediente}: disponible ${disponible}${sufijoUnidad}, requerido ${requerido}${sufijoUnidad}, faltante ${faltanteNumerico}${sufijoUnidad}`
+        }
+
+        const plato = toText(dato.plato)
+        const mensaje = toText(dato.mensaje)
+        if (plato && mensaje) return `${plato}: ${mensaje}`
+        if (ingrediente && mensaje) return `${ingrediente}: ${mensaje}`
+        return mensaje || ingrediente || plato || 'Ingrediente o receta no disponible'
+      })
+
+      const detalleInventario = [...detallesErrores, ...detallesFaltantes].join('. ')
+      const mensajeError =
+        'No se puede crear el pedido porque hay ingredientes insuficientes o restricciones de receta.' +
+        (detalleInventario ? ` Detalle: ${detalleInventario}.` : '')
+
+      throw new PedidoServiceError(400, mensajeError, {
+        errores: validacionStock.errores,
+        faltantes: validacionStock.faltantes,
+      })
     }
+
+    const montoPropina = toNumber(datos.montoPropina)
+
     if (montoPropina < 0) {
-      throw new PedidoServiceError(400, 'El monto de propina no puede ser negativo')
+      throw new PedidoServiceError(
+        400,
+        'El monto de propina no puede ser negativo'
+      )
     }
 
     const totalCalculado = Number(
-      Math.max(0, subtotal - montoDescuento + montoPropina).toFixed(2)
+      (subtotal + montoPropina).toFixed(2)
     )
     const { codigo, fechaDiaBolivia } = await generarSiguienteCodigoPedido()
     const fechaHora = obtenerFechaBolivia()
@@ -473,7 +531,7 @@ export class PedidoService {
 
     // Se persiste como BORRADOR para conservar el código PED-XXXX en la vista previa.
     const nuevoPedidoDoc = await this.pedidoRepo.crear({
-      ...datos,
+           ...datosSinDescuento,
       _id: new Types.ObjectId(),
       codigo,
       fechaDiaBolivia,
@@ -481,7 +539,6 @@ export class PedidoService {
       detalles: detallesCalculados,
       total: totalCalculado,
       subtotalCierre: subtotal,
-      montoDescuento,
       montoPropina,
       mesa: mesaIdString,
       usuario: usuarioResponsable,
@@ -575,12 +632,26 @@ export class PedidoService {
       await session.withTransaction(async () => {
         const validacion = await inventarioService.verificarYDescontarStock(
           itemsParaValidar,
-          session
+          session,
+          true,
         )
         if (!validacion.success) {
+          const detallesErrores = validacion.errores
+            .filter((mensaje) => typeof mensaje === 'string' && mensaje.trim().length > 0)
+
+          const detallesFaltantes = validacion.faltantes.map((faltante) => {
+            const unidad = faltante.unidad ? ` ${faltante.unidad}` : ''
+            return `${faltante.ingrediente}: disponible ${faltante.disponible}${unidad}, requerido ${faltante.requerido}${unidad}, faltante ${faltante.faltante}${unidad}`
+          })
+
+          const detalleInventario = [...detallesErrores, ...detallesFaltantes].join('. ')
+          const mensajeError =
+            'No se puede enviar el pedido por restricciones de receta o ingredientes insuficientes.' +
+            (detalleInventario ? ` Detalle: ${detalleInventario}.` : '')
+
           throw new PedidoServiceError(
             400,
-            'No se puede enviar el pedido por restricciones de receta o ingredientes insuficientes.',
+            mensajeError,
             { errores: validacion.errores, faltantes: validacion.faltantes }
           )
         }
@@ -1276,14 +1347,13 @@ export class PedidoService {
       throw new PedidoServiceError(400, 'Los datos de actualización no son válidos')
     }
     const body: PedidoActualizacionEntrada = bodyEntrada
-    const {
+       const {
       total,
       detalles,
       clienteNombre,
       clienteCI,
       clienteNIT,
       cajeroAsignado,
-      montoDescuento,
       montoPropina,
       subtotalCierre,
       estado
@@ -1323,10 +1393,6 @@ export class PedidoService {
         400,
         'No se permite modificar el estado del pedido directamente mediante este endpoint.'
       )
-    }
-
-    if (montoDescuento !== undefined && toNumber(montoDescuento, Number.NaN) < 0) {
-      throw new PedidoServiceError(400, 'El monto de descuento no puede ser negativo')
     }
     if (montoPropina !== undefined && toNumber(montoPropina, Number.NaN) < 0) {
       throw new PedidoServiceError(400, 'El monto de propina no puede ser negativo')
@@ -1392,27 +1458,29 @@ export class PedidoService {
       }
     }
 
-    if (montoDescuento !== undefined) updates.montoDescuento = toNumber(montoDescuento)
-    if (montoPropina !== undefined) updates.montoPropina = toNumber(montoPropina)
+        if (montoPropina !== undefined) {
+      updates.montoPropina = toNumber(montoPropina)
+    }
 
     // Subtotal y total siempre se recalculan en backend a partir de los valores permitidos.
-    const finalSub = updates.subtotalCierre !== undefined
+        const finalSub = updates.subtotalCierre !== undefined
       ? updates.subtotalCierre
       : toNumber(pedidoAnterior.subtotalCierre || pedidoAnterior.total)
-    const finalDesc = updates.montoDescuento !== undefined
-      ? updates.montoDescuento
-      : toNumber(pedidoAnterior.montoDescuento)
+
     const finalProp = updates.montoPropina !== undefined
       ? updates.montoPropina
       : toNumber(pedidoAnterior.montoPropina)
 
     if (
       updates.detalles !== undefined ||
-      updates.montoDescuento !== undefined ||
       updates.montoPropina !== undefined
     ) {
-      updates.total = Number(Math.max(0, finalSub - finalDesc + finalProp).toFixed(2))
-      if (!updates.subtotalCierre && (!pedidoAnterior.subtotalCierre || pedidoAnterior.subtotalCierre === 0)) {
+      updates.total = Number((finalSub + finalProp).toFixed(2))
+
+      if (
+        !updates.subtotalCierre &&
+        (!pedidoAnterior.subtotalCierre || pedidoAnterior.subtotalCierre === 0)
+      ) {
         updates.subtotalCierre = finalSub
       }
     }

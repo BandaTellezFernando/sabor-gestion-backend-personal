@@ -38,8 +38,7 @@ cuentaMesa?: mongoose.Types.ObjectId
   detalles: IDetallePedido[]
   qrUrl?: string
   // Campos para el cierre de caja y comprobante
-  metodoPago?: string
-  montoDescuento?: number
+    metodoPago?: string
   montoPropina?: number
   subtotalCierre?: number
   clienteNombre?: string
@@ -86,7 +85,6 @@ cuentaMesa: {
       enum: METODOS_PAGO,
       required: false
     },
-    montoDescuento: { type: Number, default: 0, min: 0 },
     montoPropina: { type: Number, default: 0, min: 0 },
     subtotalCierre: { type: Number, default: 0, min: 0 },
     clienteNombre: { type: String, required: false },

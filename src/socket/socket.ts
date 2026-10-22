@@ -1,7 +1,15 @@
-import { Server as SocketIOServer, Socket, DefaultEventsMap } from 'socket.io'
+
+//src/socket/socket.ts
+import {
+  Server as SocketIOServer,
+  Socket,
+  DefaultEventsMap
+} from 'socket.io'
 import { Server as HTTPServer } from 'http'
+import mongoose from 'mongoose'
 import jwt from 'jsonwebtoken'
 import { UsuarioTokenPayload } from '../middlewares/auth.middleware'
+import Usuario from '../models/Usuario'
 import { ALLOWED_ORIGINS } from '../utils/constants'
 
 export interface UsuarioSocketPayload extends UsuarioTokenPayload {
@@ -25,37 +33,89 @@ let io: SocketIOServer<
   DefaultEventsMap,
   DefaultEventsMap,
   CustomSocketData
->
+> | undefined
 
-export const autenticarSocket = (socket: CustomSocket, next: (err?: Error) => void) => {
+export const autenticarSocket = async (
+  socket: CustomSocket,
+  next: (err?: Error) => void
+): Promise<void> => {
   try {
     const authToken = socket.handshake.auth?.token
     const authHeader = socket.handshake.headers.authorization
 
-    const token =
-      (typeof authToken === 'string' ? authToken : null) ||
-      (typeof authHeader === 'string' ? authHeader.split(' ')[1] : null)
+    let token: string | null = null
+
+    if (
+      typeof authToken === 'string' &&
+      authToken.trim() !== ''
+    ) {
+      token = authToken.trim()
+    } else if (typeof authHeader === 'string') {
+      const coincidencia = /^Bearer\s+(\S+)$/i.exec(
+        authHeader.trim()
+      )
+
+      token = coincidencia?.[1] ?? null
+    }
 
     if (!token) {
-      console.log(`⚡ Socket rechazado (sin token) id=${socket.id}`)
       return next(new Error('Unauthorized'))
     }
 
-    if (!process.env.JWT_SECRET) {
-      console.error('⚡ FATAL ERROR: JWT_SECRET no está configurado en el servidor para WebSockets.')
+    const jwtSecret = process.env.JWT_SECRET
+
+    if (!jwtSecret) {
+      console.error(
+        'FATAL ERROR: JWT_SECRET no está configurado para WebSockets.'
+      )
       return next(new Error('Unauthorized'))
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET) as UsuarioSocketPayload
+    const decoded = jwt.verify(token, jwtSecret)
 
-    // Guardar info de usuario en el socket para usos posteriores
-    socket.data = socket.data || {}
-    socket.data.usuario = decoded
+    if (
+      typeof decoded !== 'object' ||
+      decoded === null ||
+      typeof decoded.id !== 'string' ||
+      !mongoose.Types.ObjectId.isValid(decoded.id) ||
+      typeof decoded.exp !== 'number' ||
+      decoded.exp * 1000 <= Date.now()
+    ) {
+      return next(new Error('Unauthorized'))
+    }
 
-    return next()
-  } catch {
-    console.log(`⚡ Socket rechazado (token inválido) id=${socket.id}`)
-    return next(new Error('Unauthorized'))
+    // Verificar la cuenta y los permisos actuales en MongoDB.
+    const usuario = await Usuario.findById(decoded.id)
+      .select('rol estado')
+      .lean()
+      .exec()
+
+    if (
+      !usuario ||
+      usuario.estado === false ||
+      typeof usuario.rol !== 'string' ||
+      !usuario.rol.trim()
+    ) {
+      return next(new Error('Unauthorized'))
+    }
+
+    // No confiar en el rol antiguo incluido en el JWT.
+    socket.data.usuario = {
+      id: String(usuario._id),
+      rol: usuario.rol,
+      iat:
+        typeof decoded.iat === 'number'
+          ? decoded.iat
+          : undefined,
+      exp: decoded.exp
+    }
+
+    next()
+  } catch{
+    console.warn(
+      'Socket rechazado: token inválido o sesión no verificable.'
+    )
+    next(new Error('Unauthorized'))
   }
 }
 
@@ -73,26 +133,64 @@ export const initSocket = (httpServer: HTTPServer) => {
     }
   })
 
-  // Middleware de autenticación para el handshake de socket
   io.use(autenticarSocket)
 
   io.on('connection', (socket: CustomSocket) => {
-    const rolUsuario = socket.data?.usuario?.rol
-    console.log(`⚡ Usuario conectado: ${socket.id} (Rol: ${rolUsuario || 'Desconocido'})`)
+    const usuario = socket.data.usuario
 
-    if (rolUsuario === 'Mesero') {
+    if (!usuario || typeof usuario.exp !== 'number') {
+      socket.disconnect(true)
+      return
+    }
+
+    const expiracionMs = usuario.exp * 1000 - Date.now()
+
+    if (expiracionMs <= 0) {
+      socket.emit('auth:unauthorized', {
+        mensaje: 'Tu sesión ha expirado. Inicia sesión nuevamente.'
+      })
+      socket.disconnect(true)
+      return
+    }
+
+    // Desconectar el socket al caducar su JWT.
+    const temporizadorExpiracion = setTimeout(() => {
+      socket.emit('auth:unauthorized', {
+        mensaje: 'Tu sesión ha expirado. Inicia sesión nuevamente.'
+      })
+      socket.disconnect(true)
+    }, expiracionMs)
+
+    temporizadorExpiracion.unref?.()
+
+    const rolUsuario = usuario.rol
+
+    console.log(
+      `Usuario conectado por Socket.IO: ${socket.id} (Rol: ${rolUsuario})`
+    )
+
+       const rolNormalizado = rolUsuario.toLowerCase()
+
+    if (rolNormalizado === 'mesero') {
       socket.join('room:meseros')
-    } else if (rolUsuario === 'Cajero') {
+      socket.join('room:mesas')
+    } else if (rolNormalizado === 'cajero') {
       socket.join('room:caja')
+      socket.join('room:mesas')
+    } else if (rolNormalizado === 'cocinero') {
+      socket.join('room:cocina')
+    } else if (rolNormalizado === 'administrador') {
+      socket.join('room:meseros')
+      socket.join('room:caja')
+      socket.join('room:cocina')
+      socket.join('room:mesas')
     }
 
-    const usuarioId = socket.data?.usuario?.id
-    if (usuarioId) {
-      socket.join(`user:${usuarioId}`)
-    }
+    socket.join(`user:${usuario.id}`)
 
     socket.on('disconnect', () => {
-      console.log(`🔥 Usuario desconectado: ${socket.id}`)
+      clearTimeout(temporizadorExpiracion)
+      console.log(`Usuario desconectado: ${socket.id}`)
     })
   })
 
@@ -103,5 +201,6 @@ export const getIO = () => {
   if (!io) {
     throw new Error('Socket.io no ha sido inicializado')
   }
+
   return io
 }

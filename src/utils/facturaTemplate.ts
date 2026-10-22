@@ -13,13 +13,22 @@ export interface DatosFactura {
   meseroNombre: string
   clienteNombre: string
   clienteCI: string
-  subtotal: number
-  descuento: number
+   subtotal: number
   propina: number
   totalFinal: number
   metodoPago?: string
   fecha?: string
   items: ItemFactura[]
+}
+
+
+function escaparHtml(valor: string | number): string {
+  return String(valor)
+    .replace(/&/g, '&amp;')
+       .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 /**
@@ -34,7 +43,6 @@ export function generarPlantillaFacturaHTML(datos: DatosFactura): string {
     clienteNombre,
     clienteCI,
     subtotal,
-    descuento,
     propina,
     totalFinal,
     metodoPago = 'Efectivo',
@@ -47,10 +55,12 @@ export function generarPlantillaFacturaHTML(datos: DatosFactura): string {
   const listaItems = items || []
 
   listaItems.forEach((item) => {
-    const nombre = item.nombre || 'Plato'
-    const cantidad = item.cantidad || 1
+        const nombre = escaparHtml(item.nombre || 'Plato')
+    const cantidad = escaparHtml(item.cantidad || 1)
     const pu = Number(item.precioUnitario || 0).toFixed(2)
-    const subt = Number(item.subtotal || parseFloat(pu) * cantidad).toFixed(2)
+    const subt = Number(
+      item.subtotal || Number(pu) * item.cantidad
+    ).toFixed(2)
 
     itemsHtml += `
         <tr>
@@ -67,16 +77,16 @@ export function generarPlantillaFacturaHTML(datos: DatosFactura): string {
         <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 420px; margin: auto; padding: 30px; border: 1px solid #e5e7eb; border-radius: 12px; background-color: #ffffff; color: #374151; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
           
           <div style="text-align: center; margin-bottom: 20px;">
-            <h2 style="color: #4B2E2D; margin: 0; font-size: 24px; font-weight: 900;">SABOR & GESTIÓN</h2>
+                      <h2 style="color: #4B2E2D; margin: 0; font-size: 24px; font-weight: 900;">Mishi-Food</h2>
             <p style="margin: 5px 0 0 0; color: #6B7280; font-size: 14px;">Comprobante de Pago</p>
-            <p style="margin: 5px 0 0 0; font-weight: bold; color: #D96C4A;">Pedido: ${codigo}</p>
+            <p style="margin: 5px 0 0 0; font-weight: bold; color: #D96C4A;">Pedido: ${escaparHtml(codigo)}</p>
           </div>
 
           <div style="font-size: 13px; line-height: 1.6; margin-bottom: 20px;">
-            <p style="margin: 0;"><strong>Mesa:</strong> ${mesaNombre}</p>
-            <p style="margin: 0;"><strong>Mesero:</strong> ${meseroNombre}</p>
-            <p style="margin: 0;"><strong>Cliente:</strong> ${clienteNombre}</p>
-            <p style="margin: 0;"><strong>CI/NIT:</strong> ${clienteCI}</p>
+                     <p style="margin: 0;"><strong>Mesa:</strong> ${escaparHtml(mesaNombre)}</p>
+          <p style="margin: 0;"><strong>Mesero:</strong> ${escaparHtml(meseroNombre)}</p>
+          <p style="margin: 0;"><strong>Cliente:</strong> ${escaparHtml(clienteNombre)}</p>
+          <p style="margin: 0;"><strong>CI/NIT:</strong> ${escaparHtml(clienteCI)}</p>
           </div>
 
           <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 20px;">
@@ -95,14 +105,13 @@ export function generarPlantillaFacturaHTML(datos: DatosFactura): string {
 
           <div style="text-align: right; font-size: 13px; border-bottom: 2px solid #e5e7eb; padding-bottom: 15px; margin-bottom: 15px;">
             <p style="margin: 3px 0;">Subtotal: <span style="display: inline-block; width: 80px;">Bs. ${subtotal.toFixed(2)}</span></p>
-            ${descuento > 0 ? `<p style="margin: 3px 0; color: #059669;">Descuento: <span style="display: inline-block; width: 80px;">- Bs. ${descuento.toFixed(2)}</span></p>` : ''}
             ${propina > 0 ? `<p style="margin: 3px 0; color: #D96C4A;">Propina: <span style="display: inline-block; width: 80px;">+ Bs. ${propina.toFixed(2)}</span></p>` : ''}
             <h3 style="margin: 10px 0 0 0; color: #111827; font-size: 18px;">TOTAL FINAL: <span style="display: inline-block; width: 100px;">Bs. ${totalFinal.toFixed(2)}</span></h3>
           </div>
 
           <div style="font-size: 12px; color: #6B7280; text-align: center;">
-            <p style="margin: 2px 0;"><strong>Método de Pago:</strong> ${metodoPago}</p>
-            <p style="margin: 2px 0;"><strong>Fecha:</strong> ${fecha}</p>
+                      <p style="margin: 2px 0;"><strong>Método de Pago:</strong> ${escaparHtml(metodoPago)}</p>
+          <p style="margin: 2px 0;"><strong>Fecha:</strong> ${escaparHtml(fecha)}</p>
             <br/>
             <p style="margin: 0; font-weight: bold; color: #4B2E2D; font-size: 14px;">¡Gracias por su preferencia!</p>
           </div>

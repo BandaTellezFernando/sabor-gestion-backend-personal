@@ -1,5 +1,5 @@
 // src/repositories/usuarios.repo.ts
-import { Types } from 'mongoose'
+import { ClientSession, Types } from 'mongoose'
 import Usuario, { IUsuario } from '../models/Usuario'
 import CierreCaja, { ICierreCaja } from '../models/CierreCaja'
 
@@ -34,11 +34,23 @@ export interface CierreCajaCrearDatos {
   efectivo?: number
   tarjeta?: number
   qr?: number
-  descuentos?: number
   propinas?: number
   pagosProcesados?: number
   fechaCierreBolivia?: string
   fechaCierre?: Date
+}
+
+export interface UsuarioSinPassword {
+  _id: Types.ObjectId
+  nombre: string
+  apellido: string
+  ci: string
+  email: string
+  rol: string
+  estado: boolean
+  verificado: boolean
+  createdAt?: Date
+  updatedAt?: Date
 }
 
 export class UsuarioRepository {
@@ -59,8 +71,17 @@ export class UsuarioRepository {
   /**
    * Busca un usuario por su identificador único incluyendo su hash de contraseña
    */
-  async buscarPorIdConPassword(id: string): Promise<IUsuario | null> {
-    return await Usuario.findById(id)
+    async buscarPorIdConPassword(
+    id: string,
+    session?: ClientSession
+  ): Promise<IUsuario | null> {
+    const consulta = Usuario.findById(id)
+
+    if (session) {
+      consulta.session(session)
+    }
+
+    return await consulta.exec()
   }
 
   /**
@@ -118,23 +139,39 @@ export class UsuarioRepository {
   /**
    * Cuenta cuántos cajeros con estado activo existen, con opción de excluir un usuario
    */
-  async contarCajerosActivos(excluirId?: string): Promise<number> {
-    const filtro: any = {
+     async contarCajerosActivos(
+    excluirId?: string,
+    session?: ClientSession
+  ): Promise<number> {
+    if (
+      excluirId !== undefined &&
+      !Types.ObjectId.isValid(excluirId)
+    ) {
+      throw new Error(
+        'El identificador del cajero no es válido.'
+      )
+    }
+
+    const filtro = {
       rol: { $regex: /^cajero$/i },
-      estado: true
+      estado: true,
+      ...(excluirId
+        ? {
+            _id: {
+              $ne: new Types.ObjectId(excluirId)
+            }
+          }
+        : {})
     }
 
-    if (excluirId) {
-      filtro._id = {
-        $ne: Types.ObjectId.isValid(excluirId)
-          ? new Types.ObjectId(excluirId)
-          : excluirId
-      }
+    const consulta = Usuario.countDocuments(filtro)
+
+    if (session) {
+      consulta.session(session)
     }
 
-    return await Usuario.countDocuments(filtro)
+    return await consulta.exec()
   }
-
   /**
    * Crea y guarda un nuevo usuario en MongoDB
    */
@@ -162,15 +199,26 @@ export class UsuarioRepository {
   /**
    * Actualiza exclusivamente el estado activo/inactivo de un usuario
    */
-  async actualizarEstado(id: string, estado: boolean): Promise<any | null> {
-    return await Usuario.findByIdAndUpdate(
+    async actualizarEstado(
+    id: string,
+    estado: boolean,
+    session?: ClientSession
+  ): Promise<UsuarioSinPassword | null> {
+    const consulta = Usuario.findByIdAndUpdate(
       id,
       { estado },
-      { returnDocument: 'after' }
+      {
+        returnDocument: 'after',
+        ...(session ? { session } : {})
+      }
     )
       .select('-password')
-      .lean()
+      .lean<UsuarioSinPassword>()
+
+    return await consulta.exec()
   }
+
+
 
   /**
    * Elimina físicamente un usuario por su identificador único
@@ -179,12 +227,32 @@ export class UsuarioRepository {
     return await Usuario.findByIdAndDelete(id)
   }
 
+    async buscarUltimoCierreCaja(
+    cajeroId: string,
+    session?: ClientSession
+  ): Promise<ICierreCaja | null> {
+    const consulta = CierreCaja.findOne({ cajeroId })
+      .sort({ fechaCierre: -1 })
+
+    if (session) {
+      consulta.session(session)
+    }
+
+    return await consulta.exec()
+  }
+
   /**
    * Registra un nuevo documento de cierre de caja en la base de datos
    */
-  async registrarCierreCaja(datos: CierreCajaCrearDatos): Promise<ICierreCaja> {
+    async registrarCierreCaja(
+    datos: CierreCajaCrearDatos,
+    session?: ClientSession
+  ): Promise<ICierreCaja> {
     const nuevoCierre = new CierreCaja(datos)
-    return await nuevoCierre.save()
+
+    return await nuevoCierre.save(
+      session ? { session } : undefined
+    )
   }
 }
 

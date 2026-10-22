@@ -1,4 +1,5 @@
 // src/repositories/mesa.repo.ts
+import { ESTADOS_MESA } from '../utils/constants'
 import mongoose, { Types, ClientSession } from 'mongoose'
 import Mesa, { IMesa } from '../models/Mesa'
 
@@ -51,17 +52,18 @@ export class MesaRepository {
     return (await Mesa.find(filtro).populate('ubicacionId', 'nombre')) as MesaPobladaDoc[]
   }
 
-  /**
+   /**
    * Busca una mesa por su ID con su ubicación poblada.
+   * Permite participar en transacciones MongoDB.
    */
   async buscarPorId(
-  id: string,
-  session?: ClientSession
-): Promise<MesaPobladaDoc | null> {
-  return (await Mesa.findById(id)
-    .session(session ?? null)
-    .populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
-}
+    id: string,
+    session?: ClientSession
+  ): Promise<MesaPobladaDoc | null> {
+    return (await Mesa.findById(id)
+      .session(session ?? null)
+      .populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
+  }
 
   /**
    * Busca si existe una mesa con el mismo número (insensible a mayúsculas/minúsculas),
@@ -176,6 +178,38 @@ export class MesaRepository {
       id,
       { estado: backendStatus },
       { returnDocument: 'after', session, runValidators: true }
+    ).populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
+  }
+
+    /**
+   * Cambia una mesa ocupada a Cuenta Solicitada.
+   * Solo permite la transición desde Ocupada o si ya está
+   * en Cuenta Solicitada.
+   */
+  async marcarCuentaSolicitadaSiOcupada(
+    id: string,
+    session?: ClientSession
+  ): Promise<MesaPobladaDoc | null> {
+    return (await Mesa.findOneAndUpdate(
+      {
+        _id: id,
+        estado: {
+          $in: [
+            ESTADOS_MESA.OCUPADA,
+            ESTADOS_MESA.CUENTA_SOLICITADA
+          ]
+        }
+      },
+      {
+        $set: {
+          estado: ESTADOS_MESA.CUENTA_SOLICITADA
+        }
+      },
+      {
+        returnDocument: 'after',
+        session,
+        runValidators: true
+      }
     ).populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
   }
 

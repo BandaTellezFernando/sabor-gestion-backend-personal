@@ -1,3 +1,4 @@
+//src/server.ts
 import app from './app.js'
 import { connectDB } from './configs/db.js'
 import dotenv from 'dotenv'

@@ -13,7 +13,7 @@ export const crearMesa = async (req: Request, res: Response): Promise<void> => {
     const resultado = await mesaService.crearMesa(req.body)
 
     try {
-      getIO().emit('mesas:created', resultado)
+      getIO().to('room:mesas').emit('mesas:created', resultado)
     } catch (e) {
       console.warn('Socket error', e)
     }
@@ -65,7 +65,7 @@ export const actualizarMesa = async (req: Request, res: Response): Promise<void>
     const mesaActualizada = await mesaService.actualizarMesa(id, req.body)
 
     try {
-      getIO().emit('mesas:updated', mesaActualizada)
+      getIO().to('room:mesas').emit('mesas:updated', mesaActualizada)
     } catch (e) {
       console.warn('Error al emitir mesas:updated en actualizarMesa:', e)
     }
@@ -95,7 +95,7 @@ export const actualizarEstadoMesa = async (req: CustomRequest, res: Response): P
     )
 
     try {
-      getIO().emit('mesas:updated', mesaActualizada)
+      getIO().to('room:mesas').emit('mesas:updated', mesaActualizada)
     } catch (e) {
       console.warn('Error al emitir mesas:updated en actualizarEstadoMesa:', e)
     }
@@ -192,7 +192,7 @@ export const eliminarMesa = async (req: Request, res: Response): Promise<void> =
     const mesaEliminada = await mesaService.eliminarMesa(id)
 
     try {
-      getIO().emit('mesas:deleted', mesaEliminada)
+      getIO().to('room:mesas').emit('mesas:deleted', mesaEliminada)
     } catch (e) {
       console.warn('Error al emitir mesas:deleted en eliminarMesa:', e)
     }

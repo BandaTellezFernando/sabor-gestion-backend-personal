@@ -1,4 +1,5 @@
 // src/services/inventario.service.ts
+import type { ClientSession } from 'mongoose'
 import { PlatoRepository, platoRepository } from '../repositories/plato.repo'
 import { RecetaRepository, recetaRepository } from '../repositories/receta.repo'
 import {
@@ -129,12 +130,14 @@ export class InventarioService {
   }
 
   /**
-   * Agrupa los consumos de todos los platos, verifica el stock numéricamente
-   * y lo descuenta de la base de datos atómicamente.
+   * Agrupa los consumos de todos los platos y verifica el stock numéricamente.
+   * Cuando descontarStock es false, solo valida y no modifica el inventario.
+   * Cuando es true, descuenta las cantidades de forma atómica en la sesión.
    */
   async verificarYDescontarStock(
     items: ItemValidacionInventario[],
-    session?: any,
+    session: ClientSession | undefined,
+    descontarStock: boolean,
   ): Promise<{
     success: boolean
     errores: string[]
@@ -191,6 +194,17 @@ export class InventarioService {
         }
 
         if (debeExcluirIngrediente(item.observacion || '', ingredienteDoc.nombre)) {
+          continue
+        }
+
+        if (ingredienteDoc.disponible === false) {
+          const mensaje = `El ingrediente \"${ingredienteDoc.nombre}\" no está disponible para preparar: ${nombrePlato}.`
+          errores.push(mensaje)
+          faltantes.push({
+            ingrediente: ingredienteDoc.nombre,
+            plato: nombrePlato,
+            mensaje: 'El ingrediente está marcado como no disponible',
+          })
           continue
         }
 
@@ -315,29 +329,32 @@ export class InventarioService {
       return { success: false, errores, faltantes, consumos: [] }
     }
 
-    // 3. Descontar atómicamente: si el stock cambió, no permitir un saldo negativo.
-    for (const [ingId, reqData] of consumoPorIngrediente.entries()) {
-      const updated = await IngredienteModel.findOneAndUpdate(
-        { _id: ingId, stockActual: { $gte: reqData.cantidad } },
-        [
-          {
-            $set: {
-              stockActual: {
-                $round: [
-                  { $subtract: ['$stockActual', reqData.cantidad] },
-                  9,
-                ],
+    // 3. Descontar solo cuando el flujo lo solicita expresamente.
+    // La validación de creación usa false y nunca muta stockActual.
+    if (descontarStock) {
+      for (const [ingId, reqData] of consumoPorIngrediente.entries()) {
+        const updated = await IngredienteModel.findOneAndUpdate(
+          { _id: ingId, stockActual: { $gte: reqData.cantidad } },
+          [
+            {
+              $set: {
+                stockActual: {
+                  $round: [
+                    { $subtract: ['$stockActual', reqData.cantidad] },
+                    9,
+                  ],
+                },
               },
             },
-          },
-        ],
-        { session, returnDocument: 'after', updatePipeline: true },
-      )
-
-      if (!updated) {
-        throw new Error(
-          'Condición de carrera: el stock de un ingrediente cambió y ya no es suficiente.',
+          ],
+          { session, returnDocument: 'after', updatePipeline: true },
         )
+
+        if (!updated) {
+          throw new Error(
+            'Condición de carrera: el stock de un ingrediente cambió y ya no es suficiente.',
+          )
+        }
       }
     }
 

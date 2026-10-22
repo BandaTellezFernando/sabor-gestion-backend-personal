@@ -1,86 +1,199 @@
-// src/models/Pago.ts
+//src/models/Pago.ts
 import mongoose, { Schema, Document } from 'mongoose'
-import { obtenerFechaBolivia, formatearFechaBolivia } from '../utils/fechaBolivia'
+import {
+  obtenerFechaBolivia,
+  formatearFechaBolivia
+} from '../utils/fechaBolivia'
 import { METODOS_PAGO } from '../utils/constants'
 
 export interface IPago extends Document {
   codigoPago: string
   codigoPedido: string
+
+  // Compatibilidad con pagos individuales existentes.
   pedido: mongoose.Types.ObjectId
+
+  // Relaciones adicionales para pagos agrupados.
+  cuentaMesa?: mongoose.Types.ObjectId
+  pedidos?: mongoose.Types.ObjectId[]
+
   mesa: mongoose.Types.ObjectId
   mesero: mongoose.Types.ObjectId
-  cajero?: mongoose.Types.ObjectId // Opcional porque se asigna cuando se procesa
+  cajero?: mongoose.Types.ObjectId
+
   nombreCliente?: string
   ci?: string
   nit?: string
+
   subtotal: number
-  descuento: number
   propina: number
   totalFinal: number
-  metodoPago?: string // Opcional al crear, obligatorio al pagar
+
+  metodoPago?: string
   estadoPago: string
+
   fechaEnvioCajaBolivia?: string
   fechaEnvioCaja: Date
   fechaPagoBolivia?: string
   fechaPago?: Date
   observaciones?: string
+
   createdAt: Date
   updatedAt: Date
 }
 
-const PagoSchema = new Schema(
+const PagoSchema = new Schema<IPago>(
   {
-    // 🔑 Identificación
-    codigoPago: { type: String, required: true, unique: true },
+    // Identificación del pago.
+    codigoPago: {
+      type: String,
+      required: true,
+      unique: true
+    },
 
-    // 🔗 Relaciones
-    // Nota: Asegúrate de que los nombres en "ref" coincidan con tus otros modelos exportados
-    codigoPedido: { type: String, required: true },
-    pedido: { type: Schema.Types.ObjectId, ref: 'Pedido', required: true },
-    mesa: { type: Schema.Types.ObjectId, ref: 'Mesa', required: true },
-    mesero: { type: Schema.Types.ObjectId, ref: 'Usuario', required: true }, // Asumo que el mesero viene de la tabla usuarios
-    cajero: { type: Schema.Types.ObjectId, ref: 'Usuario', default: null },
+    codigoPedido: {
+      type: String,
+      required: true
+    },
 
-    // 👤 Datos cliente
-    nombreCliente: { type: String, default: 'Consumidor Final' },
-    ci: { type: String, default: '' },
-    nit: { type: String, default: '' },
+    // Se conserva para no romper el flujo individual actual.
+    // En una cuenta agrupada, la relación canónica será cuentaMesa
+    // y pedidos contendrá todas las comandas cobradas.
+    pedido: {
+      type: Schema.Types.ObjectId,
+      ref: 'Pedido',
+      required: true
+    },
 
-    // 💰 Datos financieros
-    subtotal: { type: Number, required: true, min: 0 },
-    descuento: { type: Number, default: 0, min: 0 },
-    propina: { type: Number, default: 0, min: 0 },
-    totalFinal: { type: Number, required: true, min: 0 },
+    cuentaMesa: {
+      type: Schema.Types.ObjectId,
+      ref: 'CuentaMesa',
+      required: false
+    },
 
-    // 💳 Método de pago
+    pedidos: {
+      type: [{
+        type: Schema.Types.ObjectId,
+        ref: 'Pedido'
+      }],
+      default: undefined
+    },
+
+    mesa: {
+      type: Schema.Types.ObjectId,
+      ref: 'Mesa',
+      required: true
+    },
+
+    mesero: {
+      type: Schema.Types.ObjectId,
+      ref: 'Usuario',
+      required: true
+    },
+
+    cajero: {
+      type: Schema.Types.ObjectId,
+      ref: 'Usuario',
+      default: null
+    },
+
+    // Datos del cliente.
+    nombreCliente: {
+      type: String,
+      default: 'Consumidor Final',
+      trim: true
+    },
+
+    ci: {
+      type: String,
+      default: '',
+      trim: true
+    },
+
+    nit: {
+      type: String,
+      default: '',
+      trim: true
+    },
+
+    // Importes monetarios.
+    subtotal: {
+      type: Number,
+      required: true,
+      min: 0
+    },
+
+
+    propina: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+
+    totalFinal: {
+      type: Number,
+      required: true,
+      min: 0
+    },
+
+    // Método de pago.
     metodoPago: {
       type: String,
       enum: METODOS_PAGO,
-      default: null // Inicia nulo porque el cliente decide cómo pagar después de pedir la cuenta
+      default: null
     },
 
-    // 🚦 Estado del pago
+    // Estado del pago.
     estadoPago: {
       type: String,
       enum: ['Pendiente', 'Procesado', 'Pagado', 'Anulado'],
       default: 'Pendiente'
     },
 
-    // 🕒 Fechas
+    // Fechas.
     fechaEnvioCajaBolivia: {
       type: String,
       default: () => formatearFechaBolivia(obtenerFechaBolivia())
     },
-    fechaEnvioCaja: { type: Date, default: obtenerFechaBolivia },
-    fechaPagoBolivia: { type: String, required: false },
-    fechaPago: { type: Date, default: null },
-    // 📌 Información adicional
-    observaciones: { type: String, default: '' }
+
+    fechaEnvioCaja: {
+      type: Date,
+      default: obtenerFechaBolivia
+    },
+
+    fechaPagoBolivia: {
+      type: String,
+      required: false
+    },
+
+    fechaPago: {
+      type: Date,
+      default: null
+    },
+
+    observaciones: {
+      type: String,
+      default: ''
+    }
   },
   {
-    timestamps: true, // Esto crea automáticamente createdAt y updatedAt
+    timestamps: true,
     versionKey: false
   }
 )
+
+// Un mismo identificador de cuenta solo puede asociarse
+// a un registro de pago.
+PagoSchema.index(
+  { cuentaMesa: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      cuentaMesa: { $exists: true }
+    }
+  }
+)
+
+PagoSchema.index({ pedidos: 1 })
 
 export default mongoose.model<IPago>('Pago', PagoSchema)

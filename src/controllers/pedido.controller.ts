@@ -26,7 +26,7 @@ export const crearPedido = async (req: CustomRequest, res: Response): Promise<vo
           const mesaDTO = await mesaService.obtenerMesaPorId(
             resultado.mesaActualizada._id.toString()
           )
-          io.emit('mesas:updated', mesaDTO)
+          io.to('room:mesas').emit('mesas:updated', mesaDTO)
         } catch (mesaErr) {
           console.warn('Error al obtener mesa para mesas:updated:', mesaErr)
         }
@@ -75,8 +75,7 @@ export const enviarPedidoCocina = async (
     // Emitir el ticket a cocina solamente en el primer envío.
     if (!resultado.yaEnviado) {
       try {
-        getIO().emit('cocina:nuevo_pedido', resultado.pedido)
-      } catch (socketError) {
+getIO().to('room:cocina').emit('cocina:nuevo_pedido', resultado.pedido)      } catch (socketError) {
         console.warn(
           'Pedido enviado, pero falló la notificación a cocina:',
           socketError
@@ -215,7 +214,7 @@ export const actualizarEstadoPedido = async (req: Request, res: Response): Promi
       const io = getIO()
 
       // A) Mover la tarjeta en el tablero de cocina
-      io.emit('cocina:actualizar_tablero', pedidoActualizado)
+      io.to('room:cocina').emit('cocina:actualizar_tablero', pedidoActualizado)
 
       // B) Alerta "¡Listo!" hacia los meseros cuando el chef termina el pedido
       if (disparaAlertaListo) {
@@ -279,7 +278,7 @@ export const actualizarPedido = async (req: CustomRequest, res: Response): Promi
     }
 
     try {
-      getIO().emit('cocina:actualizar_tablero', resultado.pedidoDoc)
+      getIO().to('room:cocina').emit('cocina:actualizar_tablero', resultado.pedidoDoc)
     } catch (e) {
       console.warn('Error al emitir cocina:actualizar_tablero en actualizarPedido:', e)
     }
@@ -358,7 +357,7 @@ export const solicitarCuentaPedido = async (
             mesaActualizada._id.toString()
           )
 
-          io.emit('mesas:updated', mesaDTO)
+          io.to('room:mesas').emit('mesas:updated', mesaDTO)
         }
       } catch (mesaErr) {
         console.warn(
@@ -408,7 +407,7 @@ export const marcarPedidoRecogido = async (
     // Emitir eventos Socket.IO para sincronizar Cocina en tiempo real
     try {
       const io = getIO()
-      io.emit('cocina:pedido_recogido', {
+      io.to('room:cocina').emit('cocina:pedido_recogido', {
         pedidoId: resultado.pedido._id ? resultado.pedido._id.toString() : String(id),
         codigo: resultado.pedido.codigo,
         mesaId: resultado.pedido.mesa?._id || resultado.pedido.mesa,
@@ -417,7 +416,7 @@ export const marcarPedidoRecogido = async (
         recogidoPor: usuarioAuthId,
         fechaRecogida: resultado.fechaRecogida
       })
-      io.emit('cocina:actualizar_tablero', resultado.pedido)
+      io.to('room:cocina').emit('cocina:actualizar_tablero', resultado.pedido)
     } catch (socketError) {
       console.warn(
         'Pedido marcado como recogido, pero falló la notificación Socket.IO:',

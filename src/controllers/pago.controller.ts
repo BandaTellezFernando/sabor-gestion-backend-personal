@@ -2,25 +2,22 @@
 import { Request, Response } from 'express'
 import { CustomRequest } from '../middlewares/auth.middleware'
 import { getIO } from '../socket/socket'
-import { obtenerFechaBolivia } from '../utils/fechaBolivia'
 import { pagoService, PagoServiceError } from '../services/pago.service'
 import { mesaService } from '../services/mesa.service'
 
 /**
- * 1. Generador de QR estático con ID y total del pedido
+ * Ruta antigua de QR por pedido, retirada.
+ * Los pagos QR deben utilizar el flujo seguro de cuenta con token.
  */
-export const generarPagoQR = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const pedidoId = String(req.params.pedidoId)
-    const resultado = await pagoService.generarPagoQR(pedidoId)
-    res.json(resultado)
-  } catch (error) {
-    if (error instanceof PagoServiceError) {
-      res.status(error.statusCode).json({ mensaje: error.message })
-      return
-    }
-    res.status(500).json({ mensaje: 'Error al generar QR' })
-  }
+export const generarPagoQR = async (
+  _req: Request,
+  res: Response
+): Promise<void> => {
+  res.status(410).json({
+    exito: false,
+    mensaje:
+      'El QR por pedido fue retirado. Utiliza el flujo QR de cuenta con token.'
+  })
 }
 
 /**
@@ -30,11 +27,9 @@ export const generarPagoQR = async (req: Request, res: Response): Promise<void> 
 export const procesarPagoFinal = async (req: CustomRequest, res: Response): Promise<void> => {
   try {
     const pedidoId = String(req.params.pedidoId)
-    const {
+        const {
       metodoPago,
-      porcentajeDescuento = 0,
       porcentajePropina = 0,
-      montoDescuento,
       montoPropina,
       subtotalCierre,
       cajeroAsignado,
@@ -48,12 +43,10 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
 
     const cajeroId = (req as any).usuario?.id
 
-    const resultado = await pagoService.procesarPagoFinal({
+        const resultado = await pagoService.procesarPagoFinal({
       pedidoId,
       metodoPago,
-      porcentajeDescuento,
       porcentajePropina,
-      montoDescuento,
       montoPropina,
       subtotalCierre,
       cajeroAsignado,
@@ -66,7 +59,7 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
     // Eventos WebSocket (fuera de la transacción — no son operaciones de BD críticas)
     try {
       const io = getIO()
-      io.emit('cocina:actualizar_tablero', resultado.pedidoActualizado)
+      io.to('room:cocina').emit('cocina:actualizar_tablero', resultado.pedidoActualizado)
 
       if (resultado.pedidoActualizado.mesa) {
         const mesaIdStr = (
@@ -76,12 +69,12 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
 
         try {
           const mesaDTO = await mesaService.obtenerMesaPorId(mesaIdStr)
-          io.emit('mesas:updated', mesaDTO)
+          io.to('room:mesas').emit('mesas:updated', mesaDTO)
         } catch (mesaErr) {
           console.warn('Error al obtener mesa poblada para mesas:updated:', mesaErr)
         }
 
-        io.emit('mesas:pago_completado', {
+       io.to('room:mesas').emit('mesas:pago_completado', {
           mesaId: mesaIdStr,
           mesaNombre: mesaNombre,
           pedidoId: resultado.pedidoActualizado._id.toString(),
@@ -92,9 +85,10 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
       console.warn('Pago guardado, pero falló la emisión del WebSocket:', socketError)
     }
 
-    res.status(200).json({
+        res.status(200).json({
       mensaje: 'Pago procesado exitosamente',
-      comprobante: resultado.comprobante
+      comprobante: resultado.comprobante,
+      comprobantePdf: resultado.comprobantePdf
     })
   } catch (error) {
     if (error instanceof PagoServiceError) {
@@ -107,45 +101,18 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
 }
 
 /**
- * 3. Simulador de Pago desde Celular (QR Dinámico)
+ * Ruta antigua de notificación QR, retirada.
+ * Una notificación no constituye un pago registrado.
  */
-export const simularPagoQR = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const pedidoId = String(req.params.pedidoId)
-    const pedido = await pagoService.obtenerPedidoParaSimulacion(pedidoId)
-
-    // Emitimos los WebSockets correspondientes
-    try {
-      const io = getIO()
-
-      // 1. Avisar a la caja
-      io.emit('caja:pago_confirmado', {
-        pedidoId,
-        mensaje: 'Transferencia QR recibida',
-        fecha: obtenerFechaBolivia()
-      })
-
-      // 2. Avisar al cliente en tiempo real
-      io.emit(`pedido:pago_recibido:${pedidoId}`, {
-        pedidoId,
-        mensaje: 'Pago QR recibido correctamente',
-        pedido
-      })
-    } catch (socketError) {
-      console.warn('Falló la emisión del WebSocket de simulación:', socketError)
-    }
-
-    res.status(200).json({
-      exito: true,
-      mensaje: 'Simulación de pago exitosa. Notificando a la caja...'
-    })
-  } catch (error) {
-    if (error instanceof PagoServiceError) {
-      res.status(error.statusCode).json({ mensaje: error.message })
-      return
-    }
-    res.status(500).json({ mensaje: 'Error al simular el pago' })
-  }
+export const simularPagoQR = async (
+  _req: Request,
+  res: Response
+): Promise<void> => {
+  res.status(410).json({
+    exito: false,
+    mensaje:
+      'Esta confirmación QR fue retirada. Utiliza el flujo QR de cuenta con token.'
+  })
 }
 
 /**
@@ -153,15 +120,18 @@ export const simularPagoQR = async (req: Request, res: Response): Promise<void> 
  */
 export const enviarReciboCorreo = async (req: Request, res: Response): Promise<void> => {
   try {
-    const pedidoId = String(req.params.pedidoId)
-    const { email, clienteNombre, clienteCI } = req.body
+       const pedidoId = String(req.params.pedidoId)
+    const email =
+      typeof req.body?.email === 'string'
+        ? req.body.email.trim()
+        : ''
 
     if (!email) {
       res.status(400).json({ mensaje: 'Debe proporcionar un correo electrónico' })
       return
     }
 
-    await pagoService.enviarReciboCorreo(pedidoId, email, clienteNombre, clienteCI)
+       await pagoService.enviarReciboCorreo(pedidoId, email)
 
     res.status(200).json({ mensaje: 'Recibo enviado por correo exitosamente' })
   } catch (error) {

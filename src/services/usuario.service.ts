@@ -12,6 +12,11 @@ import {
   formatearFechaHoraBolivia
 } from '../utils/fechaBolivia'
 import { getIO } from '../socket/socket'
+import mongoose from 'mongoose'
+import {
+  PagoRepository,
+  pagoRepository
+} from '../repositories/pago.repo'
 
 export class UsuarioServiceError extends Error {
   constructor(
@@ -51,7 +56,6 @@ export interface ReporteCierreCajaDTO {
   efectivo?: number
   tarjeta?: number
   qr?: number
-  descuentos?: number
   propinas?: number
   pagosProcesados?: number
 }
@@ -76,7 +80,7 @@ export interface UsuarioNormalizado {
 
 export interface ResultadoCambioEstado {
   estado: boolean
-  usuario: any
+  usuario: UsuarioNormalizado
 }
 
 export interface ResultadoLoginUsuario {
@@ -85,10 +89,15 @@ export interface ResultadoLoginUsuario {
 }
 
 export class UsuarioService {
-  private usuarioRepo: UsuarioRepository
+    private usuarioRepo: UsuarioRepository
+  private pagoRepo: PagoRepository
 
-  constructor(usuarioRepo?: UsuarioRepository) {
+  constructor(
+    usuarioRepo?: UsuarioRepository,
+    pagoRepo?: PagoRepository
+  ) {
     this.usuarioRepo = usuarioRepo || usuarioRepository
+    this.pagoRepo = pagoRepo || pagoRepository
   }
 
   /**
@@ -271,90 +280,255 @@ export class UsuarioService {
       datosActualizados.password = await bcrypt.hash(dto.password, salt)
     }
 
-    const usuarioActualizado = await this.usuarioRepo.actualizar(id, datosActualizados)
-    if (!usuarioActualizado) {
-      throw new UsuarioServiceError(404, 'Usuario no encontrado tras actualizar')
-    }
+    
+const usuarioActualizado = await this.usuarioRepo.actualizar(
+  id,
+  datosActualizados
+)
 
-    return this.normalizarUsuario(usuarioActualizado)
+if (!usuarioActualizado) {
+  throw new UsuarioServiceError(
+    404,
+    'Usuario no encontrado tras actualizar'
+  )
+}
+
+const cambioDeRol =
+  dto.rol !== undefined &&
+  dto.rol !== usuarioActual.rol
+
+const cambioDePassword =
+  typeof dto.password === 'string' &&
+  dto.password.trim() !== ''
+
+if (cambioDeRol || cambioDePassword) {
+  try {
+    const io = getIO()
+    const salaUsuario = `user:${String(usuarioActualizado._id)}`
+
+    io.to(salaUsuario).emit('auth:unauthorized', {
+      mensaje:
+        'Tu sesión debe reiniciarse porque cambiaron tus permisos o credenciales.',
+      usuarioId: String(usuarioActualizado._id)
+    })
+
+    io.in(salaUsuario).disconnectSockets(true)
+  } catch (error: unknown) {
+    console.error(
+      'No se pudieron revocar las sesiones tras cambiar los permisos o la contraseña:',
+      error
+    )
+  }
+}
+
+return this.normalizarUsuario(usuarioActualizado)
+
   }
 
   /**
    * Cambia el estado activo/inactivo de un usuario aplicando reglas estrictas de Cajero y Cierre de Caja
    */
-  async cambiarEstadoUsuario(
+   async cambiarEstadoUsuario(
     id: string,
     dto: UsuarioCambioEstadoDTO,
     usuarioAuth?: ContextoAutenticacionUsuario
   ): Promise<ResultadoCambioEstado> {
-    const estadoBool =
-      typeof dto.estado === 'string' ? dto.estado === 'true' : Boolean(dto.estado)
-
-    // 1. Si el rol del usuario autenticado es Cajero, solo puede cambiar su propia caja
-    if (
-      usuarioAuth &&
-      usuarioAuth.rol.toLowerCase() === 'cajero' &&
-      usuarioAuth.id !== id
-    ) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       throw new UsuarioServiceError(
-        403,
-        'Acceso denegado. Un cajero solo puede cambiar el estado de su propia caja.'
+        400,
+        'El identificador del usuario no es válido.'
       )
     }
 
-    // 2. Mínimo 1 caja activa en el sistema al intentar desactivar
-    if (estadoBool === false) {
-      const usuarioTarget = await this.usuarioRepo.buscarPorId(id)
-      if (usuarioTarget && usuarioTarget.rol.toLowerCase() === 'cajero') {
-        const cajerosActivosRestantes = await this.usuarioRepo.contarCajerosActivos(id)
+    let estadoBool: boolean
+
+    if (typeof dto.estado === 'boolean') {
+      estadoBool = dto.estado
+    } else if (
+      typeof dto.estado === 'string' &&
+      dto.estado.trim().toLowerCase() === 'true'
+    ) {
+      estadoBool = true
+    } else if (
+      typeof dto.estado === 'string' &&
+      dto.estado.trim().toLowerCase() === 'false'
+    ) {
+      estadoBool = false
+    } else {
+      throw new UsuarioServiceError(
+        400,
+        'El estado debe ser true o false.'
+      )
+    }
+
+    if (
+      usuarioAuth &&
+      usuarioAuth.rol.toLowerCase() === 'cajero' &&
+      usuarioAuth.id.toLowerCase() !== id.toLowerCase()
+    ) {
+      throw new UsuarioServiceError(
+        403,
+        'Un cajero solo puede cambiar el estado de su propia caja.'
+      )
+    }
+
+    const session = await mongoose.startSession()
+
+    let usuarioResultado: UsuarioNormalizado | null = null
+
+    try {
+      session.startTransaction()
+
+      const usuarioTarget =
+        await this.usuarioRepo.buscarPorIdConPassword(
+          id,
+          session
+        )
+
+      if (!usuarioTarget) {
+        throw new UsuarioServiceError(
+          404,
+          'Usuario no encontrado.'
+        )
+      }
+
+      const esCajero =
+        usuarioTarget.rol.toLowerCase() === 'cajero'
+
+      const debeCerrarCaja =
+        estadoBool === false &&
+        esCajero &&
+        usuarioTarget.estado !== false
+
+      if (debeCerrarCaja) {
+        const cajerosActivosRestantes =
+          await this.usuarioRepo.contarCajerosActivos(
+            id,
+            session
+          )
+
         if (cajerosActivosRestantes === 0) {
           throw new UsuarioServiceError(
             400,
             'Debe existir al menos una caja activa en el sistema.'
           )
         }
+
+        const fechaCierre = obtenerFechaBolivia()
+
+        const ultimoCierre =
+          await this.usuarioRepo.buscarUltimoCierreCaja(
+            id,
+            session
+          )
+
+        const inicioDia = new Date(
+          fechaCierre.getFullYear(),
+          fechaCierre.getMonth(),
+          fechaCierre.getDate(),
+          0,
+          0,
+          0,
+          0
+        )
+
+        const desdeFecha =
+          ultimoCierre?.fechaCierre ?? inicioDia
+
+        if (desdeFecha > fechaCierre) {
+          throw new UsuarioServiceError(
+            409,
+            'La fecha del último cierre es posterior a la fecha actual.'
+          )
+        }
+
+        const resumen =
+          await this.pagoRepo.calcularResumenCierreCaja(
+            id,
+            desdeFecha,
+            fechaCierre,
+            session
+          )
+
+        const cajeroNombre =
+          `${usuarioTarget.nombre} ${usuarioTarget.apellido || ''}`.trim()
+
+        await this.usuarioRepo.registrarCierreCaja(
+          {
+            cajeroId: id,
+            cajeroNombre,
+            totalDia: resumen.totalDia,
+            efectivo: resumen.efectivo,
+            tarjeta: resumen.tarjeta,
+            qr: resumen.qr,
+            propinas: resumen.propinas,
+            pagosProcesados: resumen.pagosProcesados,
+            fechaCierreBolivia:
+              formatearFechaBolivia(fechaCierre),
+            fechaCierre
+          },
+          session
+        )
       }
+
+      const usuarioActualizado =
+        await this.usuarioRepo.actualizarEstado(
+          id,
+          estadoBool,
+          session
+        )
+
+      if (!usuarioActualizado) {
+        throw new UsuarioServiceError(
+          404,
+          'Usuario no encontrado al actualizar su estado.'
+        )
+      }
+
+      usuarioResultado =
+        this.normalizarUsuario(usuarioActualizado)
+
+      await session.commitTransaction()
+    } catch (error: unknown) {
+      if (session.inTransaction()) {
+        await session.abortTransaction()
+      }
+
+      throw error
+    } finally {
+      await session.endSession()
     }
 
-    const usuarioActualizado = await this.usuarioRepo.actualizarEstado(id, estadoBool)
-    if (!usuarioActualizado) {
-      throw new UsuarioServiceError(404, 'Usuario no encontrado')
+    if (!usuarioResultado) {
+      throw new UsuarioServiceError(
+        500,
+        'No se pudo obtener el usuario actualizado.'
+      )
     }
 
-    // 3. Registro automático de cierre de caja en MongoDB si aplica
-    if (estadoBool === false && dto.reporte) {
-      const fechaCierre = obtenerFechaBolivia()
-      await this.usuarioRepo.registrarCierreCaja({
-        cajeroId: id,
-        cajeroNombre: `${usuarioActualizado.nombre} ${usuarioActualizado.apellido || ''}`.trim(),
-        totalDia: dto.reporte.totalDia || 0,
-        efectivo: dto.reporte.efectivo || 0,
-        tarjeta: dto.reporte.tarjeta || 0,
-        qr: dto.reporte.qr || 0,
-        descuentos: dto.reporte.descuentos || 0,
-        propinas: dto.reporte.propinas || 0,
-        pagosProcesados: dto.reporte.pagosProcesados || 0,
-        fechaCierreBolivia: formatearFechaBolivia(fechaCierre),
-        fechaCierre
-      })
-    }
-
-    // 4. Notificar vía socket si el usuario es desactivado
     if (estadoBool === false) {
       try {
         const io = getIO()
-        io.to(`user:${id}`).emit('auth:unauthorized', {
-          mensaje: 'Tu cuenta ha sido desactivada por un administrador.',
-          usuarioId: id
+        const salaUsuario = `user:${usuarioResultado.id}`
+
+        io.to(salaUsuario).emit('auth:unauthorized', {
+          mensaje:
+            'Tu cuenta ha sido desactivada por un administrador.',
+          usuarioId: usuarioResultado.id
         })
-      } catch (e) {
-        console.error('No se pudo emitir evento socket auth:unauthorized', e)
+
+        io.in(salaUsuario).disconnectSockets(true)
+      } catch (error: unknown) {
+        console.error(
+          'No se pudieron revocar las sesiones del usuario desactivado:',
+          error
+        )
       }
     }
 
     return {
       estado: estadoBool,
-      usuario: this.normalizarUsuario(usuarioActualizado)
+      usuario: usuarioResultado
     }
   }
 
@@ -367,15 +541,24 @@ export class UsuarioService {
       throw new UsuarioServiceError(404, 'Usuario no encontrado')
     }
 
+    
     try {
       const io = getIO()
-      io.to(`user:${id}`).emit('auth:unauthorized', {
+      const salaUsuario = `user:${id.toLowerCase()}`
+
+      io.to(salaUsuario).emit('auth:unauthorized', {
         mensaje: 'Tu cuenta ha sido eliminada del sistema.',
         usuarioId: id
       })
-    } catch (e) {
-      console.error('No se pudo emitir evento socket auth:unauthorized', e)
+
+      io.in(salaUsuario).disconnectSockets(true)
+    } catch (error: unknown) {
+      console.error(
+        'No se pudieron revocar las sesiones del usuario eliminado:',
+        error
+      )
     }
+
   }
 
   /**

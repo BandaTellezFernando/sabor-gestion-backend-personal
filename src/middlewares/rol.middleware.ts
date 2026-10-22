@@ -1,26 +1,32 @@
-// src/middlewares/rol.middleware.ts
+//src/middlewares/rol.middleware.ts
 import { Response, NextFunction } from 'express'
 import { CustomRequest } from './auth.middleware'
 
 export const permitirRoles = (...rolesPermitidos: string[]) => {
-  return (req: CustomRequest, res: Response, next: NextFunction): any => {
+  return (
+    req: CustomRequest,
+    res: Response,
+    next: NextFunction
+  ): void => {
     if (!req.usuario) {
-      return res.status(401).json({
+      res.status(401).json({
         mensaje: 'Acceso denegado. Usuario no autenticado.'
       })
+      return
     }
 
-    const userRole = String(req.usuario.rol || '')
-      .toLowerCase()
-      .trim()
-    const allowed = rolesPermitidos.some((role) => {
-      return role.toLowerCase().trim() === userRole
-    })
+    const userRole = req.usuario.rol.toLowerCase().trim()
 
-    if (!allowed) {
-      return res.status(403).json({
-        mensaje: 'Acceso denegado. No tienes permisos para realizar esta acción.'
+    const permitido = rolesPermitidos.some(
+      (role) => role.toLowerCase().trim() === userRole
+    )
+
+    if (!permitido) {
+      res.status(403).json({
+        mensaje:
+          'Acceso denegado. No tienes permisos para realizar esta acción.'
       })
+      return
     }
 
     next()

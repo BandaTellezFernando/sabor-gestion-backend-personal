@@ -44,6 +44,20 @@ export class PedidoRepository {
 }
 
   /**
+   * Recupera los detalles y el mesero de un pedido para el comprobante.
+   * Participa en la transacción del pago.
+   */
+  async buscarPorIdPobladoParaComprobante(
+    id: string | Types.ObjectId,
+    session?: ClientSession
+  ): Promise<IPedido | null> {
+    return await Pedido.findById(id)
+      .session(session ?? null)
+      .populate('detalles.plato', 'nombre precio')
+      .populate('usuario', 'nombre apellido apellidos')
+  }
+
+  /**
    * Busca un pedido por ID con populate completo para cocina y meseros
    */
   async buscarPorIdPoblado(id: string | Types.ObjectId): Promise<IPedido | null> {
@@ -318,6 +332,114 @@ async marcarCanceladoSiCancelable(
 ]
       }
     }).session(session || null)
+  }
+    /**
+   * Obtiene todas las comandas no cerradas ni canceladas de una mesa.
+   * Incluye borradores para que el servicio pueda detectar si existe
+   * una comanda que impida consolidar la cuenta.
+   */
+  async buscarPedidosActivosPorMesaParaCuenta(
+    mesaId: string | Types.ObjectId,
+    session?: ClientSession
+  ): Promise<IPedido[]> {
+    return await Pedido.find({
+      mesa: mesaId,
+      estado: {
+        $nin: [
+          ESTADOS_PEDIDO.CERRADO,
+          ESTADOS_PEDIDO.CANCELADO
+        ]
+      }
+    })
+      .session(session ?? null)
+      .sort({ createdAt: 1 })
+      .populate('mesa', 'numero estado')
+      .populate('usuario', 'nombre apellido apellidos')
+      .populate('detalles.plato', 'nombre precio')
+  }
+
+  /**
+   * Obtiene las comandas vinculadas a una cuenta específica.
+   */
+  async buscarPedidosPorCuentaMesa(
+    cuentaMesaId: string | Types.ObjectId,
+    session?: ClientSession
+  ): Promise<IPedido[]> {
+    return await Pedido.find({
+      cuentaMesa: cuentaMesaId
+    })
+      .session(session ?? null)
+      .sort({ createdAt: 1 })
+      .populate('mesa', 'numero estado')
+      .populate('usuario', 'nombre apellido apellidos')
+      .populate('detalles.plato', 'nombre precio')
+  }
+  /**
+   * Asocia únicamente comandas entregadas y recogidas
+   * que todavía no pertenezcan a otra cuenta.
+   */
+  async asignarCuentaMesa(
+    pedidoIds: Array<string | Types.ObjectId>,
+    cuentaMesaId: string | Types.ObjectId,
+    session?: ClientSession
+  ): Promise<number> {
+    if (pedidoIds.length === 0) return 0
+
+    const resultado = await Pedido.updateMany(
+      {
+  _id: { $in: pedidoIds },
+  cuentaMesa: null,
+  estado: {
+    $in: [
+      ESTADOS_PEDIDO.LISTO,
+      ESTADOS_PEDIDO.ENTREGADO
+    ]
+  },
+  recogido: true
+},
+      {
+        $set: { cuentaMesa: cuentaMesaId }
+      },
+      {
+        session,
+        runValidators: true
+      }
+    )
+
+    return resultado.modifiedCount
+  }
+
+    /**
+   * Cierra únicamente las comandas entregadas y recogidas
+   * asociadas a la cuenta, dentro de la transacción del pago.
+   */
+  async cerrarPedidosDeCuentaMesa(
+    cuentaMesaId: string | Types.ObjectId,
+    session: ClientSession
+  ): Promise<number> {
+    const resultado = await Pedido.updateMany(
+      {
+  cuentaMesa: cuentaMesaId,
+  estado: {
+    $in: [
+      ESTADOS_PEDIDO.LISTO,
+      ESTADOS_PEDIDO.ENTREGADO
+    ]
+  },
+  recogido: true
+},
+      {
+        $set: {
+          estado: ESTADOS_PEDIDO.CERRADO
+        }
+      },
+      {
+        session,
+        runValidators: true
+      }
+    )
+
+    return resultado.modifiedCount
   }
 }
 

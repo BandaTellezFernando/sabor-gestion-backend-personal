@@ -6,6 +6,15 @@ import { PagoCrearDatos } from '../types/pago.types'
 export { IPago } from '../models/Pago'
 export { PagoCrearDatos } from '../types/pago.types'
 
+export interface ResumenCierreCaja {
+  totalDia: number
+  efectivo: number
+  tarjeta: number
+  qr: number
+  propinas: number
+  pagosProcesados: number
+}
+
 export class PagoRepository {
   /**
    * Crea y persiste un nuevo registro en la colección 'pagos'.
@@ -45,6 +54,39 @@ export class PagoRepository {
       .populate('cajero', 'nombre apellido')
   }
 
+    async buscarPagoIndividualPagadoPorPedidoId(
+    pedidoId: string
+  ): Promise<IPago | null> {
+    if (!Types.ObjectId.isValid(pedidoId)) {
+      return null
+    }
+
+    return await Pago.findOne({
+      pedido: new Types.ObjectId(pedidoId),
+      cuentaMesa: null,
+      estadoPago: 'Pagado'
+    }).exec()
+  }
+
+    /**
+   * Busca el pago asociado a una cuenta de mesa.
+   * Permite consultar dentro de una transacción MongoDB.
+   */
+  async buscarPorCuentaMesa(
+    cuentaMesaId: string | Types.ObjectId,
+    session?: ClientSession
+  ): Promise<IPago | null> {
+    return await Pago.findOne({
+      cuentaMesa: cuentaMesaId
+    })
+      .session(session ?? null)
+      .populate('mesa', 'numero ubicacion')
+      .populate('mesero', 'nombre apellido')
+      .populate('cajero', 'nombre apellido')
+      .populate('cuentaMesa')
+      .populate('pedidos', 'codigo total estado')
+  }
+
   /**
    * Busca un pago por su código alfanumérico único (ej. PAG-XXXXXX).
    */
@@ -63,6 +105,97 @@ export class PagoRepository {
       .sort({ createdAt: -1 })
   }
 
+
+    async calcularResumenCierreCaja(
+    cajeroId: string,
+    desdeFecha: Date,
+    hastaFecha: Date,
+    session?: ClientSession
+  ): Promise<ResumenCierreCaja> {
+    if (!Types.ObjectId.isValid(cajeroId)) {
+      throw new Error('El identificador del cajero no es válido.')
+    }
+
+    const consulta = Pago.aggregate<ResumenCierreCaja>([
+      {
+        $match: {
+          cajero: new Types.ObjectId(cajeroId),
+          estadoPago: 'Pagado',
+          fechaPago: {
+            $gt: desdeFecha,
+            $lte: hastaFecha
+          }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalDia: {
+            $sum: { $ifNull: ['$totalFinal', 0] }
+          },
+          efectivo: {
+            $sum: {
+              $cond: [
+                { $eq: ['$metodoPago', 'Efectivo'] },
+                { $ifNull: ['$totalFinal', 0] },
+                0
+              ]
+            }
+          },
+          tarjeta: {
+            $sum: {
+              $cond: [
+                { $eq: ['$metodoPago', 'Tarjeta'] },
+                { $ifNull: ['$totalFinal', 0] },
+                0
+              ]
+            }
+          },
+          qr: {
+            $sum: {
+              $cond: [
+                { $eq: ['$metodoPago', 'QR'] },
+                { $ifNull: ['$totalFinal', 0] },
+                0
+              ]
+            }
+          },
+          propinas: {
+            $sum: { $ifNull: ['$propina', 0] }
+          },
+          pagosProcesados: {
+            $sum: 1
+          }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          totalDia: { $round: ['$totalDia', 2] },
+          efectivo: { $round: ['$efectivo', 2] },
+          tarjeta: { $round: ['$tarjeta', 2] },
+          qr: { $round: ['$qr', 2] },
+          propinas: { $round: ['$propinas', 2] },
+          pagosProcesados: 1
+        }
+      }
+    ])
+
+    if (session) {
+      consulta.session(session)
+    }
+
+    const resultados = await consulta.exec()
+
+    return resultados[0] ?? {
+      totalDia: 0,
+      efectivo: 0,
+      tarjeta: 0,
+      qr: 0,
+      propinas: 0,
+      pagosProcesados: 0
+    }
+  }
   /**
    * Cuenta la cantidad de pagos que coinciden con un criterio de búsqueda.
    */

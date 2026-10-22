@@ -1,51 +1,123 @@
 //src/middlewares/auth.middleware.ts
+
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
+import mongoose from 'mongoose'
+import Usuario from '../models/Usuario'
 
-// 1. Definimos la estructura exacta de nuestro Token
+// Estructura de identidad utilizada por los controladores.
 export interface UsuarioTokenPayload {
   id: string
   rol: string
 }
 
-// Extendemos la interfaz Request de Express para que acepte nuestro usuario
+// Express Request con la identidad autenticada.
 export interface CustomRequest extends Request {
   usuario?: UsuarioTokenPayload
 }
 
-export const verificarToken = (
+export const verificarToken = async (
   req: CustomRequest,
   res: Response,
   next: NextFunction
-): void | Response => {
+): Promise<void> => {
+  const tokenHeader = req.header('Authorization')
+
+  if (!tokenHeader) {
+    res.status(401).json({
+      mensaje: 'Acceso denegado. No se proporcionó un token.'
+    })
+    return
+  }
+
+  // Exigir el formato exacto: Authorization: Bearer <token>
+  const partes = tokenHeader.trim().split(/\s+/)
+
+  if (
+    partes.length !== 2 ||
+    partes[0] !== 'Bearer' ||
+    !partes[1]
+  ) {
+    res.status(401).json({
+      mensaje: 'Formato del token de autenticación inválido.'
+    })
+    return
+  }
+
+  const jwtSecret = process.env.JWT_SECRET
+
+  if (!jwtSecret) {
+    console.error(
+      'FATAL ERROR: JWT_SECRET no está configurado.'
+    )
+
+    res.status(500).json({
+      mensaje: 'Error de configuración de autenticación.'
+    })
+    return
+  }
+
+  let payload: jwt.JwtPayload
+
+  // Primero validar la firma y la expiración del token.
   try {
-    // 1. Obtener el token del header (viene como "Bearer eyJhbGci...")
-    const tokenHeader = req.header('Authorization')
-    console.log(`\n[MIDDLEWARE] Verificando Token...`)
-    if (!tokenHeader) {
-      console.log(` [MIDDLEWARE] Bloqueado: No hay token en la petición.`)
-      return res.status(401).json({ mensaje: 'Acceso denegado. No se proporcionó un token.' })
+    const decoded = jwt.verify(partes[1], jwtSecret)
+
+    if (
+      typeof decoded !== 'object' ||
+      decoded === null ||
+      typeof decoded.id !== 'string' ||
+      !mongoose.Types.ObjectId.isValid(decoded.id)
+    ) {
+      res.status(401).json({
+        mensaje: 'Token inválido o expirado.'
+      })
+      return
     }
 
-    // 2. Extraer solo el token (quitamos la palabra "Bearer ")
-    const token = tokenHeader.split(' ')[1]
-
-    if (!process.env.JWT_SECRET) {
-      throw new Error('FATAL ERROR: JWT_SECRET no está configurado en el servidor.')
-    }
-
-    // 3. Verificar si el token es real y no ha expirado
-    const decoded = jwt.verify(token, process.env.JWT_SECRET) as UsuarioTokenPayload
-
-    // 4. Guardar los datos del usuario en la petición para usarlos después
-    req.usuario = decoded
-
-    console.log(` [MIDDLEWARE] Token válido. Usuario Rol: ${req.usuario.rol}`)
-
-    // 5. ¡Pase adelante! (Va al siguiente middleware o controlador)
-    next()
+    payload = decoded
   } catch {
-    console.log(` [MIDDLEWARE] Bloqueado: Token falso o expirado.`)
-    return res.status(401).json({ mensaje: 'Token inválido o expirado.' })
+    res.status(401).json({
+      mensaje: 'Token inválido o expirado.'
+    })
+    return
+  }
+
+  // Después comprobar la existencia, el estado y el rol actuales.
+  try {
+    const usuario = await Usuario.findById(payload.id)
+      .select('rol estado')
+      .lean()
+      .exec()
+
+    if (
+      !usuario ||
+      usuario.estado === false ||
+      typeof usuario.rol !== 'string' ||
+      !usuario.rol.trim()
+    ) {
+      res.status(401).json({
+        mensaje:
+          'La sesión ya no es válida. Inicia sesión nuevamente.'
+      })
+      return
+    }
+
+    // No confiar en el rol antiguo incluido en el JWT.
+    req.usuario = {
+      id: String(usuario._id),
+      rol: usuario.rol
+    }
+
+    next()
+  } catch (error: unknown) {
+    console.error(
+      'Error al comprobar el estado del usuario autenticado:',
+      error
+    )
+
+    res.status(500).json({
+      mensaje: 'No se pudo validar la sesión.'
+    })
   }
 }
