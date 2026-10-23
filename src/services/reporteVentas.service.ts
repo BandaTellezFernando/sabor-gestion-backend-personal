@@ -1,3 +1,4 @@
+//src/services/reporteVentas.service.ts
 import Pago from '../models/Pago'
 import Pedido from '../models/Pedido'
 import Plato from '../models/Plato'
@@ -318,11 +319,8 @@ export async function generarReporteVentasBuffer(
     const meseroResponsable = pedido.usuario
       ? usuarioPorId.get(String(pedido.usuario))
       : undefined
-    const usuario = meseroQueRecogio?.rol?.toLowerCase() === 'mesero'
-      ? meseroQueRecogio
-      : meseroResponsable?.rol?.toLowerCase() === 'mesero'
-        ? meseroResponsable
-        : undefined
+    // Prioriza al usuario que recogió el pedido; si no existe, usa al responsable.
+const usuario = meseroQueRecogio ?? meseroResponsable
     const claveMesero = usuario ? String(usuario._id) : 'sin-mesero'
     const nombreMesero = usuario
       ? `${usuario.nombre ?? ''} ${usuario.apellido ?? ''}`.trim() || 'Mesero sin nombre'

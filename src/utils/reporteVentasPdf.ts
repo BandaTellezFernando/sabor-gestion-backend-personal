@@ -1,3 +1,4 @@
+//src/utils/reporteVentasPdf.ts
 import PDFDocument from 'pdfkit'
 import type { DatosReporteVentas } from '../services/reporteVentas.service'
 
@@ -224,7 +225,7 @@ export async function generarReporteVentasPdf(
       info: {
         Title: 'Reporte general de ventas - Mishi-Food',
         Author: 'Mishi-Food',
-        Subject: 'Ventas, propinas, métodos de pago, meseros y productos'
+        Subject: 'Ventas, propinas, métodos de pago, responsables y productos'
       }
     })
 
@@ -307,15 +308,15 @@ export async function generarReporteVentasPdf(
         formatoDinero(metodo.total)
       ]))
 
-      tituloSeccion(documento, '3. Rendimiento por mesero')
+      tituloSeccion(documento, '3. Rendimiento por responsable')
       documento
         .font('Helvetica')
         .fontSize(8)
         .fillColor(COLOR_SECUNDARIO)
-        .text('Se consideran pedidos vinculados a pagos confirmados; se usa el mesero que recogió el pedido y, si no está registrado, el mesero responsable del pedido.')
+        .text('Se consideran pedidos vinculados a pagos confirmados; se usa el usuario que recogió el pedido y, si no está registrado, el usuario responsable del pedido.')
       documento.moveDown(0.4)
       dibujarTabla(documento, [
-        { titulo: 'Mesero', proporcion: 0.48 },
+        { titulo: 'Responsable', proporcion: 0.48 },
         { titulo: 'Pedidos cobrados', proporcion: 0.2, alinear: 'right' },
         { titulo: 'Importe de pedidos', proporcion: 0.32, alinear: 'right' }
       ], datos.meseros.map((mesero) => [
