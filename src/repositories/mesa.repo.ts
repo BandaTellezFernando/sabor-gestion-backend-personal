@@ -81,13 +81,15 @@ export class MesaRepository {
   }
 
   /**
-   * Crea una sola mesa y la devuelve con su ubicación poblada.
+   * Crea una sola mesa o actualiza una existente con el mismo número (upsert seguro)
+   * y la devuelve con su ubicación poblada, evitando errores E11000 duplicate key.
    */
   async crearIndividual(datos: MesaCrearDatos): Promise<MesaPobladaDoc> {
+    const numeroTrim = (datos.numero || '').trim()
     const base: Partial<IMesa> = {
-      numero: datos.numero,
+      numero: numeroTrim,
       capacidad: datos.capacidad,
-      estado: datos.estado
+      estado: datos.estado || 'Libre'
     }
 
     if (datos.location !== undefined) {
@@ -98,41 +100,75 @@ export class MesaRepository {
       }
     }
 
-    const nuevaMesa = new Mesa(base)
-    await nuevaMesa.save()
+    const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const regex = new RegExp(`^${escapeRegex(numeroTrim)}$`, 'i')
 
-    return (await Mesa.findById(nuevaMesa._id).populate(
-      'ubicacionId',
-      'nombre'
-    )) as MesaPobladaDoc
+    // 1. Si la mesa ya existe por número (insensible a mayúsculas/minúsculas), actualizarla
+    const existente = await Mesa.findOne({ numero: regex })
+    if (existente) {
+      existente.capacidad = datos.capacidad
+      existente.estado = datos.estado || 'Libre'
+      if (datos.location !== undefined) {
+        if (mongoose.Types.ObjectId.isValid(datos.location)) {
+          existente.ubicacionId = new mongoose.Types.ObjectId(datos.location)
+          existente.set('ubicacion', undefined)
+        } else {
+          existente.ubicacion = datos.location
+          existente.set('ubicacionId', undefined)
+        }
+      }
+      await existente.save()
+      return (await Mesa.findById(existente._id).populate(
+        'ubicacionId',
+        'nombre'
+      )) as MesaPobladaDoc
+    }
+
+    // 2. Si no existe, crearla protegiendo contra posibles condiciones de carrera (E11000)
+    try {
+      const nuevaMesa = new Mesa(base)
+      await nuevaMesa.save()
+
+      return (await Mesa.findById(nuevaMesa._id).populate(
+        'ubicacionId',
+        'nombre'
+      )) as MesaPobladaDoc
+    } catch (err: any) {
+      if (err?.code === 11000 || err?.name === 'MongoServerError') {
+        const colision = await Mesa.findOne({ numero: regex })
+        if (colision) {
+          colision.capacidad = datos.capacidad
+          colision.estado = datos.estado || 'Libre'
+          if (datos.location !== undefined) {
+            if (mongoose.Types.ObjectId.isValid(datos.location)) {
+              colision.ubicacionId = new mongoose.Types.ObjectId(datos.location)
+              colision.set('ubicacion', undefined)
+            } else {
+              colision.ubicacion = datos.location
+              colision.set('ubicacionId', undefined)
+            }
+          }
+          await colision.save()
+          return (await Mesa.findById(colision._id).populate(
+            'ubicacionId',
+            'nombre'
+          )) as MesaPobladaDoc
+        }
+      }
+      throw err
+    }
   }
 
   /**
    * Crea un lote de mesas y las devuelve todas con su ubicación poblada.
+   * Utiliza crearIndividual para garantizar upsert seguro y prevenir colisiones E11000.
    */
   async crearLote(datosLote: MesaCrearDatos[]): Promise<MesaPobladaDoc[]> {
-    const inputs = datosLote.map((item) => {
-      const base: Partial<IMesa> = {
-        numero: item.numero,
-        capacidad: item.capacidad,
-        estado: item.estado
-      }
-
-      if (item.location) {
-        if (mongoose.Types.ObjectId.isValid(item.location)) {
-          base.ubicacionId = new mongoose.Types.ObjectId(item.location)
-        } else {
-          base.ubicacion = item.location
-        }
-      }
-      return base
-    })
-
-    const nuevasMesas = await Mesa.insertMany(inputs)
-
-    return (await Mesa.find({
-      _id: { $in: nuevasMesas.map((m) => m._id) }
-    }).populate('ubicacionId', 'nombre')) as MesaPobladaDoc[]
+    const resultados: MesaPobladaDoc[] = []
+    for (const item of datosLote) {
+      resultados.push(await this.crearIndividual(item))
+    }
+    return resultados
   }
 
   /**

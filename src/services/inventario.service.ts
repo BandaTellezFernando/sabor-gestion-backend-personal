@@ -198,7 +198,7 @@ export class InventarioService {
         }
 
         if (ingredienteDoc.disponible === false) {
-          const mensaje = `El ingrediente \"${ingredienteDoc.nombre}\" no está disponible para preparar: ${nombrePlato}.`
+          const mensaje = `El ingrediente "${ingredienteDoc.nombre}" no está disponible para preparar: ${nombrePlato}.`
           errores.push(mensaje)
           faltantes.push({
             ingrediente: ingredienteDoc.nombre,
