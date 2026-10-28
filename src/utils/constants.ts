@@ -7,6 +7,17 @@ export const ESTADOS_MESA = {
   CUENTA_SOLICITADA: 'Cuenta Solicitada'
 } as const
 
+export const ESTADOS_FUSION_MESA = {
+  INDIVIDUAL: 'Individual',
+  FUSIONADA: 'Fusionada',
+  INTEGRADA: 'Integrada',
+  DISUELTA: 'Disuelta',
+  CANCELADA: 'Cancelada'
+} as const
+
+export type EstadoFusionMesa =
+  (typeof ESTADOS_FUSION_MESA)[keyof typeof ESTADOS_FUSION_MESA]
+
 export const ESTADOS_PEDIDO = {
   BORRADOR: 'BORRADOR',
   PENDIENTE: 'PENDIENTE',

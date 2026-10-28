@@ -1,5 +1,9 @@
 
 //src/services/cuentaMesaPago.service.ts
+import {
+  mesaFusionService,
+  MesaFusionServiceError
+} from './mesaFusion.service'
 import mongoose, { Types } from 'mongoose'
 import { enviarCorreo } from './email.service'
 import {
@@ -832,6 +836,24 @@ export class CuentaMesaPagoService {
             'No se pudo liberar la mesa. El pago fue revertido.'
           )
         }
+
+        // Si el pago corresponde a una mesa fusionada,
+// restaurar las mesas originales dentro de esta misma transacción.
+try {
+  await mesaFusionService.separarTrasPago(
+    cuenta.mesa.toString(),
+    session
+  )
+} catch (error: unknown) {
+  if (error instanceof MesaFusionServiceError) {
+    throw new CuentaMesaPagoServiceError(
+      error.statusCode,
+      error.message
+    )
+  }
+
+  throw error
+}
                 // Preparar el detalle de todos los pedidos del comprobante.
         // Esta consulta utiliza la misma sesión de la transacción.
         const pedidosComprobante: PedidoComprobantePdf[] = []

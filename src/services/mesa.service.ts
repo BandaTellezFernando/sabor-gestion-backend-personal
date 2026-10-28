@@ -16,6 +16,12 @@ import {
   PedidoRepository,
   pedidoRepository
 } from '../repositories/pedido.repo'
+import {
+  ESTADOS_FUSION_MESA,
+  type EstadoFusionMesa
+} from '../utils/constants'
+
+import type { MesaOrigenFusion } from '../models/Mesa'
 
 export class MesaServiceError extends Error {
   constructor(
@@ -49,6 +55,21 @@ export interface MesaResponseDTO {
   location: string
   locationId: string | null
   status: string
+
+  estadoFusion: EstadoFusionMesa
+  fusionadaEn: string | null
+
+  mesasOrigen: {
+    mesaId: string
+    numero: string
+    capacidad: number
+    ubicacion: string
+    ubicacionId: string | null
+  }[]
+
+  fusionDisueltaAt: Date | null
+  fusionCanceladaAt: Date | null
+
   createdAt: Date
   updatedAt: Date
 }
@@ -169,6 +190,26 @@ export class MesaService {
             ? String(ubicacionRef)
             : null,
       status: this.estadoBackendToFrontend(m.estado),
+            estadoFusion: m.estadoFusion ?? ESTADOS_FUSION_MESA.INDIVIDUAL,
+
+      fusionadaEn: m.fusionadaEn
+        ? String(m.fusionadaEn)
+        : null,
+
+      mesasOrigen: (m.mesasOrigen ?? []).map(
+        (origen: MesaOrigenFusion) => ({
+          mesaId: String(origen.mesaId),
+          numero: origen.numero,
+          capacidad: origen.capacidad,
+          ubicacion: origen.ubicacion,
+          ubicacionId: origen.ubicacionId
+            ? String(origen.ubicacionId)
+            : null
+        })
+      ),
+
+      fusionDisueltaAt: m.fusionDisueltaAt ?? null,
+      fusionCanceladaAt: m.fusionCanceladaAt ?? null,
       createdAt: m.createdAt,
       updatedAt: m.updatedAt
     }
@@ -231,6 +272,20 @@ export class MesaService {
   async actualizarMesa(id: string, body: MesaPayloadDTO): Promise<MesaResponseDTO> {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       throw new MesaServiceError(400, 'ID de mesa inválido')
+    }
+        const mesaActual = await this.mesaRepo.buscarPorId(id)
+
+    if (!mesaActual) {
+      throw new MesaServiceError(404, 'Mesa no encontrada')
+    }
+
+    if (
+      mesaActual.estadoFusion !== ESTADOS_FUSION_MESA.INDIVIDUAL
+    ) {
+      throw new MesaServiceError(
+        409,
+        'Solo se pueden editar mesas individuales. Las mesas fusionadas, integradas o históricas requieren su operación específica.'
+      )
     }
 
     const datosActualizar: MesaActualizarDatos = {}
@@ -323,6 +378,22 @@ export class MesaService {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       throw new MesaServiceError(400, 'ID de mesa inválido')
     }
+        const mesaActual = await this.mesaRepo.buscarPorId(id)
+
+    if (!mesaActual) {
+      throw new MesaServiceError(404, 'Mesa no encontrada')
+    }
+
+    const esMesaOperativa =
+      mesaActual.estadoFusion === ESTADOS_FUSION_MESA.INDIVIDUAL ||
+      mesaActual.estadoFusion === ESTADOS_FUSION_MESA.FUSIONADA
+
+    if (!esMesaOperativa) {
+      throw new MesaServiceError(
+        409,
+        'No se puede cambiar el estado de una mesa integrada o histórica.'
+      )
+    }
 
     if (estado === undefined || estado === null) {
       throw new MesaServiceError(400, 'El estado de la mesa es requerido')
@@ -401,9 +472,19 @@ export class MesaService {
       throw new MesaServiceError(400, 'ID de mesa inválido')
     }
 
+
+
     const mesa = await this.mesaRepo.buscarPorId(id)
     if (!mesa) {
       throw new MesaServiceError(404, 'Mesa no encontrada')
+    }
+        if (
+      mesa.estadoFusion !== ESTADOS_FUSION_MESA.INDIVIDUAL
+    ) {
+      throw new MesaServiceError(
+        409,
+        'No se puede eliminar una mesa fusionada, integrada o histórica. Utiliza la operación correspondiente.'
+      )
     }
 
     const pedidosActivos = await this.pedidoRepo.contarPedidosActivosPorMesa(id)

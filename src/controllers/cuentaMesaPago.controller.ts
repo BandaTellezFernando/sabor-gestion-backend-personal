@@ -1,5 +1,6 @@
 
 //src/controllers/cuentaMesaPago.controller.ts
+import { ESTADOS_FUSION_MESA } from '../utils/constants'
 import { Request, Response } from 'express'
 import { CustomRequest } from '../middlewares/auth.middleware'
 import {
@@ -184,18 +185,65 @@ io.to('room:caja').emit('cuenta:pago_completado', resultadoEvento)
       mensaje: 'Cuenta pagada correctamente'
     })
 
-    try {
+       try {
       const mesa = await mesaService.obtenerMesaPorId(
         resultado.mesaId
       )
 
-      io.to('room:mesas').emit('mesas:updated', mesa)
+      const esFusionHistorica =
+        mesa.estadoFusion === ESTADOS_FUSION_MESA.DISUELTA ||
+        mesa.estadoFusion === ESTADOS_FUSION_MESA.CANCELADA
+
+      if (!esFusionHistorica) {
+        // Pago de una mesa individual: se conserva el comportamiento actual.
+        io.to('room:mesas').emit('mesas:updated', mesa)
+        return
+      }
+
+      // La fusión deja de ser operativa, pero el documento
+      // permanece en MongoDB como registro histórico.
+      io.to('room:mesas').emit('mesas:deleted', {
+        id: mesa.id,
+        _id: mesa._id,
+        mesaId: mesa.id,
+        mesa
+      })
+
+      // Las mesas originales estaban ocultas durante la fusión.
+      // Emitimos "created" para que los clientes las vuelvan a incorporar
+      // a su listado operativo.
+      const mesasRestauradas = []
+
+      for (const origen of mesa.mesasOrigen) {
+        try {
+          const original = await mesaService.obtenerMesaPorId(
+            origen.mesaId
+          )
+
+          io.to('room:mesas').emit('mesas:created', original)
+          io.to('room:mesas').emit('mesas:updated', original)
+
+          mesasRestauradas.push(original)
+        } catch (error: unknown) {
+          console.warn(
+            `El pago terminó, pero no se pudo notificar la restauración de la mesa ${origen.numero}:`,
+            error
+          )
+        }
+      }
+
+      io.to('room:mesas').emit('mesas:fusion_actualizada', {
+        accion: 'disuelta',
+        mesa,
+        mesas: mesasRestauradas
+      })
     } catch (error: unknown) {
       console.warn(
-        'El pago se completó, pero no se pudo emitir la mesa actualizada:',
+        'El pago se completó, pero falló la notificación de las mesas:',
         error
       )
     }
+
   } catch (error: unknown) {
     console.warn(
       'El pago se completó, pero falló una notificación Socket.IO:',

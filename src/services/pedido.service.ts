@@ -13,7 +13,11 @@ import {
 } from '../repositories/mesaOcupacion.repo'
 import { PlatoRepository, platoRepository } from '../repositories/plato.repo'
 import type { IDetallePedido } from '../models/Pedido'
-import { ESTADOS_MESA, ESTADOS_PEDIDO } from '../utils/constants'
+import {
+  ESTADOS_MESA,
+  ESTADOS_PEDIDO,
+  ESTADOS_FUSION_MESA
+} from '../utils/constants'
 import {
   obtenerFechaBolivia,
   formatearFechaBolivia
@@ -441,7 +445,25 @@ export class PedidoService {
     const mesaIdString = toIdString(datos.mesa)
     if (mesaIdString) {
       const mesaExiste = await this.mesaRepo.buscarPorId(mesaIdString)
-      if (!mesaExiste) throw new PedidoServiceError(404, 'Mesa no encontrada')
+
+if (!mesaExiste) {
+  throw new PedidoServiceError(404, 'Mesa no encontrada')
+}
+
+// Solo las mesas individuales y las fusiones activas
+// pueden recibir pedidos nuevos.
+const estadoFusion =
+  mesaExiste.estadoFusion ?? ESTADOS_FUSION_MESA.INDIVIDUAL
+
+if (
+  estadoFusion !== ESTADOS_FUSION_MESA.INDIVIDUAL &&
+  estadoFusion !== ESTADOS_FUSION_MESA.FUSIONADA
+) {
+  throw new PedidoServiceError(
+    409,
+    'No se pueden crear pedidos en una mesa integrada o en una fusión histórica.'
+  )
+}
 
       const ocupacion = await this.mesaOcupacionRepo.buscarPorMesaId(mesaIdString)
       if (
@@ -608,15 +630,32 @@ export class PedidoService {
     }
 
     if (pedido.mesa) {
-      const mesa = await this.mesaRepo.buscarPorId(pedido.mesa.toString())
-      if (!mesa) throw new PedidoServiceError(404, 'Mesa no encontrada')
-      if (mesa.estado === ESTADOS_MESA.CUENTA_SOLICITADA) {
-        throw new PedidoServiceError(
-          409,
-          'No se puede enviar un pedido cuando la mesa ya solicitó su cuenta.'
-        )
-      }
-    }
+  const mesa = await this.mesaRepo.buscarPorId(pedido.mesa.toString())
+
+  if (!mesa) {
+    throw new PedidoServiceError(404, 'Mesa no encontrada')
+  }
+
+  const estadoFusion =
+    mesa.estadoFusion ?? ESTADOS_FUSION_MESA.INDIVIDUAL
+
+  if (
+    estadoFusion !== ESTADOS_FUSION_MESA.INDIVIDUAL &&
+    estadoFusion !== ESTADOS_FUSION_MESA.FUSIONADA
+  ) {
+    throw new PedidoServiceError(
+      409,
+      'No se puede enviar el pedido: la mesa ya no es operativa.'
+    )
+  }
+
+  if (mesa.estado === ESTADOS_MESA.CUENTA_SOLICITADA) {
+    throw new PedidoServiceError(
+      409,
+      'No se puede enviar un pedido cuando la mesa ya solicitó su cuenta.'
+    )
+  }
+}
     if (!pedido.detalles.length) {
       throw new PedidoServiceError(400, 'No se puede enviar un pedido sin productos.')
     }

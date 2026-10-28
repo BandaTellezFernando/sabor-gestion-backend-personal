@@ -43,6 +43,7 @@ export interface CategoriaPopularDTO {
  * Nota: 'estado' contiene la etiqueta traducida para visualización en frontend
  */
 export interface OrdenRecienteDTO {
+  uid: string
   id: string
   mesa: string
   hora: string

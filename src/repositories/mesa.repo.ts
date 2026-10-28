@@ -1,24 +1,25 @@
 // src/repositories/mesa.repo.ts
-import { ESTADOS_MESA } from '../utils/constants'
 import mongoose, { Types, ClientSession } from 'mongoose'
-import Mesa, { IMesa } from '../models/Mesa'
+import Mesa, { IMesa, MesaOrigenFusion } from '../models/Mesa'
+import {
+  ESTADOS_MESA,
+  ESTADOS_FUSION_MESA,
+  type EstadoFusionMesa
+} from '../utils/constants'
 
 export { IMesa } from '../models/Mesa'
 
-// Interfaz para la ubicación poblada desde MongoDB
 export interface PopulatedUbicacion {
   _id: Types.ObjectId
   nombre?: string
   name?: string
 }
 
-// Tipo para el documento de Mesa cuando se le aplica .populate('ubicacionId')
 export type MesaPobladaDoc = Omit<IMesa, 'ubicacionId'> & {
   _id: Types.ObjectId
   ubicacionId?: PopulatedUbicacion | Types.ObjectId | null
 }
 
-// Interfaz de datos para inserción en la base de datos
 export interface MesaCrearDatos {
   numero: string
   capacidad: number
@@ -26,7 +27,6 @@ export interface MesaCrearDatos {
   location?: string
 }
 
-// Interfaz de datos para actualización en la base de datos
 export interface MesaActualizarDatos {
   numero?: string
   capacidad?: number
@@ -34,27 +34,83 @@ export interface MesaActualizarDatos {
   location?: string
 }
 
+export interface MesaCrearFusionDatos {
+  numero: string
+  capacidad: number
+  ubicacion: string
+  ubicacionId?: Types.ObjectId | null
+  mesasOrigen: MesaOrigenFusion[]
+}
+
+export interface MesaFusionActualizarDatos {
+  estado?: string
+  estadoFusion?: EstadoFusionMesa
+  fusionadaEn?: Types.ObjectId | null
+  mesasOrigen?: MesaOrigenFusion[]
+  fusionDisueltaAt?: Date | null
+  fusionCanceladaAt?: Date | null
+}
+
+const ESTADOS_ESTRUCTURALES_ACTIVOS = [
+  ESTADOS_FUSION_MESA.INDIVIDUAL,
+  ESTADOS_FUSION_MESA.FUSIONADA,
+  ESTADOS_FUSION_MESA.INTEGRADA
+]
+
+const ESTADOS_OPERATIVOS = [
+  ESTADOS_FUSION_MESA.INDIVIDUAL,
+  ESTADOS_FUSION_MESA.FUSIONADA
+]
+
+/**
+ * Incluye documentos antiguos que todavía no poseen estadoFusion.
+ * Esos registros deben tratarse como mesas individuales hasta ejecutar
+ * la migración de datos correspondiente.
+ */
+function filtroMesasOperativas() {
+  return {
+    $or: [
+      { estadoFusion: { $in: ESTADOS_OPERATIVOS } },
+      { estadoFusion: { $exists: false } }
+    ]
+  }
+}
+
+function filtroMesaIndividual() {
+  return {
+    $or: [
+      { estadoFusion: ESTADOS_FUSION_MESA.INDIVIDUAL },
+      { estadoFusion: { $exists: false } }
+    ]
+  }
+}
+
 export class MesaRepository {
   /**
-   * Obtiene todas las mesas con su ubicación poblada, aplicando filtro opcional de ubicación.
+   * Obtiene las mesas operativas y su ubicación.
+   * Las mesas integradas o fusionadas históricas no aparecen en el listado.
    */
   async buscarTodos(location?: string): Promise<MesaPobladaDoc[]> {
-    let filtro: Record<string, any> = {}
+    const filtro: Record<string, any> = filtroMesasOperativas()
 
     if (location) {
       if (mongoose.Types.ObjectId.isValid(location)) {
-        filtro = { ubicacionId: new mongoose.Types.ObjectId(location) }
+        filtro.ubicacionId = new mongoose.Types.ObjectId(location)
       } else {
-        filtro = { ubicacion: location }
+        filtro.ubicacion = location
       }
     }
 
-    return (await Mesa.find(filtro).populate('ubicacionId', 'nombre')) as MesaPobladaDoc[]
+    return (await Mesa.find(filtro).populate(
+      'ubicacionId',
+      'nombre'
+    )) as MesaPobladaDoc[]
   }
 
-   /**
-   * Busca una mesa por su ID con su ubicación poblada.
-   * Permite participar en transacciones MongoDB.
+  /**
+   * Busca una mesa por ID.
+   * Incluye registros históricos porque también se necesita consultarlos
+   * durante validaciones y para conservar referencias de pedidos y pagos.
    */
   async buscarPorId(
     id: string,
@@ -66,30 +122,60 @@ export class MesaRepository {
   }
 
   /**
-   * Busca si existe una mesa con el mismo número (insensible a mayúsculas/minúsculas),
-   * excluyendo un ID opcional (para validación de duplicados al actualizar).
+   * Busca varias mesas en una misma consulta.
+   * Puede utilizarse dentro de una transacción.
    */
-  async buscarPorNumeroExcluyendoId(
-    numeroRegex: RegExp,
-    excluirId?: string
-  ): Promise<IMesa | null> {
-    const filtro: Record<string, any> = { numero: numeroRegex }
-    if (excluirId) {
-      filtro._id = { $ne: excluirId }
-    }
-    return await Mesa.findOne(filtro)
+  async buscarPorIds(
+    ids: string[],
+    session?: ClientSession
+  ): Promise<MesaPobladaDoc[]> {
+    return (await Mesa.find({
+      _id: { $in: ids }
+    })
+      .session(session ?? null)
+      .populate('ubicacionId', 'nombre')) as MesaPobladaDoc[]
   }
 
   /**
-   * Crea una sola mesa o actualiza una existente con el mismo número (upsert seguro)
-   * y la devuelve con su ubicación poblada, evitando errores E11000 duplicate key.
+   * Busca un número reservado por una mesa operativa,
+   * incluyendo mesas integradas que todavía conservan su nombre.
+   * Las fusiones canceladas o disueltas no reservan el nombre.
+   */
+  async buscarPorNumeroExcluyendoId(
+    numeroRegex: RegExp,
+    excluirId?: string,
+    session?: ClientSession
+  ): Promise<IMesa | null> {
+    const filtro: Record<string, any> = {
+      numero: numeroRegex,
+      $or: [
+        { estadoFusion: { $in: ESTADOS_ESTRUCTURALES_ACTIVOS } },
+        { estadoFusion: { $exists: false } }
+      ]
+    }
+
+    if (excluirId) {
+      filtro._id = { $ne: excluirId }
+    }
+
+    return await Mesa.findOne(filtro).session(session ?? null)
+  }
+
+  /**
+   * Crea una mesa individual o actualiza una mesa individual existente
+   * con el mismo número.
+   *
+   * No actualiza una fusión activa, una mesa integrada ni un registro
+   * histórico solo porque coincida el número.
    */
   async crearIndividual(datos: MesaCrearDatos): Promise<MesaPobladaDoc> {
     const numeroTrim = (datos.numero || '').trim()
+
     const base: Partial<IMesa> = {
       numero: numeroTrim,
       capacidad: datos.capacidad,
-      estado: datos.estado || 'Libre'
+      estado: datos.estado || ESTADOS_MESA.LIBRE,
+      estadoFusion: ESTADOS_FUSION_MESA.INDIVIDUAL
     }
 
     if (datos.location !== undefined) {
@@ -100,14 +186,28 @@ export class MesaRepository {
       }
     }
 
-    const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const escapeRegex = (valor: string) =>
+      valor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
     const regex = new RegExp(`^${escapeRegex(numeroTrim)}$`, 'i')
 
-    // 1. Si la mesa ya existe por número (insensible a mayúsculas/minúsculas), actualizarla
-    const existente = await Mesa.findOne({ numero: regex })
-    if (existente) {
+    const filtroExistente = {
+      numero: regex,
+      $or: [
+        { estadoFusion: ESTADOS_FUSION_MESA.INDIVIDUAL },
+        { estadoFusion: { $exists: false } }
+      ]
+    }
+
+    const actualizarExistente = async (
+      existente: IMesa
+    ): Promise<MesaPobladaDoc> => {
       existente.capacidad = datos.capacidad
-      existente.estado = datos.estado || 'Libre'
+      existente.estado = datos.estado || ESTADOS_MESA.LIBRE
+
+      // Completa el estado estructural de registros antiguos.
+      existente.estadoFusion = ESTADOS_FUSION_MESA.INDIVIDUAL
+
       if (datos.location !== undefined) {
         if (mongoose.Types.ObjectId.isValid(datos.location)) {
           existente.ubicacionId = new mongoose.Types.ObjectId(datos.location)
@@ -117,14 +217,21 @@ export class MesaRepository {
           existente.set('ubicacionId', undefined)
         }
       }
+
       await existente.save()
+
       return (await Mesa.findById(existente._id).populate(
         'ubicacionId',
         'nombre'
       )) as MesaPobladaDoc
     }
 
-    // 2. Si no existe, crearla protegiendo contra posibles condiciones de carrera (E11000)
+    const existente = await Mesa.findOne(filtroExistente)
+
+    if (existente) {
+      return actualizarExistente(existente)
+    }
+
     try {
       const nuevaMesa = new Mesa(base)
       await nuevaMesa.save()
@@ -133,46 +240,37 @@ export class MesaRepository {
         'ubicacionId',
         'nombre'
       )) as MesaPobladaDoc
-    } catch (err: any) {
-      if (err?.code === 11000 || err?.name === 'MongoServerError') {
-        const colision = await Mesa.findOne({ numero: regex })
+    } catch (error: unknown) {
+      const err = error as { code?: number; name?: string }
+
+      if (err.code === 11000 || err.name === 'MongoServerError') {
+        const colision = await Mesa.findOne(filtroExistente)
+
         if (colision) {
-          colision.capacidad = datos.capacidad
-          colision.estado = datos.estado || 'Libre'
-          if (datos.location !== undefined) {
-            if (mongoose.Types.ObjectId.isValid(datos.location)) {
-              colision.ubicacionId = new mongoose.Types.ObjectId(datos.location)
-              colision.set('ubicacion', undefined)
-            } else {
-              colision.ubicacion = datos.location
-              colision.set('ubicacionId', undefined)
-            }
-          }
-          await colision.save()
-          return (await Mesa.findById(colision._id).populate(
-            'ubicacionId',
-            'nombre'
-          )) as MesaPobladaDoc
+          return actualizarExistente(colision)
         }
       }
-      throw err
+
+      throw error
     }
   }
 
   /**
-   * Crea un lote de mesas y las devuelve todas con su ubicación poblada.
-   * Utiliza crearIndividual para garantizar upsert seguro y prevenir colisiones E11000.
+   * Crea varias mesas utilizando la misma validación de creación individual.
    */
   async crearLote(datosLote: MesaCrearDatos[]): Promise<MesaPobladaDoc[]> {
     const resultados: MesaPobladaDoc[] = []
+
     for (const item of datosLote) {
       resultados.push(await this.crearIndividual(item))
     }
+
     return resultados
   }
 
   /**
-   * Actualiza los campos de una mesa existente y la devuelve con su ubicación poblada.
+   * Actualiza una mesa operativa existente.
+   * No modifica mesas integradas ni registros históricos.
    */
   async actualizar(
     id: string,
@@ -188,39 +286,53 @@ export class MesaRepository {
     if (datos.location !== undefined) {
       if (mongoose.Types.ObjectId.isValid(datos.location)) {
         update.ubicacionId = new mongoose.Types.ObjectId(datos.location)
-        update.$unset = { ubicacion: 1 } // Eliminamos el campo de texto si hay ID
+        update.$unset = { ubicacion: 1 }
       } else {
         update.ubicacion = datos.location
-        update.$unset = { ubicacionId: 1 } // Eliminamos el ID si mandan texto
+        update.$unset = { ubicacionId: 1 }
       }
     }
 
-    return (await Mesa.findByIdAndUpdate(id, update, {
-      returnDocument: 'after',
-      session,
-      runValidators: true
-    }).populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
+    return (await Mesa.findOneAndUpdate(
+      {
+        _id: id,
+        ...filtroMesasOperativas()
+      },
+      update,
+      {
+        returnDocument: 'after',
+        session,
+        runValidators: true
+      }
+    ).populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
   }
 
   /**
-   * Actualiza únicamente el estado de una mesa y la devuelve con su ubicación poblada.
+   * Actualiza el estado operativo solamente de una mesa operativa.
    */
   async actualizarEstado(
     id: string,
     backendStatus: string,
     session?: ClientSession
   ): Promise<MesaPobladaDoc | null> {
-    return (await Mesa.findByIdAndUpdate(
-      id,
+    return (await Mesa.findOneAndUpdate(
+      {
+        _id: id,
+        estado: { $in: Object.values(ESTADOS_MESA) },
+        ...filtroMesasOperativas()
+      },
       { estado: backendStatus },
-      { returnDocument: 'after', session, runValidators: true }
+      {
+        returnDocument: 'after',
+        session,
+        runValidators: true
+      }
     ).populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
   }
 
-    /**
+  /**
    * Cambia una mesa ocupada a Cuenta Solicitada.
-   * Solo permite la transición desde Ocupada o si ya está
-   * en Cuenta Solicitada.
+   * La operación no puede afectar una mesa integrada o histórica.
    */
   async marcarCuentaSolicitadaSiOcupada(
     id: string,
@@ -234,7 +346,8 @@ export class MesaRepository {
             ESTADOS_MESA.OCUPADA,
             ESTADOS_MESA.CUENTA_SOLICITADA
           ]
-        }
+        },
+        ...filtroMesasOperativas()
       },
       {
         $set: {
@@ -250,31 +363,127 @@ export class MesaRepository {
   }
 
   /**
-   * Actualiza atómicamente el estado de una mesa a 'Ocupada' ÚNICAMENTE si actualmente está 'Libre'.
-   * Previene condiciones de carrera concurrentes a nivel de base de datos.
+   * Ocupa una mesa libre de forma atómica.
+   * Solo admite mesas individuales o fusiones activas.
    */
   async ocuparMesaSiLibre(
     id: string,
     session?: ClientSession
   ): Promise<MesaPobladaDoc | null> {
     return (await Mesa.findOneAndUpdate(
-      { _id: id, estado: 'Libre' },
-      { estado: 'Ocupada' },
-      { returnDocument: 'after', session, runValidators: true }
+      {
+        _id: id,
+        estado: ESTADOS_MESA.LIBRE,
+        ...filtroMesasOperativas()
+      },
+      { estado: ESTADOS_MESA.OCUPADA },
+      {
+        returnDocument: 'after',
+        session,
+        runValidators: true
+      }
     ).populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
   }
 
   /**
-   * Elimina una mesa por su identificador único.
+   * Crea una mesa fusionada dentro de la transacción suministrada.
+   * La capacidad y las mesas de origen deben calcularse y validarse
+   * en el servicio de fusiones, no confiarse al cliente.
    */
-  async eliminar(id: string): Promise<MesaPobladaDoc | null> {
-    return (await Mesa.findByIdAndDelete(id)) as MesaPobladaDoc | null
+  async crearFusion(
+    datos: MesaCrearFusionDatos,
+    session: ClientSession
+  ): Promise<MesaPobladaDoc> {
+    const nuevaFusion = new Mesa({
+      numero: datos.numero.trim(),
+      capacidad: datos.capacidad,
+      ubicacion: datos.ubicacion,
+      ubicacionId: datos.ubicacionId ?? null,
+      estado: ESTADOS_MESA.LIBRE,
+      estadoFusion: ESTADOS_FUSION_MESA.FUSIONADA,
+      fusionadaEn: null,
+      mesasOrigen: datos.mesasOrigen,
+      fusionDisueltaAt: null,
+      fusionCanceladaAt: null
+    })
+
+    await nuevaFusion.save({ session })
+
+    return (await Mesa.findById(nuevaFusion._id)
+      .session(session)
+      .populate('ubicacionId', 'nombre')) as MesaPobladaDoc
   }
 
   /**
-   * Cuenta las mesas asignadas a una ubicación por su clave foránea ubicacionId
+   * Actualiza los metadatos estructurales de una fusión dentro
+   * de una transacción.
+   *
+   * estadosEsperados permite evitar una actualización si otra operación
+   * ya cambió el estado estructural del documento.
    */
-  async contarPorUbicacionId(ubicacionId: string | mongoose.Types.ObjectId): Promise<number> {
+  async actualizarEstructuraFusion(
+    id: string,
+    datos: MesaFusionActualizarDatos,
+    session: ClientSession,
+    estadosEsperados?: EstadoFusionMesa[]
+  ): Promise<MesaPobladaDoc | null> {
+    const set: Record<string, unknown> = {}
+
+    if (datos.estado !== undefined) set.estado = datos.estado
+    if (datos.estadoFusion !== undefined) {
+      set.estadoFusion = datos.estadoFusion
+    }
+    if (datos.fusionadaEn !== undefined) {
+      set.fusionadaEn = datos.fusionadaEn
+    }
+    if (datos.mesasOrigen !== undefined) {
+      set.mesasOrigen = datos.mesasOrigen
+    }
+    if (datos.fusionDisueltaAt !== undefined) {
+      set.fusionDisueltaAt = datos.fusionDisueltaAt
+    }
+    if (datos.fusionCanceladaAt !== undefined) {
+      set.fusionCanceladaAt = datos.fusionCanceladaAt
+    }
+
+    const filtro: Record<string, unknown> = { _id: id }
+
+    if (estadosEsperados?.length) {
+      filtro.estadoFusion = { $in: estadosEsperados }
+    }
+
+    return (await Mesa.findOneAndUpdate(
+      filtro,
+      { $set: set },
+      {
+        returnDocument: 'after',
+        session,
+        runValidators: true
+      }
+    ).populate('ubicacionId', 'nombre')) as MesaPobladaDoc | null
+  }
+
+  /**
+   * Elimina únicamente una mesa individual.
+   * Las fusiones, las mesas integradas y los registros históricos
+   * se conservan para proteger las referencias de pedidos y pagos.
+   */
+  async eliminar(
+    id: string,
+    session?: ClientSession
+  ): Promise<MesaPobladaDoc | null> {
+    return (await Mesa.findOneAndDelete({
+      _id: id,
+      ...filtroMesaIndividual()
+    }).session(session ?? null)) as MesaPobladaDoc | null
+  }
+
+  /**
+   * Cuenta las mesas asociadas a una ubicación.
+   */
+  async contarPorUbicacionId(
+    ubicacionId: string | Types.ObjectId
+  ): Promise<number> {
     return await Mesa.countDocuments({ ubicacionId })
   }
 }
