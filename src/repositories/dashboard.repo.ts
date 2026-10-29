@@ -1,5 +1,6 @@
 // src/repositories/dashboard.repo.ts
 import { Types } from 'mongoose'
+import Pago from '../models/Pago'
 import Pedido from '../models/Pedido'
 import Mesa from '../models/Mesa'
 import {
@@ -25,25 +26,40 @@ export class DashboardRepository {
   /**
    * Consulta A: Agregación de ventas totales y cantidad de órdenes cerradas dentro de un rango de fechas
    */
-  async obtenerVentasYOrdenesDia(inicio: Date, fin: Date): Promise<VentasHoyRaw> {
-    const resultado = await Pedido.aggregate<VentasHoyRaw>([
+  /**
+ * Consulta las ventas de pagos confirmados y cuenta las órdenes cerradas del día.
+ */
+async obtenerVentasYOrdenesDia(
+  inicio: Date,
+  fin: Date
+): Promise<VentasHoyRaw> {
+  const [pagosAgregados, totalOrdenes] = await Promise.all([
+    Pago.aggregate<{ totalVentas: number }>([
       {
         $match: {
-          createdAt: { $gte: inicio, $lte: fin },
-          estado: 'CERRADO'
+          estadoPago: 'Pagado',
+          fechaPago: { $gte: inicio, $lte: fin }
         }
       },
       {
         $group: {
           _id: null,
-          totalVentas: { $sum: '$total' },
-          totalOrdenes: { $count: {} }
+          totalVentas: { $sum: '$totalFinal' }
         }
       }
-    ])
+    ]),
 
-    return resultado[0] || { totalVentas: 0, totalOrdenes: 0 }
+    Pedido.countDocuments({
+      createdAt: { $gte: inicio, $lte: fin },
+      estado: 'CERRADO'
+    })
+  ])
+
+  return {
+    totalVentas: Number(pagosAgregados[0]?.totalVentas ?? 0),
+    totalOrdenes
   }
+}
 
   /**
    * Consulta B: Conteo de mesas activas (cuyo estado sea distinto a 'Libre')

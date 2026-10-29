@@ -58,12 +58,28 @@ export class DashboardService {
    * calculando KPIs financieros y operativos, y formateando los DTOs de salida.
    */
   async obtenerResumen(): Promise<ResumenDashboardDTO> {
-    // 1. Rango temporal: Hoy (00:00:00 a 23:59:59)
-    const inicioHoy = new Date()
-    inicioHoy.setHours(0, 0, 0, 0)
+    // 1. Rango del día actual en Bolivia, independiente de la zona horaria del servidor.
+const partesFechaBolivia = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/La_Paz',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit'
+}).formatToParts(new Date())
 
-    const finHoy = new Date()
-    finHoy.setHours(23, 59, 59, 999)
+const fechaPartes = Object.fromEntries(
+  partesFechaBolivia.map(({ type, value }) => [type, value])
+)
+
+const fechaHoyBolivia =
+  `${fechaPartes.year}-${fechaPartes.month}-${fechaPartes.day}`
+
+const inicioHoy = new Date(
+  `${fechaHoyBolivia}T00:00:00.000-04:00`
+)
+
+const finHoy = new Date(
+  `${fechaHoyBolivia}T23:59:59.999-04:00`
+)
 
     // 2. Consultas en paralelo a través del DashboardRepository
     const [
@@ -120,10 +136,11 @@ export class DashboardService {
   uid: o._id.toString(),
   id: o.codigo,
   mesa: o.mesa?.numero || 'Sin mesa asignada',
-  hora: o.fechaHora.toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit'
-  }),
+  hora: o.fechaHora.toLocaleTimeString('es-BO', {
+  timeZone: 'America/La_Paz',
+  hour: '2-digit',
+  minute: '2-digit'
+}),
   estado: this.traducirEstado(o.estado),
   total: o.total
 }))
