@@ -280,58 +280,103 @@ export class PedidoService {
    * Formatea un pedido poblado para enviar su estructura completa
    * a los websockets o endpoints de la Caja.
    */
-  static formatearPayloadCaja(pedido: unknown, mesaOverride?: unknown): PayloadCaja {
-    const pedidoPlano = toPlainRecord(pedido)
-    const mesaValor = mesaOverride ?? pedidoPlano.mesa
-    const mesa = toPlainRecord(mesaValor)
-    const detalles = toRecordArray(pedidoPlano.detalles)
-    const itemsSubtotal = detalles.length > 0
+  static formatearPayloadCaja(
+  pedido: unknown,
+  mesaOverride?: unknown
+): PayloadCaja {
+  const pedidoPlano = toPlainRecord(pedido)
+  const mesaValor = mesaOverride ?? pedidoPlano.mesa
+  const mesa = toPlainRecord(mesaValor)
+  const detalles = toRecordArray(pedidoPlano.detalles)
+
+  const itemsSubtotal =
+    detalles.length > 0
       ? detalles.reduce(
           (sum, detalle) =>
-            sum + toNumber(detalle.precioUnitario) * toNumber(detalle.cantidad, 1),
+            sum +
+            toNumber(detalle.precioUnitario) *
+              toNumber(detalle.cantidad, 1),
           0
         )
       : toNumber(pedidoPlano.subtotalCierre || pedidoPlano.total)
-        const subtotalBase = toNumber(pedidoPlano.subtotalCierre || itemsSubtotal)
-    const montoProp = toNumber(pedidoPlano.montoPropina)
-    const totalCalc = Number((subtotalBase + montoProp).toFixed(2))
-    const usuario = toPlainRecord(pedidoPlano.usuario)
-    const nombreMesero = `${toText(usuario.nombre) || ''} ${toText(usuario.apellido) || toText(usuario.apellidos) || ''}`.trim()
-    const fechaEspera = toDate(pedidoPlano.updatedAt ?? pedidoPlano.createdAt ?? pedidoPlano.fechaHora)
-    const mesaId = mesa._id ?? (mesaValor instanceof Types.ObjectId || typeof mesaValor === 'string' ? mesaValor : undefined)
 
-    return {
-      pedidoId: pedidoPlano._id,
-      codigo: pedidoPlano.codigo,
-      mesaId,
-      mesaNombre: toText(mesa.numero) || 'Mesa sin asignar',
-      meseroNombre: nombreMesero || 'Sin mesero',
-            subtotal: subtotalBase,
-      subtotalCierre: subtotalBase,
-      propina: montoProp,
-      montoPropina: montoProp,
-      total: totalCalc,
-      clienteNombre: toText(pedidoPlano.clienteNombre),
-      clienteCI: toText(pedidoPlano.clienteCI),
-      clienteNIT: toText(pedidoPlano.clienteNIT),
-      tiempoEsperaMinutos: fechaEspera
-        ? Math.max(0, Math.floor((Date.now() - fechaEspera.getTime()) / 60000))
-        : 0,
-      items: detalles.map((detalle) => {
-        const plato = toPlainRecord(detalle.plato)
-        const platoId = plato._id ?? detalle.plato
-        return {
-          platoId,
-          nombre: toText(plato.nombre) || 'Plato no disponible',
-          cantidad: detalle.cantidad,
-          precioUnitario: detalle.precioUnitario,
-          subtotal: detalle.subtotal,
-          observacion: toText(detalle.observacion) || ''
-        }
-      })
-    }
+  const subtotalBase = toNumber(
+    pedidoPlano.subtotalCierre || itemsSubtotal
+  )
+
+  // La propina se decide exclusivamente en Caja.
+  const montoProp = 0
+  const totalCalc = Number(subtotalBase.toFixed(2))
+
+  const usuario = toPlainRecord(pedidoPlano.usuario)
+
+  const nombreMesero =
+    `${toText(usuario.nombre) || ''} ${
+      toText(usuario.apellido) ||
+      toText(usuario.apellidos) ||
+      ''
+    }`.trim()
+
+  const fechaEspera = toDate(
+    pedidoPlano.updatedAt ??
+      pedidoPlano.createdAt ??
+      pedidoPlano.fechaHora
+  )
+
+  const mesaId =
+    mesa._id ??
+    (
+      mesaValor instanceof Types.ObjectId ||
+      typeof mesaValor === 'string'
+        ? mesaValor
+        : undefined
+    )
+
+  return {
+    pedidoId: pedidoPlano._id,
+    codigo: pedidoPlano.codigo,
+    mesaId,
+    mesaNombre: toText(mesa.numero) || 'Mesa sin asignar',
+    meseroNombre: nombreMesero || 'Sin mesero',
+
+    subtotal: subtotalBase,
+    subtotalCierre: subtotalBase,
+
+    propina: montoProp,
+    montoPropina: montoProp,
+
+    total: totalCalc,
+
+    clienteNombre: toText(pedidoPlano.clienteNombre),
+    clienteCI: toText(pedidoPlano.clienteCI),
+    clienteNIT: toText(pedidoPlano.clienteNIT),
+
+    tiempoEsperaMinutos: fechaEspera
+      ? Math.max(
+          0,
+          Math.floor(
+            (Date.now() - fechaEspera.getTime()) / 60000
+          )
+        )
+      : 0,
+
+    items: detalles.map((detalle) => {
+      const plato = toPlainRecord(detalle.plato)
+      const platoId = plato._id ?? detalle.plato
+
+      return {
+        platoId,
+        nombre:
+          toText(plato.nombre) || 'Plato no disponible',
+        cantidad: detalle.cantidad,
+        precioUnitario: detalle.precioUnitario,
+        subtotal: detalle.subtotal,
+        observacion:
+          toText(detalle.observacion) || ''
+      }
+    })
   }
-
+}
   /**
    * Formatea un pedido excluyendo información financiera/de facturación para la vista operativa de cocina
    */
@@ -430,79 +475,116 @@ export class PedidoService {
    * Valida la mesa, calcula importes y guarda un pedido BORRADOR con código PED-XXXX.
    * El stock se valida y descuenta únicamente al enviar explícitamente a cocina.
    */
-  async crearPedido(
-    datosEntrada: unknown,
-    usuarioAuthId?: string
-  ): Promise<ResultadoCrearPedido> {
-    if (!isRecord(datosEntrada)) {
-      throw new PedidoServiceError(400, 'Los datos del pedido no son válidos')
-    }
-        const datos: CrearPedidoEntrada = datosEntrada
-    const datosSinDescuento = { ...datos }
-    delete datosSinDescuento.montoDescuento
+async crearPedido(
+  datosEntrada: unknown,
+  usuarioAuthId?: string
+): Promise<ResultadoCrearPedido> {
+  if (!isRecord(datosEntrada)) {
+    throw new PedidoServiceError(
+      400,
+      'Los datos del pedido no son válidos'
+    )
+  }
 
-    // 1. Validar existencia de mesa y ocupación temporal.
-    const mesaIdString = toIdString(datos.mesa)
-    if (mesaIdString) {
-      const mesaExiste = await this.mesaRepo.buscarPorId(mesaIdString)
+  const datos: CrearPedidoEntrada = datosEntrada
+  const datosSinDescuento = { ...datos }
 
-if (!mesaExiste) {
-  throw new PedidoServiceError(404, 'Mesa no encontrada')
-}
+  delete datosSinDescuento.montoDescuento
+  delete datosSinDescuento.montoPropina
 
-// Solo las mesas individuales y las fusiones activas
-// pueden recibir pedidos nuevos.
-const estadoFusion =
-  mesaExiste.estadoFusion ?? ESTADOS_FUSION_MESA.INDIVIDUAL
+  // 1. Validar existencia de mesa y ocupación temporal.
+  const mesaIdString = toIdString(datos.mesa)
 
-if (
-  estadoFusion !== ESTADOS_FUSION_MESA.INDIVIDUAL &&
-  estadoFusion !== ESTADOS_FUSION_MESA.FUSIONADA
-) {
-  throw new PedidoServiceError(
-    409,
-    'No se pueden crear pedidos en una mesa integrada o en una fusión histórica.'
-  )
-}
+  if (mesaIdString) {
+    const mesaExiste =
+      await this.mesaRepo.buscarPorId(mesaIdString)
 
-      const ocupacion = await this.mesaOcupacionRepo.buscarPorMesaId(mesaIdString)
-      if (
-        ocupacion &&
-        ocupacion.expiraEn > new Date() &&
-        usuarioAuthId &&
-        ocupacion.usuarioId.toString() !== usuarioAuthId
-      ) {
-        throw new PedidoServiceError(409, 'La mesa está ocupada temporalmente por otro mesero.')
-      }
+    if (!mesaExiste) {
+      throw new PedidoServiceError(
+        404,
+        'Mesa no encontrada'
+      )
     }
 
-    // 2. Validar platos, precios, recetas y stock sin descontar inventario.
-    const { detallesCalculados, subtotal } =
-      await this.procesarDetallesPedido(datos.detalles)
+    // Solo las mesas individuales y las fusiones activas
+    // pueden recibir pedidos nuevos.
+    const estadoFusion =
+      mesaExiste.estadoFusion ??
+      ESTADOS_FUSION_MESA.INDIVIDUAL
 
-    const itemsParaValidarStock = detallesCalculados.map((detalle) => ({
+    if (
+      estadoFusion !== ESTADOS_FUSION_MESA.INDIVIDUAL &&
+      estadoFusion !== ESTADOS_FUSION_MESA.FUSIONADA
+    ) {
+      throw new PedidoServiceError(
+        409,
+        'No se pueden crear pedidos en una mesa integrada o en una fusión histórica.'
+      )
+    }
+
+    const ocupacion =
+      await this.mesaOcupacionRepo.buscarPorMesaId(
+        mesaIdString
+      )
+
+    if (
+      ocupacion &&
+      ocupacion.expiraEn > new Date() &&
+      usuarioAuthId &&
+      ocupacion.usuarioId.toString() !== usuarioAuthId
+    ) {
+      throw new PedidoServiceError(
+        409,
+        'La mesa está ocupada temporalmente por otro mesero.'
+      )
+    }
+  }
+
+  // 2. Validar platos, precios, recetas y stock
+  // sin descontar inventario.
+  const { detallesCalculados, subtotal } =
+    await this.procesarDetallesPedido(datos.detalles)
+
+  const itemsParaValidarStock = detallesCalculados.map(
+    (detalle) => ({
       platoId: detalle.plato.toString(),
       cantidad: detalle.cantidad,
-      observacion: detalle.observacion || '',
-    }))
+      observacion: detalle.observacion || ''
+    })
+  )
 
-    const validacionStock = await inventarioService.verificarYDescontarStock(
+  const validacionStock =
+    await inventarioService.verificarYDescontarStock(
       itemsParaValidarStock,
       undefined,
-      false,
+      false
     )
 
-    if (!validacionStock.success) {
-      const detallesErrores = validacionStock.errores
-        .filter((mensaje) => typeof mensaje === 'string' && mensaje.trim().length > 0)
+  if (!validacionStock.success) {
+    const detallesErrores = validacionStock.errores.filter(
+      (mensaje) =>
+        typeof mensaje === 'string' &&
+        mensaje.trim().length > 0
+    )
 
-      const detallesFaltantes = validacionStock.faltantes.map((faltante: unknown) => {
+    const detallesFaltantes =
+      validacionStock.faltantes.map((faltante: unknown) => {
         const dato = toPlainRecord(faltante)
+
         const ingrediente = toText(dato.ingrediente)
         const unidad = toText(dato.unidad) || ''
-        const disponible = toNumber(dato.disponible, Number.NaN)
-        const requerido = toNumber(dato.requerido, Number.NaN)
-        const faltanteNumerico = toNumber(dato.faltante, Number.NaN)
+        const disponible = toNumber(
+          dato.disponible,
+          Number.NaN
+        )
+        const requerido = toNumber(
+          dato.requerido,
+          Number.NaN
+        )
+        const faltanteNumerico = toNumber(
+          dato.faltante,
+          Number.NaN
+        )
 
         if (
           ingrediente &&
@@ -510,78 +592,129 @@ if (
           Number.isFinite(requerido) &&
           Number.isFinite(faltanteNumerico)
         ) {
-          const sufijoUnidad = unidad ? ` ${unidad}` : ''
+          const sufijoUnidad = unidad
+            ? ` ${unidad}`
+            : ''
+
           return `${ingrediente}: disponible ${disponible}${sufijoUnidad}, requerido ${requerido}${sufijoUnidad}, faltante ${faltanteNumerico}${sufijoUnidad}`
         }
 
         const plato = toText(dato.plato)
         const mensaje = toText(dato.mensaje)
-        if (plato && mensaje) return `${plato}: ${mensaje}`
-        if (ingrediente && mensaje) return `${ingrediente}: ${mensaje}`
-        return mensaje || ingrediente || plato || 'Ingrediente o receta no disponible'
+
+        if (plato && mensaje) {
+          return `${plato}: ${mensaje}`
+        }
+
+        if (ingrediente && mensaje) {
+          return `${ingrediente}: ${mensaje}`
+        }
+
+        return (
+          mensaje ||
+          ingrediente ||
+          plato ||
+          'Ingrediente o receta no disponible'
+        )
       })
 
-      const detalleInventario = [...detallesErrores, ...detallesFaltantes].join('. ')
-      const mensajeError =
-        'No se puede crear el pedido porque hay ingredientes insuficientes o restricciones de receta.' +
-        (detalleInventario ? ` Detalle: ${detalleInventario}.` : '')
+    const detalleInventario = [
+      ...detallesErrores,
+      ...detallesFaltantes
+    ].join('. ')
 
-      throw new PedidoServiceError(400, mensajeError, {
-        errores: validacionStock.errores,
-        faltantes: validacionStock.faltantes,
-      })
-    }
-
-    const montoPropina = toNumber(datos.montoPropina)
-
-    if (montoPropina < 0) {
-      throw new PedidoServiceError(
-        400,
-        'El monto de propina no puede ser negativo'
+    const mensajeError =
+      'No se puede crear el pedido porque hay ingredientes insuficientes o restricciones de receta.' +
+      (
+        detalleInventario
+          ? ` Detalle: ${detalleInventario}.`
+          : ''
       )
-    }
 
-    const totalCalculado = Number(
-      (subtotal + montoPropina).toFixed(2)
+    throw new PedidoServiceError(
+      400,
+      mensajeError,
+      {
+        errores: validacionStock.errores,
+        faltantes: validacionStock.faltantes
+      }
     )
-    const { codigo, fechaDiaBolivia } = await generarSiguienteCodigoPedido()
-    const fechaHora = obtenerFechaBolivia()
-    const usuarioResponsable = usuarioAuthId || toIdString(datos.usuario)
-    if (!usuarioResponsable || !Types.ObjectId.isValid(usuarioResponsable)) {
-      throw new PedidoServiceError(401, 'Usuario no autenticado')
-    }
-
-    // Se persiste como BORRADOR para conservar el código PED-XXXX en la vista previa.
-    const nuevoPedidoDoc = await this.pedidoRepo.crear({
-           ...datosSinDescuento,
-      _id: new Types.ObjectId(),
-      codigo,
-      fechaDiaBolivia,
-      estado: ESTADOS_PEDIDO.BORRADOR,
-      detalles: detallesCalculados,
-      total: totalCalculado,
-      subtotalCierre: subtotal,
-      montoPropina,
-      mesa: mesaIdString,
-      usuario: usuarioResponsable,
-      fechaHoraBolivia: formatearFechaBolivia(fechaHora),
-      fechaHora
-    } as Parameters<PedidoRepository['crear']>[0])
-
-    // La ocupación temporal se convierte en una comanda real; el inventario sigue intacto.
-    if (mesaIdString) await this.mesaOcupacionRepo.eliminarPorMesaId(mesaIdString)
-
-    const pedidoPoblado = await this.pedidoRepo.buscarPorIdPoblado(nuevoPedidoDoc._id)
-    const mesaActualizada = mesaIdString
-      ? await this.mesaRepo.actualizarEstado(mesaIdString, ESTADOS_MESA.OCUPADA)
-      : null
-
-    return {
-      nuevoPedido: PedidoService.agregarFechaBoliviaPedido(nuevoPedidoDoc),
-      pedidoPoblado,
-      mesaActualizada
-    }
   }
+
+  // Los pedidos no registran propinas.
+  // La propina se decidirá exclusivamente en Caja.
+  const montoPropina = 0
+
+  const totalCalculado = Number(
+    subtotal.toFixed(2)
+  )
+
+  const { codigo, fechaDiaBolivia } =
+    await generarSiguienteCodigoPedido()
+
+  const fechaHora = obtenerFechaBolivia()
+
+  const usuarioResponsable =
+    usuarioAuthId || toIdString(datos.usuario)
+
+  if (
+    !usuarioResponsable ||
+    !Types.ObjectId.isValid(usuarioResponsable)
+  ) {
+    throw new PedidoServiceError(
+      401,
+      'Usuario no autenticado'
+    )
+  }
+
+  // Se persiste como BORRADOR para conservar
+  // el código PED-XXXX en la vista previa.
+  const nuevoPedidoDoc = await this.pedidoRepo.crear({
+    ...datosSinDescuento,
+    _id: new Types.ObjectId(),
+    codigo,
+    fechaDiaBolivia,
+    estado: ESTADOS_PEDIDO.BORRADOR,
+    detalles: detallesCalculados,
+    total: totalCalculado,
+    subtotalCierre: subtotal,
+    montoPropina,
+    mesa: mesaIdString,
+    usuario: usuarioResponsable,
+    fechaHoraBolivia:
+      formatearFechaBolivia(fechaHora),
+    fechaHora
+  } as Parameters<PedidoRepository['crear']>[0])
+
+  // La ocupación temporal se convierte en una comanda real;
+  // el inventario sigue intacto.
+  if (mesaIdString) {
+    await this.mesaOcupacionRepo.eliminarPorMesaId(
+      mesaIdString
+    )
+  }
+
+  const pedidoPoblado =
+    await this.pedidoRepo.buscarPorIdPoblado(
+      nuevoPedidoDoc._id
+    )
+
+  const mesaActualizada = mesaIdString
+    ? await this.mesaRepo.actualizarEstado(
+        mesaIdString,
+        ESTADOS_MESA.OCUPADA
+      )
+    : null
+
+  return {
+    nuevoPedido:
+      PedidoService.agregarFechaBoliviaPedido(
+        nuevoPedidoDoc
+      ),
+    pedidoPoblado,
+    mesaActualizada
+  }
+}
 
   /**
    * Envía un pedido BORRADOR a cocina: valida recetas/stock, descuenta una sola vez,
@@ -1377,167 +1510,264 @@ if (
    * Los platos solo se editan en BORRADOR para mantener cocina e inventario sincronizados.
    */
   async actualizarPedido(
-    id: string,
-    bodyEntrada: unknown,
-    usuarioAuthId?: string,
-    usuarioRol?: string
-  ): Promise<ResultadoActualizarPedido> {
-    if (!isRecord(bodyEntrada)) {
-      throw new PedidoServiceError(400, 'Los datos de actualización no son válidos')
-    }
-    const body: PedidoActualizacionEntrada = bodyEntrada
-       const {
-      total,
-      detalles,
-      clienteNombre,
-      clienteCI,
-      clienteNIT,
-      cajeroAsignado,
-      montoPropina,
-      subtotalCierre,
-      estado
-    } = body
+  id: string,
+  bodyEntrada: unknown,
+  usuarioAuthId?: string,
+  usuarioRol?: string
+): Promise<ResultadoActualizarPedido> {
+  if (!isRecord(bodyEntrada)) {
+    throw new PedidoServiceError(
+      400,
+      'Los datos de actualización no son válidos'
+    )
+  }
 
-    const pedidoAnterior = await this.pedidoRepo.buscarPorId(id)
-    if (!pedidoAnterior) throw new PedidoServiceError(404, 'Pedido no encontrado')
+  const body: PedidoActualizacionEntrada = bodyEntrada
 
-    const meseroResponsableId = pedidoAnterior.usuario ? pedidoAnterior.usuario.toString() : ''
-    const esResponsable = !usuarioAuthId || meseroResponsableId === usuarioAuthId
-    const esAdmin = usuarioRol === 'Administrador' || usuarioRol === 'superadmin'
-    if (!esResponsable && !esAdmin) {
-      throw new PedidoServiceError(
-        403,
-        'Acceso denegado: solo el mesero responsable del pedido o un Administrador pueden modificar este pedido.'
+  const {
+    total,
+    detalles,
+    clienteNombre,
+    clienteCI,
+    clienteNIT,
+    cajeroAsignado,
+    subtotalCierre,
+    estado
+  } = body
+
+  const pedidoAnterior =
+    await this.pedidoRepo.buscarPorId(id)
+
+  if (!pedidoAnterior) {
+    throw new PedidoServiceError(
+      404,
+      'Pedido no encontrado'
+    )
+  }
+
+  const meseroResponsableId =
+    pedidoAnterior.usuario
+      ? pedidoAnterior.usuario.toString()
+      : ''
+
+  const esResponsable =
+    !usuarioAuthId ||
+    meseroResponsableId === usuarioAuthId
+
+  const esAdmin =
+    usuarioRol === 'Administrador' ||
+    usuarioRol === 'superadmin'
+
+  if (!esResponsable && !esAdmin) {
+    throw new PedidoServiceError(
+      403,
+      'Acceso denegado: solo el mesero responsable del pedido o un Administrador pueden modificar este pedido.'
+    )
+  }
+
+  if (pedidoAnterior.mesa) {
+    const mesaPedido =
+      await this.mesaRepo.buscarPorId(
+        pedidoAnterior.mesa.toString()
       )
-    }
-
-    if (pedidoAnterior.mesa) {
-      const mesaPedido = await this.mesaRepo.buscarPorId(pedidoAnterior.mesa.toString())
-      if (mesaPedido?.estado === ESTADOS_MESA.CUENTA_SOLICITADA) {
-        throw new PedidoServiceError(
-          400,
-          'No se puede modificar un pedido cuya mesa ya tiene la cuenta solicitada.'
-        )
-      }
-    }
 
     if (
-      pedidoAnterior.estado === ESTADOS_PEDIDO.CERRADO ||
-      pedidoAnterior.estado === ESTADOS_PEDIDO.CANCELADO
+      mesaPedido?.estado ===
+      ESTADOS_MESA.CUENTA_SOLICITADA
     ) {
-      throw new PedidoServiceError(400, `No se puede modificar un pedido en estado "${pedidoAnterior.estado}".`)
-    }
-    if (estado !== undefined) {
       throw new PedidoServiceError(
         400,
-        'No se permite modificar el estado del pedido directamente mediante este endpoint.'
+        'No se puede modificar un pedido cuya mesa ya tiene la cuenta solicitada.'
       )
     }
-    if (montoPropina !== undefined && toNumber(montoPropina, Number.NaN) < 0) {
-      throw new PedidoServiceError(400, 'El monto de propina no puede ser negativo')
-    }
-    if (total !== undefined && toNumber(total, Number.NaN) < 0) {
-      throw new PedidoServiceError(400, 'El total no puede ser negativo')
-    }
-    if (subtotalCierre !== undefined && toNumber(subtotalCierre, Number.NaN) < 0) {
-      throw new PedidoServiceError(400, 'El subtotal no puede ser negativo')
-    }
+  }
 
-    const updates: PedidoUpdates = {}
-    if (detalles !== undefined) {
-      const detallesEntrada = isUnknownArray(detalles) ? detalles : []
-      const detallesSinCambios =
-        detallesEntrada.length === pedidoAnterior.detalles.length &&
-        detallesEntrada.every((detalleEntrada, indice) => {
-          const detalle = toPlainRecord(detalleEntrada)
+  if (
+    pedidoAnterior.estado === ESTADOS_PEDIDO.CERRADO ||
+    pedidoAnterior.estado === ESTADOS_PEDIDO.CANCELADO
+  ) {
+    throw new PedidoServiceError(
+      400,
+      `No se puede modificar un pedido en estado "${pedidoAnterior.estado}".`
+    )
+  }
+
+  if (estado !== undefined) {
+    throw new PedidoServiceError(
+      400,
+      'No se permite modificar el estado del pedido directamente mediante este endpoint.'
+    )
+  }
+
+  if (
+    total !== undefined &&
+    toNumber(total, Number.NaN) < 0
+  ) {
+    throw new PedidoServiceError(
+      400,
+      'El total no puede ser negativo'
+    )
+  }
+
+  if (
+    subtotalCierre !== undefined &&
+    toNumber(subtotalCierre, Number.NaN) < 0
+  ) {
+    throw new PedidoServiceError(
+      400,
+      'El subtotal no puede ser negativo'
+    )
+  }
+
+  const updates: PedidoUpdates = {}
+
+  if (detalles !== undefined) {
+    const detallesEntrada =
+      isUnknownArray(detalles) ? detalles : []
+
+    const detallesSinCambios =
+      detallesEntrada.length ===
+        pedidoAnterior.detalles.length &&
+      detallesEntrada.every(
+        (detalleEntrada, indice) => {
+          const detalle =
+            toPlainRecord(detalleEntrada)
+
           const platoEntrada = detalle.plato
+
           const platoId = toIdString(
-            toPlainRecord(platoEntrada)._id || platoEntrada || detalle.platoId
+            toPlainRecord(platoEntrada)._id ||
+              platoEntrada ||
+              detalle.platoId
           )
-          const detalleActual = pedidoAnterior.detalles[indice]
+
+          const detalleActual =
+            pedidoAnterior.detalles[indice]
+
           return Boolean(
             detalleActual &&
-            platoId === detalleActual.plato.toString() &&
-            toNumber(detalle.cantidad, Number.NaN) === detalleActual.cantidad &&
-            (toText(detalle.observacion)?.trim() || '') ===
-              (detalleActual.observacion || '').trim()
-          )
-        })
-
-      if (pedidoAnterior.estado !== ESTADOS_PEDIDO.BORRADOR) {
-        if (!detallesSinCambios) {
-          throw new PedidoServiceError(
-            409,
-            'Los platos solo se pueden modificar mientras el pedido está en BORRADOR. Para agregar más platos, crea otro pedido para la misma visita.'
+              platoId ===
+                detalleActual.plato.toString() &&
+              toNumber(
+                detalle.cantidad,
+                Number.NaN
+              ) === detalleActual.cantidad &&
+              (
+                toText(detalle.observacion)?.trim() ||
+                ''
+              ) ===
+                (detalleActual.observacion || '').trim()
           )
         }
-      } else {
-        const { detallesCalculados, subtotal } = await this.procesarDetallesPedido(detalles)
-        updates.detalles = detallesCalculados
-        updates.subtotalCierre = subtotal
-      }
-    }
-
-    if (clienteNombre !== undefined) updates.clienteNombre = String(clienteNombre).trim()
-    if (clienteCI !== undefined) updates.clienteCI = String(clienteCI).trim()
-    if (clienteNIT !== undefined) updates.clienteNIT = String(clienteNIT).trim()
-
-    let cajeroAsignadoActualizado: Types.ObjectId | string | null | undefined
-    if (cajeroAsignado !== undefined) {
-      if (cajeroAsignado === null || cajeroAsignado === '') {
-        updates.cajeroAsignado = null
-        cajeroAsignadoActualizado = null
-      } else {
-        const cajeroId = toIdString(cajeroAsignado)
-        if (!cajeroId || !Types.ObjectId.isValid(cajeroId)) {
-          throw new PedidoServiceError(400, 'El cajero asignado no es válido')
-        }
-        updates.cajeroAsignado = new Types.ObjectId(cajeroId)
-        cajeroAsignadoActualizado = updates.cajeroAsignado
-      }
-    }
-
-        if (montoPropina !== undefined) {
-      updates.montoPropina = toNumber(montoPropina)
-    }
-
-    // Subtotal y total siempre se recalculan en backend a partir de los valores permitidos.
-        const finalSub = updates.subtotalCierre !== undefined
-      ? updates.subtotalCierre
-      : toNumber(pedidoAnterior.subtotalCierre || pedidoAnterior.total)
-
-    const finalProp = updates.montoPropina !== undefined
-      ? updates.montoPropina
-      : toNumber(pedidoAnterior.montoPropina)
+      )
 
     if (
-      updates.detalles !== undefined ||
-      updates.montoPropina !== undefined
+      pedidoAnterior.estado !==
+      ESTADOS_PEDIDO.BORRADOR
     ) {
-      updates.total = Number((finalSub + finalProp).toFixed(2))
-
-      if (
-        !updates.subtotalCierre &&
-        (!pedidoAnterior.subtotalCierre || pedidoAnterior.subtotalCierre === 0)
-      ) {
-        updates.subtotalCierre = finalSub
+      if (!detallesSinCambios) {
+        throw new PedidoServiceError(
+          409,
+          'Los platos solo se pueden modificar mientras el pedido está en BORRADOR. Para agregar más platos, crea otro pedido para la misma visita.'
+        )
       }
-    }
+    } else {
+      const { detallesCalculados, subtotal } =
+        await this.procesarDetallesPedido(detalles)
 
-    const pedidoActualizado = await this.pedidoRepo.actualizar(
-      id,
-      updates as Parameters<PedidoRepository['actualizar']>[1]
-    )
-    if (!pedidoActualizado) throw new PedidoServiceError(404, 'Pedido no encontrado')
-
-    return {
-      pedidoActualizado: PedidoService.agregarFechaBoliviaPedido(pedidoActualizado),
-      pedidoDoc: pedidoActualizado,
-      mesaReactivada: null,
-      reabierto: false,
-      cajeroAsignado: cajeroAsignadoActualizado
+      updates.detalles = detallesCalculados
+      updates.subtotalCierre = subtotal
     }
   }
+
+  if (clienteNombre !== undefined) {
+    updates.clienteNombre =
+      String(clienteNombre).trim()
+  }
+
+  if (clienteCI !== undefined) {
+    updates.clienteCI =
+      String(clienteCI).trim()
+  }
+
+  if (clienteNIT !== undefined) {
+    updates.clienteNIT =
+      String(clienteNIT).trim()
+  }
+
+  let cajeroAsignadoActualizado:
+    | Types.ObjectId
+    | string
+    | null
+    | undefined
+
+  if (cajeroAsignado !== undefined) {
+    if (
+      cajeroAsignado === null ||
+      cajeroAsignado === ''
+    ) {
+      updates.cajeroAsignado = null
+      cajeroAsignadoActualizado = null
+    } else {
+      const cajeroId = toIdString(cajeroAsignado)
+
+      if (
+        !cajeroId ||
+        !Types.ObjectId.isValid(cajeroId)
+      ) {
+        throw new PedidoServiceError(
+          400,
+          'El cajero asignado no es válido'
+        )
+      }
+
+      updates.cajeroAsignado =
+        new Types.ObjectId(cajeroId)
+
+      cajeroAsignadoActualizado =
+        updates.cajeroAsignado
+    }
+  }
+
+  // Si se modifican los detalles, recalculamos
+  // únicamente el consumo y dejamos la propina en cero.
+  if (
+    updates.detalles !== undefined &&
+    updates.subtotalCierre !== undefined
+  ) {
+    updates.montoPropina = 0
+
+    updates.total = Number(
+      updates.subtotalCierre.toFixed(2)
+    )
+  }
+
+  const pedidoActualizado =
+    await this.pedidoRepo.actualizar(
+      id,
+      updates as Parameters<
+        PedidoRepository['actualizar']
+      >[1]
+    )
+
+  if (!pedidoActualizado) {
+    throw new PedidoServiceError(
+      404,
+      'Pedido no encontrado'
+    )
+  }
+
+  return {
+    pedidoActualizado:
+      PedidoService.agregarFechaBoliviaPedido(
+        pedidoActualizado
+      ),
+    pedidoDoc: pedidoActualizado,
+    mesaReactivada: null,
+    reabierto: false,
+    cajeroAsignado: cajeroAsignadoActualizado
+  }
+}
 
   /**
    * Obtiene pedidos de mesas con cuenta solicitada y los formatea para Caja.

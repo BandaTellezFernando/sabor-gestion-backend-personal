@@ -11,6 +11,7 @@ import {
 import {
   procesarPagoCuenta,
   generarQRCuentaMesa,
+  configurarPropinaQRCuenta,
   consultarEstadoQRCuenta,
   confirmarPagoQRCuenta,
   enviarReciboCorreoCuenta,
@@ -55,6 +56,14 @@ router.post(
   verificarToken,
   permitirRoles('Cajero', 'Administrador'),
   procesarPagoCuenta
+)
+
+// Configurar la propina de una cuenta antes de generar su QR.
+router.patch(
+  '/cuentas/:cuentaId/qr/propina',
+  verificarToken,
+  permitirRoles('Cajero', 'Administrador'),
+  configurarPropinaQRCuenta
 )
 
 // Obtener los datos QR de una cuenta desde Caja.

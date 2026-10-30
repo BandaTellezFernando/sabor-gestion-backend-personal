@@ -53,6 +53,7 @@ import {
   obtenerFechaBolivia,
   formatearFechaBolivia
 } from '../utils/fechaBolivia'
+import { randomBytes } from 'node:crypto'
 
 export class CuentaMesaPagoServiceError extends Error {
   constructor(
@@ -186,6 +187,92 @@ export class CuentaMesaPagoService {
       )
     }
   }
+
+  /**
+ * Configura la propina desde Caja antes de generar el QR.
+ * Actualiza el total y renueva el token para invalidar
+ * cualquier QR generado anteriormente.
+ */
+async configurarPropinaQR(
+  cuentaId: string,
+  montoPropina: number
+): Promise<{
+  codigoCuenta: string
+  subtotal: number
+  propina: number
+  total: number
+}> {
+  if (!Types.ObjectId.isValid(cuentaId)) {
+    throw new CuentaMesaPagoServiceError(
+      400,
+      'El ID de cuenta no es válido.'
+    )
+  }
+
+  if (
+  typeof montoPropina !== 'number' ||
+  !Number.isInteger(montoPropina) ||
+  montoPropina < 0
+) {
+    throw new CuentaMesaPagoServiceError(
+      400,
+      'El monto de la propina debe ser un número válido mayor o igual a cero.'
+    )
+  }
+
+  const cuenta = await this.cuentaRepo.buscarPorId(cuentaId)
+
+  if (!cuenta) {
+    throw new CuentaMesaPagoServiceError(
+      404,
+      'Cuenta no encontrada.'
+    )
+  }
+
+  if (cuenta.estado !== ESTADOS_CUENTA_MESA.PENDIENTE_PAGO) {
+    throw new CuentaMesaPagoServiceError(
+      409,
+      'Solo se puede configurar la propina de una cuenta pendiente de pago.'
+    )
+  }
+
+  const subtotal = this.redondear(Number(cuenta.subtotal))
+  const propina = this.redondear(montoPropina)
+
+  if (!Number.isFinite(subtotal) || subtotal <= 0) {
+    throw new CuentaMesaPagoServiceError(
+      409,
+      'El subtotal de la cuenta no es válido.'
+    )
+  }
+
+  const total = this.redondear(subtotal + propina)
+  const qrToken = randomBytes(32).toString('hex')
+
+  const cuentaActualizada =
+    await this.cuentaRepo.actualizarSiPendiente(
+      cuenta._id,
+      {
+        montoPropina: propina,
+        total,
+        qrToken
+      }
+    )
+
+  if (!cuentaActualizada) {
+    throw new CuentaMesaPagoServiceError(
+      409,
+      'La cuenta cambió de estado mientras se configuraba la propina.'
+    )
+  }
+
+  return {
+    codigoCuenta: cuentaActualizada.codigoCuenta,
+    subtotal,
+    propina,
+    total
+  }
+}
 
     /**
    * Construye el enlace público que abrirá el cliente al escanear
@@ -700,16 +787,23 @@ export class CuentaMesaPagoService {
           )
         }
 
-                const subtotal = this.redondear(cuenta.subtotal)
-        const propina = this.redondear(
-          dto.montoPropina ?? cuenta.montoPropina
-        )
+       const subtotal = this.redondear(cuenta.subtotal)
+
+// La propina se decide exclusivamente en Caja.
+// Para efectivo y tarjeta se recibe desde Caja.
+// Para QR se utiliza el importe guardado al generar el QR.
+const propinaSolicitada =
+  metodoPago === 'QR'
+    ? Number(cuenta.montoPropina ?? 0)
+    : Number(dto.montoPropina ?? 0)
+
+const propina = this.redondear(propinaSolicitada)
 
         if (
           !Number.isFinite(subtotal) ||
           subtotal <= 0 ||
-          !Number.isFinite(propina) ||
-          propina < 0
+          !Number.isInteger(propina) ||
+           propina < 0
         ) {
           throw new CuentaMesaPagoServiceError(
             400,

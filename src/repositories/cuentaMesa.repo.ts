@@ -27,6 +27,7 @@ export interface CuentaMesaActualizarDatos {
   estado?: typeof ESTADOS_CUENTA_MESA[keyof typeof ESTADOS_CUENTA_MESA]
   montoPropina?: number
   total?: number
+  qrToken?: string
   clienteNombre?: string
   clienteCI?: string
   clienteNIT?: string

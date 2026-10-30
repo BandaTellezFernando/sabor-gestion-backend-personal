@@ -155,10 +155,9 @@ export class CuentaMesaService {
           )
         }
 
-        // 6. Calcular importes usando los detalles persistidos.
-        // Nunca confiamos en importes enviados por el frontend.
+                // 6. Calcular el subtotal usando únicamente los detalles persistidos.
+        // La propina será decidida posteriormente en Caja.
         let subtotal = 0
-        let montoPropina = 0
 
         for (const pedido of pedidos) {
           if (!Array.isArray(pedido.detalles) || pedido.detalles.length === 0) {
@@ -189,30 +188,15 @@ export class CuentaMesaService {
             0
           )
 
-                    const propinaPedido = Number(
-            pedido.montoPropina ?? 0
-          )
-
-          if (
-            !Number.isFinite(propinaPedido) ||
-            propinaPedido < 0
-          ) {
-            throw new CuentaMesaServiceError(
-              409,
-              `La comanda ${pedido.codigo} tiene un importe de propina inválido.`
-            )
-          }
-
           subtotal += subtotalPedido
-          montoPropina += propinaPedido
         }
 
-               subtotal = Number(subtotal.toFixed(2))
-        montoPropina = Number(montoPropina.toFixed(2))
+        subtotal = Number(subtotal.toFixed(2))
 
-        const total = Number(
-          (subtotal + montoPropina).toFixed(2)
-        )
+        // La cuenta se crea sin propina.
+        // Caja será el único lugar donde se decidirá este importe.
+        const montoPropina = 0
+        const total = subtotal
 
         // 7. Crear una cuenta con un código único.
         const nuevaCuenta = await this.cuentaRepo.crear(

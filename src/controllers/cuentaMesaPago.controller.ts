@@ -312,6 +312,64 @@ export const procesarPagoCuenta = async (
   }
 }
 
+
+/**
+ * Configura la propina de una cuenta desde Caja antes de generar el QR.
+ * Solo Cajeros y Administradores pueden acceder mediante la ruta protegida.
+ */
+export const configurarPropinaQRCuenta = async (
+  req: CustomRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    if (!esRegistro(req.body)) {
+      throw new CuentaMesaPagoServiceError(
+        400,
+        'El cuerpo de la solicitud no es válido.'
+      )
+    }
+
+    const montoPropina = obtenerNumero(
+      req.body,
+      'montoPropina'
+    )
+
+    if (montoPropina === undefined) {
+      throw new CuentaMesaPagoServiceError(
+        400,
+        'El campo montoPropina es obligatorio.'
+      )
+    }
+
+    const resultado =
+      await cuentaMesaPagoService.configurarPropinaQR(
+        String(req.params.cuentaId ?? ''),
+        montoPropina
+      )
+
+    res.status(200).json({
+      mensaje: 'Propina configurada correctamente. Ya puedes generar el QR.',
+      ...resultado
+    })
+  } catch (error: unknown) {
+    if (error instanceof CuentaMesaPagoServiceError) {
+      res.status(error.statusCode).json({
+        mensaje: error.message
+      })
+      return
+    }
+
+    console.error(
+      'Error al configurar la propina del QR:',
+      error
+    )
+
+    res.status(500).json({
+      mensaje: 'Error interno al configurar la propina del QR.'
+    })
+  }
+}
+
 /**
  * Obtiene los datos necesarios para que Caja genere el QR.
  * Solo pueden solicitarlos Cajeros y Administradores mediante
