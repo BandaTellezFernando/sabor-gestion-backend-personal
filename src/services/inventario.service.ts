@@ -1,5 +1,6 @@
 // src/services/inventario.service.ts
 import type { ClientSession } from 'mongoose'
+import IngredienteModel, { type IIngrediente } from '../models/Ingrediente'
 import { PlatoRepository, platoRepository } from '../repositories/plato.repo'
 import { RecetaRepository, recetaRepository } from '../repositories/receta.repo'
 import {
@@ -40,6 +41,31 @@ export interface ConsumoIngredientePedido {
   unidadStock: string
   cantidadTotal: number
   detallePlatos: DetalleConsumoIngrediente[]
+}
+
+export interface FaltantePorDisponibilidad {
+  ingrediente?: string
+  plato: string
+  mensaje: string
+}
+
+export interface FaltantePorStock {
+  ingrediente: string
+  disponible: number
+  requerido: number
+  faltante: number
+  unidad: IIngrediente['unidadMedida']
+}
+
+export type FaltanteInventario =
+  | FaltantePorDisponibilidad
+  | FaltantePorStock
+
+export interface ResultadoVerificarStock {
+  success: boolean
+  errores: string[]
+  faltantes: FaltanteInventario[]
+  consumos: ConsumoIngredientePedido[]
 }
 
 export interface IngredientePoblado {
@@ -138,17 +164,9 @@ export class InventarioService {
     items: ItemValidacionInventario[],
     session: ClientSession | undefined,
     descontarStock: boolean,
-  ): Promise<{
-    success: boolean
-    errores: string[]
-    faltantes: any[]
-    consumos: ConsumoIngredientePedido[]
-  }> {
-    const mongoose = require('mongoose')
-    const IngredienteModel = mongoose.model('Ingrediente')
-
-    const errores: string[] = []
-    const faltantes: any[] = []
+   ): Promise<ResultadoVerificarStock> {
+        const errores: string[] = []
+    const faltantes: FaltanteInventario[] = []
 
     const consumoPorIngrediente = new Map<
       string,
@@ -186,7 +204,7 @@ export class InventarioService {
       }
 
       for (const reqIng of receta.ingredientes) {
-        const ingredienteDoc: any = reqIng.ingrediente
+        const ingredienteDoc: unknown = reqIng.ingrediente
 
         if (!esIngredientePoblado(ingredienteDoc) || !ingredienteDoc.nombre) {
           errores.push(`No se pudo identificar un ingrediente de "${nombrePlato}".`)
@@ -291,10 +309,10 @@ export class InventarioService {
     // 2. Verificar el stock dentro de la sesión actual.
     const ingredienteIds = Array.from(consumoPorIngrediente.keys())
     const ingredientesDB = await IngredienteModel.find({
-      _id: { $in: ingredienteIds },
-    }).session(session)
+  _id: { $in: ingredienteIds }
+}).session(session ?? null)
 
-    const mapIngredientes = new Map<string, any>()
+    const mapIngredientes = new Map<string, IIngrediente>()
     for (const ing of ingredientesDB) {
       mapIngredientes.set(String(ing._id), ing)
     }

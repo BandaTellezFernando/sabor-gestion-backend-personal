@@ -1,5 +1,5 @@
 // src/repositories/pago.repo.ts
-import { Types, ClientSession } from 'mongoose'
+import { Types, ClientSession, QueryFilter } from 'mongoose'
 import Pago, { IPago } from '../models/Pago'
 import { PagoCrearDatos } from '../types/pago.types'
 
@@ -97,7 +97,7 @@ export class PagoRepository {
   /**
    * Obtiene todos los pagos aplicando filtros opcionales, ordenados por fecha de creación descendente.
    */
-  async buscarTodos(filtros: Record<string, any> = {}): Promise<IPago[]> {
+  async buscarTodos(filtros: QueryFilter<IPago> = {}): Promise<IPago[]> {
     return await Pago.find(filtros)
       .populate('mesa', 'numero')
       .populate('mesero', 'nombre apellido')
@@ -199,7 +199,7 @@ export class PagoRepository {
   /**
    * Cuenta la cantidad de pagos que coinciden con un criterio de búsqueda.
    */
-  async contar(filtros: Record<string, any> = {}): Promise<number> {
+  async contar(filtros: QueryFilter<IPago> = {}): Promise<number> {
     return await Pago.countDocuments(filtros)
   }
 }

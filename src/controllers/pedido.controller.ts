@@ -9,6 +9,12 @@ import {
 } from '../services/pedido.service'
 import { mesaService } from '../services/mesa.service'
 
+function esRegistroMesa(
+  valor: unknown
+): valor is Record<string, unknown> {
+  return typeof valor === 'object' && valor !== null
+}
+
 export const crearPedido = async (req: CustomRequest, res: Response): Promise<void> => {
   try {
     const usuarioAuthId = req.usuario?.id
@@ -217,21 +223,30 @@ export const actualizarEstadoPedido = async (req: Request, res: Response): Promi
       io.to('room:cocina').emit('cocina:actualizar_tablero', pedidoActualizado)
 
       // B) Alerta "¡Listo!" hacia los meseros cuando el chef termina el pedido
-      if (disparaAlertaListo) {
+                 if (disparaAlertaListo) {
+        const mesaReferencia: unknown = pedidoActualizado.mesa
+        const mesaDatos = esRegistroMesa(mesaReferencia)
+          ? mesaReferencia
+          : undefined
+
         console.log(
           ' [WEBSOCKET] Emitiendo alerta de listo a meseros para pedido:',
           pedidoActualizado._id.toString()
         )
+
         io.to('room:meseros').emit('mesas:alerta_listo', {
           pedidoId: pedidoActualizado._id.toString(),
-          mesaId: pedidoActualizado.mesa
-            ? (pedidoActualizado.mesa as any)._id?.toString() ||
-              pedidoActualizado.mesa.toString()
+          mesaId: mesaReferencia
+            ? (
+                mesaDatos?._id
+                  ? String(mesaDatos._id)
+                  : pedidoActualizado.mesa?.toString()
+              )
             : undefined,
-          mesaNombre: pedidoActualizado.mesa
-            ? (pedidoActualizado.mesa as any).numero ||
-              (pedidoActualizado.mesa as any).name ||
-              (pedidoActualizado.mesa as any).nombre ||
+          mesaNombre: mesaReferencia
+            ? mesaDatos?.numero ||
+              mesaDatos?.name ||
+              mesaDatos?.nombre ||
               'Mesa'
             : '?'
         })
@@ -411,7 +426,7 @@ export const marcarPedidoRecogido = async (
         pedidoId: resultado.pedido._id ? resultado.pedido._id.toString() : String(id),
         codigo: resultado.pedido.codigo,
         mesaId: resultado.pedido.mesa?._id || resultado.pedido.mesa,
-        mesaNombre: (resultado.pedido.mesa as any)?.numero || 'Mesa',
+        mesaNombre: resultado.pedido.mesa?.numero || 'Mesa',
         recogido: true,
         recogidoPor: usuarioAuthId,
         fechaRecogida: resultado.fechaRecogida

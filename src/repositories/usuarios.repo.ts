@@ -1,5 +1,5 @@
 // src/repositories/usuarios.repo.ts
-import { ClientSession, Types } from 'mongoose'
+import { ClientSession, Types, QueryFilter } from 'mongoose'
 import Usuario, { IUsuario } from '../models/Usuario'
 import CierreCaja, { ICierreCaja } from '../models/CierreCaja'
 
@@ -57,15 +57,15 @@ export class UsuarioRepository {
   /**
    * Obtiene todos los usuarios de la base de datos sin incluir sus contraseñas
    */
-  async buscarTodos(): Promise<any[]> {
-    return await Usuario.find().select('-password').lean()
+  async buscarTodos(): Promise<UsuarioSinPassword[]> {
+    return await Usuario.find().select('-password').lean<UsuarioSinPassword[]>()
   }
 
   /**
    * Busca un usuario por su identificador único excluyendo la contraseña
    */
-  async buscarPorId(id: string): Promise<any | null> {
-    return await Usuario.findById(id).select('-password').lean()
+  async buscarPorId(id: string): Promise<UsuarioSinPassword | null> {
+    return await Usuario.findById(id).select('-password').lean<UsuarioSinPassword | null>()
   }
 
   /**
@@ -122,7 +122,7 @@ export class UsuarioRepository {
     email?: string,
     ci?: string
   ): Promise<IUsuario | null> {
-    const orConditions: any[] = []
+    const orConditions: QueryFilter<IUsuario>[] = []
     if (email !== undefined) orConditions.push({ email })
     if (ci !== undefined) orConditions.push({ ci })
 
@@ -186,14 +186,14 @@ export class UsuarioRepository {
   async actualizar(
     id: string,
     datos: UsuarioActualizarDatos
-  ): Promise<any | null> {
+  ): Promise<UsuarioSinPassword | null> {
     return await Usuario.findByIdAndUpdate(
       id,
       { $set: datos },
       { returnDocument: 'after' }
     )
       .select('-password')
-      .lean()
+      .lean<UsuarioSinPassword | null>()
   }
 
   /**

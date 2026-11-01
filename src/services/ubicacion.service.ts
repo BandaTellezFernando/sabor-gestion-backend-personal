@@ -4,12 +4,13 @@ import {
   IUbicacion
 } from '../repositories/ubicacion.repo'
 import { MesaRepository, mesaRepository } from '../repositories/mesa.repo'
+import { isPlainRecord } from '../utils/mongoosePlain'
 
 export class UbicacionServiceError extends Error {
   constructor(
     public statusCode: number,
     message: string,
-    public extra?: Record<string, any>
+    public extra?: Record<string, unknown>
   ) {
     super(message)
     this.name = 'UbicacionServiceError'
@@ -70,9 +71,9 @@ export class UbicacionService {
     let regex: RegExp
     try {
       regex = new RegExp(`^${this.escapeRegex(finalName)}$`, 'i')
-    } catch (findErr: any) {
+    } catch (findErr: unknown) {
       throw new UbicacionServiceError(400, 'Nombre de ubicación inválido', {
-        error: findErr.message || findErr
+        error: findErr instanceof Error ? findErr.message : findErr
       })
     }
 
@@ -90,13 +91,14 @@ export class UbicacionService {
         descripcion: body.descripcion
       })
       return this.mapUbicacion(nueva)
-    } catch (err: any) {
-      if (err && (err.code === 11000 || (err.code && err.code === 11000))) {
+    } catch (err: unknown) {
+      const errorData = isPlainRecord(err) ? err : undefined
+      if (errorData?.code === 11000) {
         throw new UbicacionServiceError(400, 'Ubicación ya existe (duplicada por índice)')
       }
-      if (err && err.keyValue) {
+      if (errorData?.keyValue) {
         throw new UbicacionServiceError(400, 'Error creando ubicación', {
-          detalle: err.keyValue
+          detalle: errorData.keyValue
         })
       }
       throw err

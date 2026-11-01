@@ -427,7 +427,7 @@ async configurarPropinaQR(
         const detalles = pedido.detalles.map((detalle) => {
           /*
            * En esta consulta, detalles.plato está poblado.
-           * El cast describe esa relación sin utilizar any.
+           * El cast describe esa relación sin recurrir a un tipo dinámico.
            */
           const detalleQR = detalle as unknown as {
             nombrePlato?: string

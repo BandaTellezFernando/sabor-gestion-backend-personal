@@ -1,6 +1,9 @@
 // src/types/pago.types.ts
 import { Types } from 'mongoose'
 import { DatosFactura, ItemFactura } from '../utils/facturaTemplate'
+import type { IPago } from '../models/Pago'
+import type { IPedido } from '../models/Pedido'
+import type { MesaPobladaDoc } from '../repositories/mesa.repo'
 
 export { DatosFactura, ItemFactura }
 
@@ -142,9 +145,9 @@ export interface ComprobantePago {
  * Incluye los datos persistidos y los valores necesarios para emitir WebSockets
  */
 export interface ResultadoProcesarPago {
-  pedidoActualizado: any
-  nuevoPago: any
-  mesaLiberada?: any
+  pedidoActualizado: IPedido
+  nuevoPago: IPago
+  mesaLiberada: MesaPobladaDoc | null
   nuevoEstadoMesa: string
   statusSocketMesa: string
   comprobante: ComprobantePago

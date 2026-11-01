@@ -78,6 +78,25 @@ export interface UsuarioNormalizado {
   updatedAt?: string
 }
 
+interface UsuarioNormalizableData {
+  _id?: { toString(): string } | string
+  id?: { toString(): string } | string
+  nombre?: string
+  apellido?: string
+  ci?: string
+  email?: string
+  rol?: string
+  estado?: boolean
+  verificado?: boolean
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+interface UsuarioNormalizableInput extends UsuarioNormalizableData {
+  toObject?: () => UsuarioNormalizableData
+  _doc?: UsuarioNormalizableData
+}
+
 export interface ResultadoCambioEstado {
   estado: boolean
   usuario: UsuarioNormalizado
@@ -104,14 +123,24 @@ export class UsuarioService {
    * Mapea un documento de usuario de MongoDB al formato requerido por el frontend,
    * exponiendo únicamente id (sin _id) y con fechas formateadas en hora de Bolivia.
    */
-  private normalizarUsuario(u: any): UsuarioNormalizado {
+  private normalizarUsuario(u: unknown): UsuarioNormalizado {
+    const usuario =
+      u && typeof u === 'object'
+        ? (u as UsuarioNormalizableInput)
+        : undefined
+
     const raw =
-      u && typeof u.toObject === 'function'
-        ? u.toObject()
-        : u && u._doc
-          ? u._doc
-          : u || {}
-    const id = raw._id ? raw._id.toString() : raw.id ? raw.id.toString() : ''
+      usuario && typeof usuario.toObject === 'function'
+        ? usuario.toObject()
+        : usuario && usuario._doc
+          ? usuario._doc
+          : usuario || {}
+
+    const id = raw._id
+      ? raw._id.toString()
+      : raw.id
+        ? raw.id.toString()
+        : ''
 
     return {
       id,
@@ -122,8 +151,12 @@ export class UsuarioService {
       rol: raw.rol || '',
       estado: raw.estado !== undefined ? raw.estado : true,
       verificado: raw.verificado !== undefined ? raw.verificado : true,
-      createdAt: raw.createdAt ? formatearFechaHoraBolivia(raw.createdAt) : undefined,
-      updatedAt: raw.updatedAt ? formatearFechaHoraBolivia(raw.updatedAt) : undefined
+      createdAt: raw.createdAt
+        ? formatearFechaHoraBolivia(raw.createdAt)
+        : undefined,
+      updatedAt: raw.updatedAt
+        ? formatearFechaHoraBolivia(raw.updatedAt)
+        : undefined
     }
   }
 

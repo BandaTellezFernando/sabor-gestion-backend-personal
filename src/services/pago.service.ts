@@ -31,7 +31,7 @@ export class PagoServiceError extends Error {
   constructor(
     public statusCode: number,
     message: string,
-    public extra?: Record<string, any>
+    public extra?: Record<string, unknown>
   ) {
     super(message)
     this.name = 'PagoServiceError'
@@ -653,7 +653,7 @@ if (cajeroId) {
    * Obtiene los datos poblados del pedido requeridos para emitir los WebSockets
    * en la simulación de pago QR móvil.
    */
-  async obtenerPedidoParaSimulacion(pedidoId: string): Promise<any> {
+  async obtenerPedidoParaSimulacion(pedidoId: string): Promise<IPedido> {
     const pedido = await this.pedidoRepo.buscarPorIdPoblado(pedidoId)
 
     if (!pedido) {

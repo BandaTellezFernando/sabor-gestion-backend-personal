@@ -6,6 +6,7 @@ import {
 } from '../repositories/ingrediente.repo'
 import { RecetaRepository, recetaRepository } from '../repositories/receta.repo'
 import { esUnidadMedida, validarCantidadParaUnidad } from '../utils/unidades'
+import { toIdString, toOptionalDate, toPlainRecord, toText } from '../utils/mongoosePlain'
 
 export class IngredienteServiceError extends Error {
   constructor(
@@ -48,24 +49,19 @@ export class IngredienteService {
     this.recetaRepo = recetaRepo || recetaRepository
   }
 
-  private toDTO(i: any): IngredienteResponseDTO {
-    const raw =
-      i && typeof i.toObject === 'function'
-        ? i.toObject()
-        : i && i._doc
-          ? i._doc
-          : i || {}
-    const id = raw._id ? raw._id.toString() : raw.id ? raw.id.toString() : ''
+  private toDTO(i: unknown): IngredienteResponseDTO {
+    const raw = toPlainRecord(i)
+    const id = toIdString(raw._id) ?? toIdString(raw.id) ?? ''
     return {
       id,
       _id: id,
-      nombre: raw.nombre || '',
-      unidadMedida: raw.unidadMedida || '',
+      nombre: toText(raw.nombre),
+      unidadMedida: toText(raw.unidadMedida),
       disponible: raw.disponible !== undefined ? Boolean(raw.disponible) : true,
       stockActual: Number(raw.stockActual || 0),
-      fechaRegistro: raw.fechaRegistro,
-      createdAt: raw.createdAt,
-      updatedAt: raw.updatedAt
+      fechaRegistro: toOptionalDate(raw.fechaRegistro),
+      createdAt: toOptionalDate(raw.createdAt),
+      updatedAt: toOptionalDate(raw.updatedAt)
     }
   }
 
@@ -161,7 +157,7 @@ export class IngredienteService {
         )
       }
       const duplicado = await this.ingredienteRepo.buscarPorNombre(nombreNormalizado)
-      const duplicadoId = duplicado ? (duplicado._id ? duplicado._id.toString() : (duplicado as any).id) : null
+      const duplicadoId = duplicado ? duplicado._id.toString() : null
       if (duplicado && duplicadoId !== id) {
         throw new IngredienteServiceError(
           400,

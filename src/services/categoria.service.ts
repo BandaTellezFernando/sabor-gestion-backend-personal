@@ -1,6 +1,7 @@
 // src/services/categoria.service.ts
 import { CategoriaRepository } from '../repositories/categoria.repo'
 import { PlatoRepository, platoRepository } from '../repositories/plato.repo'
+import { toIdString, toOptionalDate, toPlainRecord, toText } from '../utils/mongoosePlain'
 
 export class CategoriaServiceError extends Error {
   constructor(
@@ -32,20 +33,15 @@ export class CategoriaService {
     this.platoRepo = platoRepo || platoRepository
   }
 
-  private toDTO(c: any): CategoriaResponseDTO {
-    const raw =
-      c && typeof c.toObject === 'function'
-        ? c.toObject()
-        : c && c._doc
-          ? c._doc
-          : c || {}
-    const id = raw._id ? raw._id.toString() : raw.id ? raw.id.toString() : ''
+  private toDTO(c: unknown): CategoriaResponseDTO {
+    const raw = toPlainRecord(c)
+    const id = toIdString(raw._id) ?? toIdString(raw.id) ?? ''
     return {
       id,
       _id: id,
-      nombre: raw.nombre || '',
-      createdAt: raw.createdAt,
-      updatedAt: raw.updatedAt
+      nombre: toText(raw.nombre),
+      createdAt: toOptionalDate(raw.createdAt),
+      updatedAt: toOptionalDate(raw.updatedAt)
     }
   }
 
@@ -71,7 +67,7 @@ export class CategoriaService {
   /**
    * Valida las reglas de negocio y crea una nueva categoría
    */
-  async crearCategoria(datos: { nombre?: string; [key: string]: any }): Promise<CategoriaResponseDTO> {
+  async crearCategoria(datos: { nombre?: unknown }): Promise<CategoriaResponseDTO> {
     const { nombre } = datos
 
     if (!nombre || typeof nombre !== 'string' || nombre.trim() === '') {
@@ -97,7 +93,6 @@ export class CategoriaService {
     }
 
     const nuevaCategoria = await this.categoriaRepo.crear({
-      ...datos,
       nombre: nombreNormalizado
     })
     return this.toDTO(nuevaCategoria)
@@ -108,7 +103,7 @@ export class CategoriaService {
    */
   async actualizarCategoria(
     id: string,
-    datos: { nombre?: string; [key: string]: any }
+    datos: { nombre?: unknown }
   ): Promise<CategoriaResponseDTO> {
     const { nombre } = datos
 

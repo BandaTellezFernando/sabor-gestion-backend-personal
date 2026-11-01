@@ -41,7 +41,7 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
       nit
     } = req.body
 
-    const cajeroId = (req as any).usuario?.id
+    const cajeroId = req.usuario?.id
 
         const resultado = await pagoService.procesarPagoFinal({
       pedidoId,
@@ -62,9 +62,18 @@ export const procesarPagoFinal = async (req: CustomRequest, res: Response): Prom
       io.to('room:cocina').emit('cocina:actualizar_tablero', resultado.pedidoActualizado)
 
       if (resultado.pedidoActualizado.mesa) {
-        const mesaIdStr = (
-          (resultado.pedidoActualizado.mesa as any)._id || resultado.pedidoActualizado.mesa
-        ).toString()
+               const mesaReferencia: unknown =
+          resultado.pedidoActualizado.mesa
+
+        const mesaId =
+          typeof mesaReferencia === 'object' &&
+          mesaReferencia !== null &&
+          '_id' in mesaReferencia &&
+          mesaReferencia._id
+            ? mesaReferencia._id
+            : mesaReferencia
+
+        const mesaIdStr = String(mesaId)
         const mesaNombre = resultado.mesaLiberada?.numero || 'Mesa'
 
         try {

@@ -1,5 +1,5 @@
 // src/repositories/mesa.repo.ts
-import mongoose, { Types, ClientSession } from 'mongoose'
+import mongoose, { Types, ClientSession, QueryFilter, UpdateQuery } from 'mongoose'
 import Mesa, { IMesa, MesaOrigenFusion } from '../models/Mesa'
 import {
   ESTADOS_MESA,
@@ -51,13 +51,13 @@ export interface MesaFusionActualizarDatos {
   fusionCanceladaAt?: Date | null
 }
 
-const ESTADOS_ESTRUCTURALES_ACTIVOS = [
+const ESTADOS_ESTRUCTURALES_ACTIVOS: EstadoFusionMesa[] = [
   ESTADOS_FUSION_MESA.INDIVIDUAL,
   ESTADOS_FUSION_MESA.FUSIONADA,
   ESTADOS_FUSION_MESA.INTEGRADA
 ]
 
-const ESTADOS_OPERATIVOS = [
+const ESTADOS_OPERATIVOS: EstadoFusionMesa[] = [
   ESTADOS_FUSION_MESA.INDIVIDUAL,
   ESTADOS_FUSION_MESA.FUSIONADA
 ]
@@ -67,7 +67,7 @@ const ESTADOS_OPERATIVOS = [
  * Esos registros deben tratarse como mesas individuales hasta ejecutar
  * la migración de datos correspondiente.
  */
-function filtroMesasOperativas() {
+function filtroMesasOperativas(): QueryFilter<IMesa> {
   return {
     $or: [
       { estadoFusion: { $in: ESTADOS_OPERATIVOS } },
@@ -76,7 +76,7 @@ function filtroMesasOperativas() {
   }
 }
 
-function filtroMesaIndividual() {
+function filtroMesaIndividual(): QueryFilter<IMesa> {
   return {
     $or: [
       { estadoFusion: ESTADOS_FUSION_MESA.INDIVIDUAL },
@@ -91,7 +91,7 @@ export class MesaRepository {
    * Las mesas integradas o fusionadas históricas no aparecen en el listado.
    */
   async buscarTodos(location?: string): Promise<MesaPobladaDoc[]> {
-    const filtro: Record<string, any> = filtroMesasOperativas()
+    const filtro: QueryFilter<IMesa> = filtroMesasOperativas()
 
     if (location) {
       if (mongoose.Types.ObjectId.isValid(location)) {
@@ -146,7 +146,7 @@ export class MesaRepository {
     excluirId?: string,
     session?: ClientSession
   ): Promise<IMesa | null> {
-    const filtro: Record<string, any> = {
+    const filtro: QueryFilter<IMesa> = {
       numero: numeroRegex,
       $or: [
         { estadoFusion: { $in: ESTADOS_ESTRUCTURALES_ACTIVOS } },
@@ -277,7 +277,7 @@ export class MesaRepository {
     datos: MesaActualizarDatos,
     session?: ClientSession
   ): Promise<MesaPobladaDoc | null> {
-    const update: Record<string, any> = {}
+    const update: UpdateQuery<IMesa> = {}
 
     if (datos.numero !== undefined) update.numero = datos.numero
     if (datos.capacidad !== undefined) update.capacidad = datos.capacidad

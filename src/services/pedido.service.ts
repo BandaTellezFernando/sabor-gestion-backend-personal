@@ -812,9 +812,14 @@ async crearPedido(
             .filter((mensaje) => typeof mensaje === 'string' && mensaje.trim().length > 0)
 
           const detallesFaltantes = validacion.faltantes.map((faltante) => {
-            const unidad = faltante.unidad ? ` ${faltante.unidad}` : ''
-            return `${faltante.ingrediente}: disponible ${faltante.disponible}${unidad}, requerido ${faltante.requerido}${unidad}, faltante ${faltante.faltante}${unidad}`
-          })
+  if ('disponible' in faltante) {
+    const unidad = faltante.unidad ? ` ${faltante.unidad}` : ''
+
+    return `${faltante.ingrediente}: disponible ${faltante.disponible}${unidad}, requerido ${faltante.requerido}${unidad}, faltante ${faltante.faltante}${unidad}`
+  }
+
+  return faltante.mensaje
+})
 
           const detalleInventario = [...detallesErrores, ...detallesFaltantes].join('. ')
           const mensajeError =

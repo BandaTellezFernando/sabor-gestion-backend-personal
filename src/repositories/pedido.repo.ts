@@ -1,7 +1,12 @@
 // src/repositories/pedido.repo.ts
-import { Types, ClientSession } from 'mongoose'
-import Pedido, { IPedido } from '../models/Pedido'
-import CierreCaja from '../models/CierreCaja'
+import { Types, ClientSession, QueryFilter } from 'mongoose'
+import Pedido, {
+  IPedido,
+  IDetallePedido
+} from '../models/Pedido'
+import CierreCaja, {
+  ICierreCaja
+} from '../models/CierreCaja'
 import { ESTADOS_PEDIDO } from '../utils/constants'
 
 export { IPedido } from '../models/Pedido'
@@ -15,20 +20,46 @@ export interface PedidoCrearDatos {
   estado?: string
   total: number
   mesa?: string | Types.ObjectId
+  cuentaMesa?: string | Types.ObjectId
   usuario: string | Types.ObjectId
-  detalles: any[]
+  detalles: IDetallePedido[]
+  qrUrl?: string
+  metodoPago?: string
+  montoPropina?: number
+  subtotalCierre?: number
   clienteNombre?: string
   clienteCI?: string
   clienteNIT?: string
   cajeroAsignado?: string | Types.ObjectId
-  [key: string]: any
+  recogido?: boolean
+  fechaRecogida?: Date
+  recogidoPor?: string | Types.ObjectId
+}
+
+export type PedidoActualizarDatos = Partial<
+  Pick<
+    IPedido,
+    | 'detalles'
+    | 'subtotalCierre'
+    | 'estado'
+    | 'recogido'
+    | 'clienteNombre'
+    | 'clienteCI'
+    | 'clienteNIT'
+    | 'montoPropina'
+    | 'total'
+  >
+> & {
+  cajeroAsignado?: Types.ObjectId | null
+  fechaRecogida?: Date | null
+  recogidoPor?: Types.ObjectId | null
 }
 
 export class PedidoRepository {
   /**
    * Crea y persiste un nuevo pedido en MongoDB
    */
-  async crear(datos: PedidoCrearDatos, session?: any): Promise<IPedido> {
+  async crear(datos: PedidoCrearDatos, session?: ClientSession): Promise<IPedido> {
     const nuevoPedido = new Pedido(datos)
     return await nuevoPedido.save(session ? { session } : undefined)
   }
@@ -122,7 +153,7 @@ export class PedidoRepository {
   /**
    * Busca pedidos aplicando filtros dinámicos con populates profundos (incluyendo categoría del plato)
    */
-  async buscarConFiltros(filtro: Record<string, any>): Promise<IPedido[]> {
+  async buscarConFiltros(filtro: QueryFilter<IPedido>): Promise<IPedido[]> {
     return await Pedido.find(filtro)
       .populate('mesa', 'numero estado')
       .populate('usuario', 'nombre apellido apellidos')
@@ -167,7 +198,7 @@ export class PedidoRepository {
    */
   async actualizar(
     id: string | Types.ObjectId,
-    updates: Record<string, any>,
+    updates: PedidoActualizarDatos,
     session?: ClientSession
   ): Promise<IPedido | null> {
     return await Pedido.findByIdAndUpdate(
@@ -266,10 +297,15 @@ async marcarCanceladoSiCancelable(
     mesaIds: (string | Types.ObjectId)[],
     cajero?: string
   ): Promise<IPedido[]> {
-    const filtroPedidos: any = {
-      estado: { $nin: [ESTADOS_PEDIDO.CERRADO, ESTADOS_PEDIDO.CANCELADO] },
-      mesa: { $in: mesaIds }
-    }
+   const filtroPedidos: QueryFilter<IPedido> = {
+  estado: {
+    $nin: [
+      ESTADOS_PEDIDO.CERRADO,
+      ESTADOS_PEDIDO.CANCELADO
+    ]
+  },
+  mesa: { $in: mesaIds }
+}
 
     if (cajero) {
       filtroPedidos.$or = [
@@ -290,7 +326,7 @@ async marcarCanceladoSiCancelable(
    * Consulta los reportes de cierre de caja recientes (últimas 48h)
    * Encapsulada temporalmente aquí para preservar GET /api/pedidos?reportesCierre=true
    */
-  async buscarReportesCierre(desdeFecha: Date): Promise<any[]> {
+  async buscarReportesCierre(desdeFecha: Date): Promise<ICierreCaja[]> {
     return await CierreCaja.find({
       fechaCierre: { $gte: desdeFecha }
     }).sort({ fechaCierre: -1 })
